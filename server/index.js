@@ -510,7 +510,9 @@ io.on('connection', (socket) => {
     emitState();
   });
 });
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server jede na http://localhost:${PORT}`);
+app.get('/health', (req, res) => {
+  res.status(200).json({ ok: true, message: 'Server alive' });
+});
+server.listen(PORT, () => {
+  console.log(`✅ Chat-XP server běží na portu ${PORT}`);
 });
