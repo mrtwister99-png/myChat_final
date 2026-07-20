@@ -4,6 +4,8 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 8080;
+const server = http.createServer(app);
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Chat-XP server běží na portu ${PORT}`);
 });
