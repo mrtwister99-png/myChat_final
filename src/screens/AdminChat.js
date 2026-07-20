@@ -1,3 +1,5 @@
+// src/screens/AdminChat.js
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -12,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { socket } from '../socket';
 
 const MUTE_OPTIONS = [
   { label: '10 min', milliseconds: 10 * 60 * 1000 },
@@ -79,9 +82,19 @@ const AdminChat = ({ navigation, route }) => {
 
   const scrollViewRef = useRef(null);
 
+  const scrollToBottom = (animated = true) => {
+  setTimeout(() => {
+    scrollViewRef.current?.scrollToEnd({ animated });
+  }, 120);
+};
+
   const [message, setMessage] = useState('');
   const [muteModalVisible, setMuteModalVisible] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
+  const [serverMutedUsers, setServerMutedUsers] = useState(getGlobalMutedUsers());
+  const [connectionText, setConnectionText] = useState(
+    socket.connected ? 'Server online' : 'Připojuji server...'
+  );
 
   const getInitialMessages = () => {
     const chats = getGlobalChats();
@@ -105,14 +118,101 @@ const AdminChat = ({ navigation, route }) => {
   useEffect(() => {
     const interval = setInterval(() => {
       setNowTick(Date.now());
-    }, 30000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, []);
 
+useEffect(() => {
+  const unsubscribe = navigation.addListener('focus', () => {
+    scrollToBottom(false);
+  });
+
+  return unsubscribe;
+}, [navigation]);
+
+useEffect(() => {
+  scrollToBottom(true);
+}, [messages.length]);
+
+  useEffect(() => {
+    const handleConnect = () => {
+      setConnectionText('Server online');
+
+      socket.emit('chat:get', {
+        userId,
+      });
+    };
+
+    const handleDisconnect = () => {
+      setConnectionText('Server offline - lokální režim');
+    };
+
+    const handleConnectError = () => {
+      setConnectionText('Server nedostupný - lokální režim');
+    };
+
+    const handleServerState = (serverState) => {
+      if (serverState?.mutedUsers) {
+        setServerMutedUsers(serverState.mutedUsers);
+        globalThis.CUSIIK_MUTED_USERS = serverState.mutedUsers;
+      }
+
+      setNowTick(Date.now());
+    };
+
+    const handleChatMessages = ({ userId: incomingUserId, messages: nextMessages }) => {
+      if (incomingUserId !== userId) {
+        return;
+      }
+
+      const chats = getGlobalChats();
+
+      chats[userId] = nextMessages || [];
+      setMessages(nextMessages || []);
+
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+    socket.on('server:state', handleServerState);
+    socket.on('chat:messages', handleChatMessages);
+
+    if (!socket.connected) {
+      socket.connect();
+    } else {
+      handleConnect();
+    }
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+      socket.off('server:state', handleServerState);
+      socket.off('chat:messages', handleChatMessages);
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    const chats = getGlobalChats();
+
+    setMessages(chats[userId] || getInitialMessages());
+
+    if (socket.connected) {
+      socket.emit('chat:get', {
+        userId,
+      });
+    }
+  }, [userId]);
+
   const getMuteUntil = () => {
     const mutedUsers = getGlobalMutedUsers();
-    return mutedUsers[userId] || 0;
+
+    return serverMutedUsers[userId] || mutedUsers[userId] || 0;
   };
 
   const muteUntil = getMuteUntil();
@@ -126,10 +226,42 @@ const AdminChat = ({ navigation, route }) => {
     setMessages(nextMessages);
   };
 
+  const sendSystemMessage = (text) => {
+    if (socket.connected) {
+      socket.emit('chat:send', {
+        userId,
+        sender: 'system',
+        text,
+      });
+
+      return;
+    }
+
+    const systemMessage = {
+      id: Date.now(),
+      sender: 'system',
+      text,
+      createdAt: Date.now(),
+    };
+
+    saveMessages([...messages, systemMessage]);
+  };
+
   const sendMessage = () => {
     const trimmedMessage = message.trim();
 
     if (!trimmedMessage) {
+      return;
+    }
+
+    if (socket.connected) {
+      socket.emit('chat:send', {
+        userId,
+        sender: 'admin',
+        text: trimmedMessage,
+      });
+
+      setMessage('');
       return;
     }
 
@@ -164,16 +296,20 @@ const AdminChat = ({ navigation, route }) => {
 
     mutedUsers[userId] = muteUntilTime;
 
-    const systemMessage = {
-      id: Date.now(),
-      sender: 'system',
-      text: `Uživatel ${userName} byl umlčen na ${option.label}.`,
-      createdAt: Date.now(),
-    };
+    setServerMutedUsers({
+      ...serverMutedUsers,
+      [userId]: muteUntilTime,
+    });
 
-    const nextMessages = [...messages, systemMessage];
+    if (socket.connected) {
+      socket.emit('admin:muteUser', {
+        userId,
+        milliseconds: option.milliseconds,
+      });
+    }
 
-    saveMessages(nextMessages);
+    sendSystemMessage(`Uživatel ${userName} byl umlčen na ${option.label}.`);
+
     setNowTick(Date.now());
     closeMuteModal();
 
@@ -187,16 +323,22 @@ const AdminChat = ({ navigation, route }) => {
 
     delete mutedUsers[userId];
 
-    const systemMessage = {
-      id: Date.now(),
-      sender: 'system',
-      text: `Uživatel ${userName} už není umlčen.`,
-      createdAt: Date.now(),
+    const nextServerMutedUsers = {
+      ...serverMutedUsers,
     };
 
-    const nextMessages = [...messages, systemMessage];
+    delete nextServerMutedUsers[userId];
 
-    saveMessages(nextMessages);
+    setServerMutedUsers(nextServerMutedUsers);
+
+    if (socket.connected) {
+      socket.emit('admin:unmuteUser', {
+        userId,
+      });
+    }
+
+    sendSystemMessage(`Uživatel ${userName} už není umlčen.`);
+
     setNowTick(Date.now());
     closeMuteModal();
 
@@ -375,7 +517,7 @@ const AdminChat = ({ navigation, route }) => {
           <View style={styles.statusBar}>
             <Text style={styles.statusText}>Admin chat</Text>
             <Text style={styles.statusText}>
-              {isMuted ? `Mute: ${muteTimeLeft}` : 'User can write'}
+              {isMuted ? `Mute: ${muteTimeLeft}` : connectionText}
             </Text>
           </View>
         </View>

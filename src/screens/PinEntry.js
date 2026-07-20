@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { socket } from '../socket';
 
 const DEFAULT_USER_PIN = '1111';
 const DEFAULT_ADMIN_PIN = '8831';
@@ -25,6 +26,8 @@ const ADMIN_SCREEN = 'AdminPin';
 const PinEntry = ({ navigation }) => {
   const [pin, setPin] = useState('');
   const [errorText, setErrorText] = useState('');
+  const [serverStatusText, setServerStatusText] = useState('Připojuji server...');
+  const [isCheckingPin, setIsCheckingPin] = useState(false);
 
   const inputRef = useRef(null);
   const shakeAnim = useRef(new Animated.Value(0)).current;
@@ -36,6 +39,70 @@ const PinEntry = ({ navigation }) => {
 
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    const handleConnect = () => {
+      setServerStatusText('Server online');
+    };
+
+    const handleDisconnect = () => {
+      setServerStatusText('Server offline - jede lokální režim');
+      setIsCheckingPin(false);
+    };
+
+    const handleConnectError = () => {
+      setServerStatusText('Server nedostupný - jede lokální režim');
+      setIsCheckingPin(false);
+    };
+
+    const handleAuthSuccess = (payload) => {
+      setIsCheckingPin(false);
+      setPin('');
+      setErrorText('');
+
+      if (payload?.role === 'admin') {
+        navigation.replace(ADMIN_SCREEN);
+        return;
+      }
+
+      if (payload?.role === 'user') {
+  globalThis.CUSIIK_CURRENT_USER_ID = payload.userId;
+  globalThis.CUSIIK_CURRENT_USER_NAME = payload.userName;
+
+  setPin('');
+  navigation.replace(USER_SCREEN);
+  return;
+}
+
+      handleWrongPin();
+    };
+
+    const handleAuthError = (payload) => {
+      setIsCheckingPin(false);
+      setErrorText(payload?.message || 'Špatný PIN.');
+      shakeWindow();
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+    socket.on('auth:success', handleAuthSuccess);
+    socket.on('auth:error', handleAuthError);
+
+    if (socket.connected) {
+      setServerStatusText('Server online');
+    } else {
+      socket.connect();
+    }
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+      socket.off('auth:success', handleAuthSuccess);
+      socket.off('auth:error', handleAuthError);
+    };
+  }, [navigation]);
 
   const getCurrentUserPin = () => {
     return globalThis.CUSIIK_USER_PIN || DEFAULT_USER_PIN;
@@ -55,6 +122,7 @@ const PinEntry = ({ navigation }) => {
 
   const resetAndFocus = () => {
     setPin('');
+    setIsCheckingPin(false);
 
     setTimeout(() => {
       inputRef.current?.focus();
@@ -96,7 +164,30 @@ const PinEntry = ({ navigation }) => {
     shakeWindow();
   };
 
+  const handleLocalPinCheck = (cleanValue) => {
+    const currentUserPin = getCurrentUserPin();
+    const currentAdminPin = getCurrentAdminPin();
+
+    if (cleanValue === currentUserPin) {
+      setPin('');
+      navigation.replace(USER_SCREEN);
+      return;
+    }
+
+    if (cleanValue === currentAdminPin) {
+      setPin('');
+      navigation.replace(ADMIN_SCREEN);
+      return;
+    }
+
+    handleWrongPin();
+  };
+
   const handlePinChange = (value) => {
+    if (isCheckingPin) {
+      return;
+    }
+
     const cleanValue = value.replace(/[^0-9]/g, '').slice(0, 4);
 
     setPin(cleanValue);
@@ -107,22 +198,18 @@ const PinEntry = ({ navigation }) => {
     }
 
     setTimeout(() => {
-      const currentUserPin = getCurrentUserPin();
-      const currentAdminPin = getCurrentAdminPin();
+      if (socket.connected) {
+        setIsCheckingPin(true);
+        setServerStatusText('Ověřuji PIN přes server...');
 
-      if (cleanValue === currentUserPin) {
-        setPin('');
-        navigation.replace(USER_SCREEN);
+        socket.emit('auth:checkPin', {
+          pin: cleanValue,
+        });
+
         return;
       }
 
-      if (cleanValue === currentAdminPin) {
-        setPin('');
-        navigation.replace(ADMIN_SCREEN);
-        return;
-      }
-
-      handleWrongPin();
+      handleLocalPinCheck(cleanValue);
     }, 150);
   };
 
@@ -231,7 +318,9 @@ const PinEntry = ({ navigation }) => {
                   ) : (
                     <View style={styles.infoBox}>
                       <Text style={styles.infoText}>
-                        Numerická klávesnice se otevře automaticky.
+                        {isCheckingPin
+                          ? 'Ověřuji PIN...'
+                          : 'Numerická klávesnice se otevře automaticky.'}
                       </Text>
                     </View>
                   )}
@@ -249,7 +338,7 @@ const PinEntry = ({ navigation }) => {
 
                 <View style={styles.statusBar}>
                   <Text style={styles.statusText}>Ready</Text>
-                  <Text style={styles.statusText}>PIN Login</Text>
+                  <Text style={styles.statusText}>{serverStatusText}</Text>
                 </View>
               </Animated.View>
             </View>
@@ -522,7 +611,7 @@ const styles = StyleSheet.create({
   },
 
   statusBar: {
-    height: 25,
+    minHeight: 25,
     backgroundColor: '#d6d3c3',
     borderTopWidth: 1,
     borderTopColor: '#aaa793',
@@ -530,10 +619,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 8,
+    paddingVertical: 4,
   },
 
   statusText: {
     color: '#333333',
     fontSize: 11,
+    flexShrink: 1,
   },
 });

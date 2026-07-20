@@ -1,4 +1,4 @@
-// src/screens/adminPin.js
+// src/screens/AdminPin.js
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -14,10 +14,22 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { socket } from '../socket';
 
 const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
-const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '2242';
+const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '8831';
 const DEFAULT_ADMIN_STATUS = globalThis.CUSIIK_ADMIN_STATUS || 'off';
+
+const MUTE_OPTIONS = [
+  { label: '10 min', milliseconds: 10 * 60 * 1000 },
+  { label: '30 min', milliseconds: 30 * 60 * 1000 },
+  { label: '1 hod', milliseconds: 60 * 60 * 1000 },
+  { label: '5 hod', milliseconds: 5 * 60 * 60 * 1000 },
+  { label: '12 hod', milliseconds: 12 * 60 * 60 * 1000 },
+  { label: '1 den', milliseconds: 24 * 60 * 60 * 1000 },
+  { label: '2 dny', milliseconds: 2 * 24 * 60 * 60 * 1000 },
+  { label: '7 dní', milliseconds: 7 * 24 * 60 * 60 * 1000 },
+];
 
 const USER_COLOURS = [
   { label: 'Zelená', value: '#35c759' },
@@ -38,23 +50,145 @@ const getGlobalMutedUsers = () => {
   return globalThis.CUSIIK_MUTED_USERS;
 };
 
-const getMuteMinutesLeft = (userId, nowTick) => {
+const getGlobalSecretMutedUsers = () => {
+  if (!globalThis.CUSIIK_SECRET_MUTED_USERS) {
+    globalThis.CUSIIK_SECRET_MUTED_USERS = {};
+  }
+
+  return globalThis.CUSIIK_SECRET_MUTED_USERS;
+};
+
+const getGlobalChats = () => {
+  if (!globalThis.CUSIIK_CHATS) {
+    globalThis.CUSIIK_CHATS = {};
+  }
+
+  return globalThis.CUSIIK_CHATS;
+};
+
+const getGlobalReadCounts = () => {
+  if (!globalThis.CUSIIK_ADMIN_READ_COUNTS) {
+    globalThis.CUSIIK_ADMIN_READ_COUNTS = {};
+  }
+
+  return globalThis.CUSIIK_ADMIN_READ_COUNTS;
+};
+
+const getMuteMsLeft = (userId, nowTick) => {
   const mutedUsers = getGlobalMutedUsers();
   const muteUntil = mutedUsers[userId] || 0;
   const diff = muteUntil - nowTick;
 
+  return diff > 0 ? diff : 0;
+};
+
+const formatMuteLeft = (userId, nowTick) => {
+  const diff = getMuteMsLeft(userId, nowTick);
+
   if (diff <= 0) {
-    return 0;
+    return '';
   }
 
-  return Math.ceil(diff / 1000 / 60);
+  const minutes = Math.ceil(diff / 1000 / 60);
+
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const hours = Math.ceil(minutes / 60);
+
+  if (hours < 24) {
+    return `${hours} hod`;
+  }
+
+  const days = Math.ceil(hours / 24);
+
+  if (days === 1) {
+    return '1 den';
+  }
+
+  if (days >= 2 && days <= 4) {
+    return `${days} dny`;
+  }
+
+  return `${days} dní`;
+};
+
+const formatLastSeen = (user, nowTick) => {
+  if (user.online) {
+    return 'Online';
+  }
+
+  const lastSeenAt = user.lastSeenAt || user.lastSeen || 0;
+
+  if (!lastSeenAt) {
+    return 'Offline';
+  }
+
+  const diff = nowTick - lastSeenAt;
+
+  if (diff <= 0) {
+    return 'Byl online právě teď';
+  }
+
+  const minutes = Math.floor(diff / 1000 / 60);
+
+  if (minutes < 1) {
+    return 'Byl online před chvílí';
+  }
+
+  if (minutes < 60) {
+    return `Byl online před ${minutes} min`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 24) {
+    return `Byl online před ${hours} hod`;
+  }
+
+  const days = Math.floor(hours / 24);
+
+  if (days === 1) {
+    return 'Byl online před 1 dnem';
+  }
+
+  return `Byl online před ${days} dny`;
+};
+
+const getUserMessageCount = (userId) => {
+  const chats = getGlobalChats();
+  const messages = chats[userId] || [];
+
+  return messages.filter((message) => message.sender === 'user').length;
 };
 
 const AdminPin = ({ navigation }) => {
   const [users, setUsers] = useState([
-    { id: '1', name: 'Uzivatel 1', status: 'online', colour: '#dceaff' },
-    { id: '2', name: 'Uzivatel 2', status: 'online', colour: '#dceaff' },
-    { id: '3', name: 'Host 224', status: 'online', colour: '#dceaff' },
+    {
+      id: '1',
+      name: 'Uzivatel 1',
+      status: 'online',
+      online: true,
+      lastSeenAt: Date.now(),
+      colour: '#dceaff',
+    },
+    {
+      id: '2',
+      name: 'Uzivatel 2',
+      status: 'online',
+      online: false,
+      lastSeenAt: Date.now() - 7 * 60 * 1000,
+      colour: '#dceaff',
+    },
+    {
+      id: '3',
+      name: 'Host 224',
+      status: 'online',
+      online: false,
+      lastSeenAt: Date.now() - 2 * 60 * 60 * 1000,
+      colour: '#dceaff',
+    },
   ]);
 
   const [nowTick, setNowTick] = useState(Date.now());
@@ -79,9 +213,17 @@ const AdminPin = ({ navigation }) => {
   const [newAdminPin, setNewAdminPin] = useState('');
   const [adminPinError, setAdminPinError] = useState('');
 
-  const [userForColour, setUserForColour] = useState(null);
+  const [userMenuVisible, setUserMenuVisible] = useState(false);
+  const [actionUser, setActionUser] = useState(null);
+  const [muteModalVisible, setMuteModalVisible] = useState(false);
+  const [colourModalVisible, setColourModalVisible] = useState(false);
+  const [kickConfirmVisible, setKickConfirmVisible] = useState(false);
 
+  const [readCounts, setReadCounts] = useState(getGlobalReadCounts());
   const [lastActionText, setLastActionText] = useState('');
+  const [connectionText, setConnectionText] = useState(
+    socket.connected ? 'Server online' : 'Připojuji server...'
+  );
 
   const isAdminOnline = adminStatus === 'on';
 
@@ -93,24 +235,124 @@ const AdminPin = ({ navigation }) => {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const handleConnect = () => {
+      setConnectionText('Server online');
+    };
+
+    const handleDisconnect = () => {
+      setConnectionText('Server offline - lokální režim');
+    };
+
+    const handleConnectError = () => {
+      setConnectionText('Server nedostupný - lokální režim');
+    };
+
+    const handleServerState = (serverState) => {
+      if (serverState?.adminStatus) {
+        setAdminStatus(serverState.adminStatus);
+        globalThis.CUSIIK_ADMIN_STATUS = serverState.adminStatus;
+      }
+
+      if (serverState?.userPin) {
+        setCurrentUserPin(serverState.userPin);
+        globalThis.CUSIIK_USER_PIN = serverState.userPin;
+      }
+
+      if (serverState?.mutedUsers) {
+        globalThis.CUSIIK_MUTED_USERS = serverState.mutedUsers;
+      }
+
+      if (Array.isArray(serverState?.users)) {
+        setUsers(
+          serverState.users.map((user) => ({
+            ...user,
+            online: Boolean(user.online),
+            lastSeenAt: user.lastSeenAt || user.lastSeen || Date.now(),
+            colour: user.colour || '#dceaff',
+          }))
+        );
+      }
+
+      setNowTick(Date.now());
+    };
+
+    const handleChatMessages = ({ userId, messages }) => {
+      const chats = getGlobalChats();
+
+      chats[userId] = messages || [];
+      setReadCounts({ ...getGlobalReadCounts() });
+      setNowTick(Date.now());
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+    socket.on('server:state', handleServerState);
+    socket.on('chat:messages', handleChatMessages);
+
+    if (!socket.connected) {
+      socket.connect();
+    }
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+      socket.off('server:state', handleServerState);
+      socket.off('chat:messages', handleChatMessages);
+    };
+  }, []);
+
   const renderUserNameWithMute = (user, textStyle) => {
-    const minutesLeft = getMuteMinutesLeft(user.id, nowTick);
+    const muteText = formatMuteLeft(user.id, nowTick);
+    const secretMutedUsers = getGlobalSecretMutedUsers();
+    const isSecretMuted = Boolean(secretMutedUsers[user.id]);
 
     return (
       <Text style={textStyle}>
         {user.name}
-        {minutesLeft > 0 ? (
-          <Text style={styles.mutedMinutesText}> ({minutesLeft} min)</Text>
-        ) : null}
+        {muteText ? <Text style={styles.mutedMinutesText}> ({muteText})</Text> : null}
+        {isSecretMuted ? <Text style={styles.secretMutedText}> potají</Text> : null}
       </Text>
     );
   };
 
+  const getUnreadCount = (userId) => {
+    const userMessageCount = getUserMessageCount(userId);
+    const readCount = readCounts[userId] || 0;
+    const unread = userMessageCount - readCount;
+
+    return unread > 0 ? unread : 0;
+  };
+
+  const markUserAsRead = (userId) => {
+    const nextReadCounts = {
+      ...getGlobalReadCounts(),
+      [userId]: getUserMessageCount(userId),
+    };
+
+    globalThis.CUSIIK_ADMIN_READ_COUNTS = nextReadCounts;
+    setReadCounts(nextReadCounts);
+  };
+
   const openAdminChat = (user) => {
+    markUserAsRead(user.id);
+
     navigation.navigate('AdminChat', {
       userId: user.id,
       userName: user.name,
     });
+  };
+
+  const openUserMenu = (user) => {
+    setActionUser(user);
+    setUserMenuVisible(true);
+  };
+
+  const closeUserMenu = () => {
+    setUserMenuVisible(false);
+    setActionUser(null);
   };
 
   const toggleAdminStatus = () => {
@@ -118,6 +360,12 @@ const AdminPin = ({ navigation }) => {
 
     globalThis.CUSIIK_ADMIN_STATUS = nextStatus;
     setAdminStatus(nextStatus);
+
+    if (socket.connected) {
+      socket.emit('admin:setStatus', {
+        status: nextStatus,
+      });
+    }
 
     setLastActionText(
       nextStatus === 'on'
@@ -130,6 +378,7 @@ const AdminPin = ({ navigation }) => {
     setSelectedUser(user);
     setNewUserName(user.name);
     setRenameModalVisible(true);
+    setUserMenuVisible(false);
   };
 
   const closeRenameModal = () => {
@@ -155,6 +404,13 @@ const AdminPin = ({ navigation }) => {
           : user
       )
     );
+
+    if (socket.connected) {
+      socket.emit('admin:renameUser', {
+        userId: selectedUser.id,
+        name: trimmedName,
+      });
+    }
 
     setLastActionText(`Uživatel byl přejmenován na ${trimmedName}.`);
     closeRenameModal();
@@ -184,8 +440,15 @@ const AdminPin = ({ navigation }) => {
 
     setCurrentUserPin(cleanedPin);
     setUsers([]);
+
+    if (socket.connected) {
+      socket.emit('admin:setUserPin', {
+        pin: cleanedPin,
+      });
+    }
+
     setLastActionText(
-      `Změna hotová. Nový uživatelský PIN je ${cleanedPin}. Všichni uživatelé byli vykopnuti.`
+      `PIN změněn na ${cleanedPin}. Všichni uživatelé byli vykopnuti.`
     );
 
     closeChangeModal();
@@ -194,7 +457,6 @@ const AdminPin = ({ navigation }) => {
   const openSettings = () => {
     setSettingsScreen('menu');
     setUserToKick(null);
-    setUserForColour(null);
     setNewAdminPin('');
     setAdminPinError('');
     setSettingsModalVisible(true);
@@ -204,7 +466,6 @@ const AdminPin = ({ navigation }) => {
     setSettingsModalVisible(false);
     setSettingsScreen('menu');
     setUserToKick(null);
-    setUserForColour(null);
     setNewAdminPin('');
     setAdminPinError('');
   };
@@ -212,7 +473,6 @@ const AdminPin = ({ navigation }) => {
   const goBackToSettingsMenu = () => {
     setSettingsScreen('menu');
     setUserToKick(null);
-    setUserForColour(null);
     setNewAdminPin('');
     setAdminPinError('');
   };
@@ -222,17 +482,33 @@ const AdminPin = ({ navigation }) => {
     setSettingsScreen('kickConfirm');
   };
 
-  const confirmKickUser = () => {
-    if (!userToKick) {
+  const kickUserById = (user) => {
+    if (!user) {
       return;
     }
 
     setUsers((currentUsers) =>
-      currentUsers.filter((user) => user.id !== userToKick.id)
+      currentUsers.filter((currentUser) => currentUser.id !== user.id)
     );
 
-    setLastActionText(`Uživatel ${userToKick.name} byl kicknut z roomky.`);
+    if (socket.connected) {
+      socket.emit('admin:kickUser', {
+        userId: user.id,
+      });
+    }
+
+    setLastActionText(`Uživatel ${user.name} byl kicknut z roomky.`);
+  };
+
+  const confirmKickUser = () => {
+    kickUserById(userToKick);
     goBackToSettingsMenu();
+  };
+
+  const confirmActionKickUser = () => {
+    kickUserById(actionUser);
+    setKickConfirmVisible(false);
+    closeUserMenu();
   };
 
   const saveNewAdminPin = () => {
@@ -246,34 +522,102 @@ const AdminPin = ({ navigation }) => {
     globalThis.CUSIIK_ADMIN_PIN = cleanedPin;
 
     setCurrentAdminPin(cleanedPin);
+
+    if (socket.connected) {
+      socket.emit('admin:setAdminPin', {
+        pin: cleanedPin,
+      });
+    }
+
     setLastActionText(`Admin PIN byl změněn na ${cleanedPin}.`);
 
     goBackToSettingsMenu();
   };
 
-  const chooseUserForColour = (user) => {
-    setUserForColour(user);
-    setSettingsScreen('colourPick');
+  const muteUser = (user, option) => {
+    if (!user) {
+      return;
+    }
+
+    const mutedUsers = getGlobalMutedUsers();
+    const muteUntilTime = Date.now() + option.milliseconds;
+
+    mutedUsers[user.id] = muteUntilTime;
+    globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+
+    if (socket.connected) {
+      socket.emit('admin:muteUser', {
+        userId: user.id,
+        milliseconds: option.milliseconds,
+      });
+
+      socket.emit('chat:send', {
+        userId: user.id,
+        sender: 'system',
+        text: `Uživatel ${user.name} byl umlčen na ${option.label}.`,
+      });
+    }
+
+    setNowTick(Date.now());
+    setLastActionText(`Uživatel ${user.name} byl umlčen na ${option.label}.`);
+    setMuteModalVisible(false);
+    closeUserMenu();
   };
 
-  const changeUserColour = (colour) => {
-    if (!userForColour) {
+  const toggleSecretMute = (user) => {
+    if (!user) {
+      return;
+    }
+
+    const secretMutedUsers = getGlobalSecretMutedUsers();
+    const nextValue = !secretMutedUsers[user.id];
+
+    secretMutedUsers[user.id] = nextValue;
+    globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsers;
+
+    if (socket.connected) {
+      socket.emit('admin:secretMuteUser', {
+        userId: user.id,
+        enabled: nextValue,
+      });
+    }
+
+    setNowTick(Date.now());
+    setLastActionText(
+      nextValue
+        ? `Uživatel ${user.name} byl umlčen potají.`
+        : `Tajné umlčení uživatele ${user.name} bylo zrušeno.`
+    );
+
+    closeUserMenu();
+  };
+
+  const changeUserColour = (user, colour) => {
+    if (!user) {
       return;
     }
 
     setUsers((currentUsers) =>
-      currentUsers.map((user) =>
-        user.id === userForColour.id
+      currentUsers.map((currentUser) =>
+        currentUser.id === user.id
           ? {
-              ...user,
+              ...currentUser,
               colour,
             }
-          : user
+          : currentUser
       )
     );
 
-    setLastActionText(`Barva uživatele ${userForColour.name} byla změněna.`);
-    goBackToSettingsMenu();
+    if (socket.connected) {
+      socket.emit('admin:setUserColour', {
+        userId: user.id,
+        colour,
+      });
+    }
+
+    setLastActionText(`Barva uživatele ${user.name} byla změněna.`);
+    setColourModalVisible(false);
+    closeUserMenu();
   };
 
   const renderSettingsContent = () => {
@@ -433,109 +777,6 @@ const AdminPin = ({ navigation }) => {
       );
     }
 
-    if (settingsScreen === 'colourUser') {
-      return (
-        <View style={styles.modalBody}>
-          <Text style={styles.modalLabel}>Vyber uživatele pro změnu barvy:</Text>
-
-          {users.length === 0 ? (
-            <View style={styles.smallEmptyBox}>
-              <Text style={styles.smallEmptyText}>
-                V roomce teď není žádný uživatel.
-              </Text>
-            </View>
-          ) : (
-            <ScrollView style={styles.settingsList}>
-              {users.map((user) => (
-                <Pressable
-                  key={user.id}
-                  style={({ pressed }) => [
-                    styles.settingsUserRow,
-                    pressed && styles.xpButtonPressed,
-                  ]}
-                  onPress={() => chooseUserForColour(user)}
-                >
-                  <View
-                    style={[
-                      styles.smallUserIconBox,
-                      { backgroundColor: user.colour },
-                    ]}
-                  >
-                    <Text style={styles.smallUserIcon}>👤</Text>
-                  </View>
-
-                  <View style={styles.settingsUserTextBox}>
-                    {renderUserNameWithMute(user, styles.settingsUserName)}
-                    <Text style={styles.settingsUserSubText}>
-                      Kliknutím vybereš barvu
-                    </Text>
-                  </View>
-                </Pressable>
-              ))}
-            </ScrollView>
-          )}
-
-          <View style={styles.modalButtons}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={goBackToSettingsMenu}
-            >
-              <Text style={styles.modalButtonText}>Zpět</Text>
-            </Pressable>
-          </View>
-        </View>
-      );
-    }
-
-    if (settingsScreen === 'colourPick') {
-      return (
-        <View style={styles.modalBody}>
-          <Text style={styles.modalLabel}>Vyber barvu pro uživatele:</Text>
-
-          <Text style={styles.selectedUserText}>
-            {userForColour ? userForColour.name : ''}
-          </Text>
-
-          <View style={styles.colourGrid}>
-            {USER_COLOURS.map((colour) => (
-              <Pressable
-                key={colour.value}
-                style={({ pressed }) => [
-                  styles.colourButton,
-                  pressed && styles.xpButtonPressed,
-                ]}
-                onPress={() => changeUserColour(colour.value)}
-              >
-                <View
-                  style={[
-                    styles.colourPreview,
-                    { backgroundColor: colour.value },
-                  ]}
-                />
-
-                <Text style={styles.colourButtonText}>{colour.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <View style={styles.modalButtons}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={() => setSettingsScreen('colourUser')}
-            >
-              <Text style={styles.modalButtonText}>Zpět</Text>
-            </Pressable>
-          </View>
-        </View>
-      );
-    }
-
     return (
       <View style={styles.modalBody}>
         <Text style={styles.modalLabel}>Vyber akci v nastavení:</Text>
@@ -589,19 +830,6 @@ const AdminPin = ({ navigation }) => {
           <Text style={styles.settingsOptionTitle}>Admin PIN</Text>
           <Text style={styles.settingsOptionText}>
             Nastavíš nový PIN pro vstup do admin panelu.
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.settingsOption,
-            pressed && styles.xpButtonPressed,
-          ]}
-          onPress={() => setSettingsScreen('colourUser')}
-        >
-          <Text style={styles.settingsOptionTitle}>Změna barvy uživatele</Text>
-          <Text style={styles.settingsOptionText}>
-            Změníš barvu ikonky vybraného uživatele.
           </Text>
         </Pressable>
 
@@ -679,7 +907,9 @@ const AdminPin = ({ navigation }) => {
             <View style={styles.usersPanel}>
               <View style={styles.panelTitleBar}>
                 <Text style={styles.panelTitleText}>Uživatelé v roomce</Text>
-                <Text style={styles.panelCountText}>{users.length} online</Text>
+                <Text style={styles.panelCountText}>
+                  {users.filter((user) => user.online).length} online
+                </Text>
               </View>
 
               <ScrollView
@@ -696,43 +926,64 @@ const AdminPin = ({ navigation }) => {
                     </Text>
                   </View>
                 ) : (
-                  users.map((user) => (
-                    <View key={user.id} style={styles.userRow}>
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.userInfo,
-                          pressed && styles.userInfoPressed,
-                        ]}
-                        onPress={() => openAdminChat(user)}
-                      >
-                        <View
-                          style={[
-                            styles.userIconBox,
-                            { backgroundColor: user.colour },
+                  users.map((user) => {
+                    const unreadCount = getUnreadCount(user.id);
+
+                    return (
+                      <View key={user.id} style={styles.userRow}>
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.userInfo,
+                            pressed && styles.userInfoPressed,
                           ]}
+                          onPress={() => openAdminChat(user)}
                         >
-                          <Text style={styles.userIcon}>👤</Text>
-                        </View>
+                          <View
+                            style={[
+                              styles.userIconBox,
+                              { backgroundColor: user.colour },
+                            ]}
+                          >
+                            <Text style={styles.userIcon}>👤</Text>
+                          </View>
 
-                        <View style={styles.userTextBox}>
-                          {renderUserNameWithMute(user, styles.userName)}
-                          <Text style={styles.userStatus}>
-                            Klikni pro otevření chatu
-                          </Text>
-                        </View>
-                      </Pressable>
+                          <View style={styles.userTextBox}>
+                            <View style={styles.userNameRow}>
+                              {renderUserNameWithMute(user, styles.userName)}
 
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.renameButton,
-                          pressed && styles.xpButtonPressed,
-                        ]}
-                        onPress={() => openRenameModal(user)}
-                      >
-                        <Text style={styles.renameButtonText}>Přejmenovat</Text>
-                      </Pressable>
-                    </View>
-                  ))
+                              {unreadCount > 0 ? (
+                                <View style={styles.unreadBadge}>
+                                  <Text style={styles.unreadBadgeText}>
+                                    {unreadCount}{' '}
+                                    {unreadCount === 1 ? 'nová zpráva' : 'nových zpráv'}
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+
+                            <Text
+                              style={[
+                                styles.userStatus,
+                                user.online ? styles.userStatusOnline : null,
+                              ]}
+                            >
+                              {formatLastSeen(user, nowTick)}
+                            </Text>
+                          </View>
+                        </Pressable>
+
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.gearButton,
+                            pressed && styles.xpButtonPressed,
+                          ]}
+                          onPress={() => openUserMenu(user)}
+                        >
+                          <Text style={styles.gearButtonText}>⚙</Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })
                 )}
               </ScrollView>
             </View>
@@ -751,7 +1002,7 @@ const AdminPin = ({ navigation }) => {
                 ]}
                 onPress={openChangeModal}
               >
-                <Text style={styles.bottomButtonText}>Zmena</Text>
+                <Text style={styles.bottomButtonText}>Pin + KICK</Text>
               </Pressable>
 
               <Pressable
@@ -768,11 +1019,260 @@ const AdminPin = ({ navigation }) => {
 
           <View style={styles.statusBar}>
             <Text style={styles.statusText}>Připojeno jako admin</Text>
-            <Text style={styles.statusText}>
-              Status: {isAdminOnline ? 'online' : 'offline'}
-            </Text>
+            <Text style={styles.statusText}>{connectionText}</Text>
           </View>
         </View>
+
+        <Modal
+          visible={userMenuVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeUserMenu}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>
+                  Nastavení uživatele
+                </Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closeUserMenu}>
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.selectedUserText}>
+                  {actionUser ? actionUser.name : ''}
+                </Text>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => openRenameModal(actionUser)}
+                >
+                  <Text style={styles.settingsOptionTitle}>Přejmenovat</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Změní jméno vybraného uživatele.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => {
+                    setMuteModalVisible(true);
+                    setUserMenuVisible(false);
+                  }}
+                >
+                  <Text style={styles.settingsOptionTitle}>Umlčet</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Uživatel nebude moct psát po zvolenou dobu.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => {
+                    setKickConfirmVisible(true);
+                    setUserMenuVisible(false);
+                  }}
+                >
+                  <Text style={styles.settingsOptionTitle}>Kick</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Vyhodí uživatele z roomky.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => toggleSecretMute(actionUser)}
+                >
+                  <Text style={styles.settingsOptionTitle}>Umlčet potají</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Uživatel uvidí admin status OFF, i když bude pro ostatní ON.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => {
+                    setColourModalVisible(true);
+                    setUserMenuVisible(false);
+                  }}
+                >
+                  <Text style={styles.settingsOptionTitle}>Změna barvy</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Změní barvu ikonky vybraného uživatele.
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={muteModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setMuteModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Umlčet uživatele</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setMuteModalVisible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Vyber délku umlčení:</Text>
+                <Text style={styles.selectedUserText}>
+                  {actionUser ? actionUser.name : ''}
+                </Text>
+
+                <View style={styles.muteGrid}>
+                  {MUTE_OPTIONS.map((option) => (
+                    <Pressable
+                      key={option.label}
+                      style={({ pressed }) => [
+                        styles.muteOptionButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => muteUser(actionUser, option)}
+                    >
+                      <Text style={styles.muteOptionText}>{option.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={colourModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setColourModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Změna barvy</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setColourModalVisible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Vyber barvu pro uživatele:</Text>
+                <Text style={styles.selectedUserText}>
+                  {actionUser ? actionUser.name : ''}
+                </Text>
+
+                <View style={styles.colourGrid}>
+                  {USER_COLOURS.map((colour) => (
+                    <Pressable
+                      key={colour.value}
+                      style={({ pressed }) => [
+                        styles.colourButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => changeUserColour(actionUser, colour.value)}
+                    >
+                      <View
+                        style={[
+                          styles.colourPreview,
+                          { backgroundColor: colour.value },
+                        ]}
+                      />
+                      <Text style={styles.colourButtonText}>{colour.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={kickConfirmVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setKickConfirmVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Kick uživatele</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setKickConfirmVisible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.confirmIcon}>⚠️</Text>
+
+                <Text style={styles.confirmTitle}>
+                  Opravdu chceš kicknout uživatele?
+                </Text>
+
+                <Text style={styles.confirmUserName}>
+                  {actionUser ? actionUser.name : ''}
+                </Text>
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={confirmActionKickUser}
+                  >
+                    <Text style={styles.modalButtonText}>Ano, kicknout</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => setKickConfirmVisible(false)}
+                  >
+                    <Text style={styles.modalButtonText}>Ne</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         <Modal
           visible={renameModalVisible}
@@ -840,7 +1340,7 @@ const AdminPin = ({ navigation }) => {
           <View style={styles.modalOverlay}>
             <View style={styles.modalWindow}>
               <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>Zmena roomky</Text>
+                <Text style={styles.modalTitleText}>Pin + KICK</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeChangeModal}>
                   <Text style={styles.modalCloseButtonText}>×</Text>
@@ -1162,6 +1662,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+
   userName: {
     color: '#000000',
     fontSize: 15,
@@ -1175,13 +1681,40 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 
+  secretMutedText: {
+    color: '#7a00cc',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  unreadBadge: {
+    backgroundColor: '#ffd7d7',
+    borderWidth: 1,
+    borderColor: '#a80000',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    marginLeft: 6,
+    marginBottom: 3,
+  },
+
+  unreadBadgeText: {
+    color: '#8a0000',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
   userStatus: {
     color: '#333333',
     fontSize: 12,
   },
 
-  renameButton: {
-    minWidth: 112,
+  userStatusOnline: {
+    color: '#0b7a16',
+    fontWeight: '900',
+  },
+
+  gearButton: {
+    width: 38,
     height: 34,
     backgroundColor: '#ece9d8',
     borderWidth: 2,
@@ -1191,13 +1724,13 @@ const styles = StyleSheet.create({
     borderBottomColor: '#777777',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
   },
 
-  renameButtonText: {
+  gearButtonText: {
     color: '#000000',
-    fontSize: 12,
+    fontSize: 18,
     fontWeight: '900',
+    lineHeight: 20,
   },
 
   emptyBox: {
@@ -1598,6 +2131,32 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '900',
     marginBottom: 12,
+  },
+
+  muteGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+
+  muteOptionButton: {
+    width: '48%',
+    height: 42,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+
+  muteOptionText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
   },
 
   colourGrid: {

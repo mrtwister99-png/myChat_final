@@ -28,42 +28,165 @@ const state = {
   adminPin: '8831',
   adminStatus: 'off',
 
-  users: [
-    {
-      id: '1',
-      name: 'Uzivatel 1',
-      colour: '#dceaff',
-      online: false,
-    },
-  ],
+  nextUserNumber: 1,
 
-  chats: {
-    '1': [
-      {
-        id: 1,
-        sender: 'admin',
-        text: 'Ahoj, tady admin. Napiš mi zprávu.',
-        createdAt: Date.now(),
-      },
-    ],
-  },
+  users: [],
+
+  chats: {},
 
   mutedUsers: {},
+
+  secretMutedUsers: {},
+};
+
+const createMessageId = () => {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+const getPublicUsers = () => {
+  return state.users.map((user) => ({
+    id: user.id,
+    name: user.name,
+    colour: user.colour,
+    online: user.online,
+    lastSeenAt: user.lastSeenAt,
+  }));
 };
 
 const getPublicState = () => {
   return {
     userPin: state.userPin,
     adminStatus: state.adminStatus,
-    users: state.users,
+    users: getPublicUsers(),
     mutedUsers: state.mutedUsers,
+    secretMutedUsers: state.secretMutedUsers,
   };
+};
+
+const emitState = () => {
+  io.emit('server:state', getPublicState());
+};
+
+const ensureChatForUser = (user) => {
+  if (!state.chats[user.id]) {
+    state.chats[user.id] = [
+      {
+        id: createMessageId(),
+        sender: 'admin',
+        text: 'Ahoj, tady admin. Napiš mi zprávu.',
+        createdAt: Date.now(),
+      },
+    ];
+  }
+};
+
+const createUserForSocket = (socket) => {
+  const userId = String(state.nextUserNumber);
+  const userName = `Uzivatel ${state.nextUserNumber}`;
+
+  state.nextUserNumber += 1;
+
+  const user = {
+    id: userId,
+    name: userName,
+    colour: '#dceaff',
+    online: true,
+    lastSeenAt: Date.now(),
+    socketId: socket.id,
+  };
+
+  state.users.push(user);
+
+  socket.data.role = 'user';
+  socket.data.userId = user.id;
+
+  socket.join('users');
+  socket.join(`user:${user.id}`);
+
+  ensureChatForUser(user);
+
+  return user;
+};
+
+const getUserById = (userId) => {
+  return state.users.find((user) => user.id === userId);
+};
+
+const markUserOnline = (userId, socket) => {
+  state.users = state.users.map((user) =>
+    user.id === userId
+      ? {
+          ...user,
+          online: true,
+          lastSeenAt: Date.now(),
+          socketId: socket.id,
+        }
+      : user
+  );
+
+  socket.data.role = 'user';
+  socket.data.userId = userId;
+
+  socket.join('users');
+  socket.join(`user:${userId}`);
+};
+
+const markUserOfflineBySocket = (socket) => {
+  const userId = socket.data.userId;
+
+  if (!userId) {
+    return;
+  }
+
+  state.users = state.users.map((user) =>
+    user.id === userId
+      ? {
+          ...user,
+          online: false,
+          lastSeenAt: Date.now(),
+          socketId: null,
+        }
+      : user
+  );
+};
+
+const kickUser = (userId, reason = 'Byl jsi vyhozen z roomky.') => {
+  const user = getUserById(userId);
+
+  if (!user) {
+    return;
+  }
+
+  io.to(`user:${userId}`).emit('user:kicked', {
+    userId,
+    reason,
+  });
+
+  state.users = state.users.filter((item) => item.id !== userId);
+
+  delete state.mutedUsers[userId];
+  delete state.secretMutedUsers[userId];
+
+  emitState();
+};
+
+const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => {
+  io.to('users').emit('room:kicked', {
+    reason,
+  });
+
+  state.users = [];
+  state.mutedUsers = {};
+  state.secretMutedUsers = {};
+
+  emitState();
 };
 
 app.get('/', (req, res) => {
   res.json({
     ok: true,
     message: 'Chat-XP server jede!',
+    users: getPublicUsers(),
   });
 });
 
@@ -73,30 +196,37 @@ io.on('connection', (socket) => {
   socket.emit('server:state', getPublicState());
 
   socket.on('auth:checkPin', ({ pin }) => {
-    if (pin === state.adminPin) {
+    const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 4);
+
+    if (cleanPin === state.adminPin) {
+      socket.data.role = 'admin';
+      socket.join('admins');
+
       socket.emit('auth:success', {
         role: 'admin',
       });
+
+      socket.emit('server:state', getPublicState());
+
       return;
     }
 
-    if (pin === state.userPin) {
+    if (cleanPin === state.userPin) {
+      const user = createUserForSocket(socket);
+
       socket.emit('auth:success', {
         role: 'user',
-        userId: '1',
-        userName: 'Uzivatel 1',
+        userId: user.id,
+        userName: user.name,
       });
 
-      state.users = state.users.map((user) =>
-        user.id === '1'
-          ? {
-              ...user,
-              online: true,
-            }
-          : user
-      );
+      socket.emit('chat:messages', {
+        userId: user.id,
+        messages: state.chats[user.id] || [],
+      });
 
-      io.emit('server:state', getPublicState());
+      emitState();
+
       return;
     }
 
@@ -106,55 +236,97 @@ io.on('connection', (socket) => {
   });
 
   socket.on('chat:get', ({ userId }) => {
+    const cleanUserId = String(userId || '');
+
     socket.emit('chat:messages', {
-      userId,
-      messages: state.chats[userId] || [],
+      userId: cleanUserId,
+      messages: state.chats[cleanUserId] || [],
     });
   });
 
   socket.on('chat:send', ({ userId, sender, text }) => {
+    const cleanUserId = String(userId || '');
+    const cleanSender = String(sender || '');
     const trimmedText = String(text || '').trim();
 
-    if (!trimmedText) {
+    if (!cleanUserId || !trimmedText) {
       return;
     }
 
-    const muteUntil = state.mutedUsers[userId] || 0;
+    const user = getUserById(cleanUserId);
 
-    if (sender === 'user' && muteUntil > Date.now()) {
-      socket.emit('chat:muted', {
-        userId,
-        muteUntil,
-      });
+    if (cleanSender === 'user') {
+      if (!user) {
+        socket.emit('user:kicked', {
+          userId: cleanUserId,
+          reason: 'Už nejsi v roomce. Přihlaš se znovu.',
+        });
+        return;
+      }
+
+      if (socket.data.userId !== cleanUserId) {
+        socket.emit('user:kicked', {
+          userId: cleanUserId,
+          reason: 'Neplatné přihlášení. Přihlaš se znovu.',
+        });
+        return;
+      }
+
+      const muteUntil = state.mutedUsers[cleanUserId] || 0;
+
+      if (muteUntil > Date.now()) {
+        socket.emit('chat:muted', {
+          userId: cleanUserId,
+          muteUntil,
+        });
+        return;
+      }
+
+      markUserOnline(cleanUserId, socket);
+    }
+
+    const allowedSenders = ['user', 'admin', 'system'];
+
+    if (!allowedSenders.includes(cleanSender)) {
       return;
     }
 
     const newMessage = {
-      id: Date.now(),
-      sender,
+      id: createMessageId(),
+      sender: cleanSender,
       text: trimmedText,
       createdAt: Date.now(),
     };
 
-    if (!state.chats[userId]) {
-      state.chats[userId] = [];
+    if (!state.chats[cleanUserId]) {
+      state.chats[cleanUserId] = [];
     }
 
-    state.chats[userId].push(newMessage);
+    state.chats[cleanUserId].push(newMessage);
 
     io.emit('chat:messages', {
-      userId,
-      messages: state.chats[userId],
+      userId: cleanUserId,
+      messages: state.chats[cleanUserId],
     });
+
+    emitState();
   });
 
   socket.on('admin:setStatus', ({ status }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
     state.adminStatus = status === 'on' ? 'on' : 'off';
 
-    io.emit('server:state', getPublicState());
+    emitState();
   });
 
   socket.on('admin:setUserPin', ({ pin }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
     const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 4);
 
     if (cleanPin.length !== 4) {
@@ -165,12 +337,17 @@ io.on('connection', (socket) => {
     }
 
     state.userPin = cleanPin;
-    state.users = [];
 
-    io.emit('server:state', getPublicState());
+    kickAllUsers('PIN roomky byl změněn. Přihlaš se znovu.');
+
+    emitState();
   });
 
   socket.on('admin:setAdminPin', ({ pin }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
     const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 4);
 
     if (cleanPin.length !== 4) {
@@ -182,18 +359,23 @@ io.on('connection', (socket) => {
 
     state.adminPin = cleanPin;
 
-    io.emit('server:state', getPublicState());
+    emitState();
   });
 
   socket.on('admin:renameUser', ({ userId, name }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '');
     const cleanName = String(name || '').trim();
 
-    if (!cleanName) {
+    if (!cleanUserId || !cleanName) {
       return;
     }
 
     state.users = state.users.map((user) =>
-      user.id === userId
+      user.id === cleanUserId
         ? {
             ...user,
             name: cleanName,
@@ -201,48 +383,131 @@ io.on('connection', (socket) => {
         : user
     );
 
-    io.emit('server:state', getPublicState());
+    emitState();
   });
 
   socket.on('admin:kickUser', ({ userId }) => {
-    state.users = state.users.filter((user) => user.id !== userId);
-
-    io.emit('server:state', getPublicState());
-  });
-
-  socket.on('admin:muteUser', ({ userId, milliseconds }) => {
-    const duration = Number(milliseconds || 0);
-
-    if (!duration) {
+    if (socket.data.role !== 'admin') {
       return;
     }
 
-    state.mutedUsers[userId] = Date.now() + duration;
+    const cleanUserId = String(userId || '');
 
-    io.emit('server:state', getPublicState());
+    if (!cleanUserId) {
+      return;
+    }
+
+    kickUser(cleanUserId, 'Byl jsi vyhozen adminem z roomky.');
+  });
+
+  socket.on('admin:muteUser', ({ userId, milliseconds }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '');
+    const duration = Number(milliseconds || 0);
+
+    if (!cleanUserId || !duration) {
+      return;
+    }
+
+    state.mutedUsers[cleanUserId] = Date.now() + duration;
+
+    emitState();
   });
 
   socket.on('admin:unmuteUser', ({ userId }) => {
-    delete state.mutedUsers[userId];
+    if (socket.data.role !== 'admin') {
+      return;
+    }
 
-    io.emit('server:state', getPublicState());
+    const cleanUserId = String(userId || '');
+
+    if (!cleanUserId) {
+      return;
+    }
+
+    delete state.mutedUsers[cleanUserId];
+
+    emitState();
+  });
+
+  socket.on('admin:secretMuteUser', ({ userId, enabled }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '');
+
+    if (!cleanUserId) {
+      return;
+    }
+
+    state.secretMutedUsers[cleanUserId] = Boolean(enabled);
+
+    emitState();
   });
 
   socket.on('admin:setUserColour', ({ userId, colour }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '');
+    const cleanColour = String(colour || '').trim();
+
+    if (!cleanUserId || !cleanColour) {
+      return;
+    }
+
     state.users = state.users.map((user) =>
-      user.id === userId
+      user.id === cleanUserId
         ? {
             ...user,
-            colour,
+            colour: cleanColour,
           }
         : user
     );
 
-    io.emit('server:state', getPublicState());
+    emitState();
+  });
+
+  socket.on('notifications:registerToken', ({ token, role, userId }) => {
+    const cleanToken = String(token || '').trim();
+
+    if (!cleanToken) {
+      return;
+    }
+
+    socket.data.pushToken = cleanToken;
+
+    if (role === 'admin') {
+      socket.data.role = 'admin';
+      socket.join('admins');
+    }
+
+    if (role === 'user' && userId) {
+      socket.data.role = 'user';
+      socket.data.userId = String(userId);
+      socket.join('users');
+      socket.join(`user:${String(userId)}`);
+    }
+
+    console.log('Push token registered:', {
+      socketId: socket.id,
+      role,
+      userId,
+      token: cleanToken.slice(0, 20) + '...',
+    });
   });
 
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
+
+    markUserOfflineBySocket(socket);
+
+    emitState();
   });
 });
 
