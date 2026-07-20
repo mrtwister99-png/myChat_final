@@ -1,0 +1,257 @@
+diff --git a/src/socket.js b/src/socket.js
+index 0000000..1111111 100644
+--- a/src/socket.js
++++ b/src/socket.js
+@@ -1 +1,14 @@
+-import { io } from 'socket.io-client';/*** Sem dej IP svého počítače.* POZOR: z telefonu v Expo Go nepoužívej localhost.*/const SERVER_URL = 'http://192.168.229.197:3001';export const socket = io(SERVER_URL, {transports: ['websocket'],autoConnect: true,});
++import { io } from 'socket.io-client';
++
++/**
++ * Lokální server na notebooku.
++ * POZOR: v Expo Go na telefonu nepoužívej localhost.
++ * Telefon musí být na stejné Wi-Fi jako notebook.
++ */
++const SERVER_URL = 'http://192.168.229.197:3001';
++
++export const socket = io(SERVER_URL, {
++  transports: ['websocket'],
++  autoConnect: true,
++  reconnection: true,
++});
+diff --git a/src/screens/uzivatelPin.js b/src/screens/uzivatelPin.js
+index 2222222..3333333 100644
+--- a/src/screens/uzivatelPin.js
++++ b/src/screens/uzivatelPin.js
+@@ -13,6 +13,7 @@ import {
+   View,
+ } from 'react-native';
+ import { SafeAreaView } from 'react-native-safe-area-context';
++import { socket } from '../socket';
+ 
+ const CURRENT_USER_ID = '1';
+ const CURRENT_USER_NAME = 'Uzivatel 1';
+@@ -59,6 +60,15 @@ const formatMuteTimeLeft = (muteUntil) => {
+   return `${totalDays} dní`;
+ };
+ 
++const formatMessageTime = (timestamp) => {
++  const date = timestamp ? new Date(timestamp) : new Date();
++  const hours = String(date.getHours()).padStart(2, '0');
++  const minutes = String(date.getMinutes()).padStart(2, '0');
++  const seconds = String(date.getSeconds()).padStart(2, '0');
++
++  return `${hours}:${minutes}:${seconds}`;
++};
++
+ const getInitialMessages = () => {
+   const chats = getGlobalChats();
+ 
+@@ -86,6 +96,7 @@ const UzivatelPin = ({ navigation }) => {
+   const [nowTick, setNowTick] = useState(Date.now());
+   const [blockedInfo, setBlockedInfo] = useState('');
+   const [helperMessageIndex, setHelperMessageIndex] = useState(0);
++  const [serverMutedUsers, setServerMutedUsers] = useState(getGlobalMutedUsers());
+ 
+   const isAdminOnline = adminStatus === 'on';
+   const currentHelperMessage = HELPER_MESSAGES[helperMessageIndex];
+@@ -93,7 +104,7 @@ const UzivatelPin = ({ navigation }) => {
+   const getMuteUntil = () => {
+     const mutedUsers = getGlobalMutedUsers();
+-    return mutedUsers[CURRENT_USER_ID] || 0;
++    return serverMutedUsers[CURRENT_USER_ID] || mutedUsers[CURRENT_USER_ID] || 0;
+   };
+ 
+   const muteUntil = getMuteUntil();
+@@ -104,9 +115,13 @@ const UzivatelPin = ({ navigation }) => {
+   const refreshScreenData = () => {
+     const chats = getGlobalChats();
+ 
+-    setAdminStatus(getAdminStatus());
+-    setMessages(chats[CURRENT_USER_ID] || getInitialMessages());
+     setNowTick(Date.now());
++
++    // Fallback pro offline test bez serveru. Když socket běží, data chodí ze serveru.
++    if (!socket.connected) {
++      setAdminStatus(getAdminStatus());
++      setMessages(chats[CURRENT_USER_ID] || getInitialMessages());
++    }
+   };
+ 
+   useEffect(() => {
+@@ -120,6 +135,48 @@ const UzivatelPin = ({ navigation }) => {
+     return () => clearInterval(interval);
+   }, []);
+ 
++  useEffect(() => {
++    const handleServerState = (serverState) => {
++      if (serverState?.adminStatus) {
++        setAdminStatus(serverState.adminStatus);
++        globalThis.CUSIIK_ADMIN_STATUS = serverState.adminStatus;
++      }
++
++      if (serverState?.mutedUsers) {
++        setServerMutedUsers(serverState.mutedUsers);
++        globalThis.CUSIIK_MUTED_USERS = serverState.mutedUsers;
++      }
++
++      setNowTick(Date.now());
++    };
++
++    const handleChatMessages = ({ userId, messages: nextMessages }) => {
++      if (userId !== CURRENT_USER_ID) {
++        return;
++      }
++
++      const chats = getGlobalChats();
++      chats[CURRENT_USER_ID] = nextMessages || [];
++      setMessages(nextMessages || []);
++    };
++
++    const handleMuted = ({ userId, muteUntil: nextMuteUntil }) => {
++      if (userId !== CURRENT_USER_ID) {
++        return;
++      }
++
++      setBlockedInfo(
++        `Nemůžeš psát. Jsi umlčený ještě na ${formatMuteTimeLeft(nextMuteUntil)}.`
++      );
++      setNowTick(Date.now());
++    };
++
++    socket.on('server:state', handleServerState);
++    socket.on('chat:messages', handleChatMessages);
++    socket.on('chat:muted', handleMuted);
++
++    if (!socket.connected) {
++      socket.connect();
++    }
++
++    socket.emit('chat:get', { userId: CURRENT_USER_ID });
++
++    return () => {
++      socket.off('server:state', handleServerState);
++      socket.off('chat:messages', handleChatMessages);
++      socket.off('chat:muted', handleMuted);
++    };
++  }, []);
++
+   useEffect(() => {
+     const helperInterval = setInterval(() => {
+       setHelperMessageIndex((currentIndex) => {
+@@ -143,6 +200,11 @@ const UzivatelPin = ({ navigation }) => {
+     return unsubscribe;
+   }, [navigation]);
+ 
++  const goToLogin = () => {
++    setBlockedInfo('');
++    navigation.replace('PinEntry');
++  };
++
+   const saveMessages = (nextMessages) => {
+     const chats = getGlobalChats();
+ 
+@@ -183,13 +245,21 @@ const UzivatelPin = ({ navigation }) => {
+       createdAt: Date.now(),
+     };
+ 
+-    const nextMessages = [...messages, newMessage];
++    if (socket.connected) {
++      socket.emit('chat:send', {
++        userId: CURRENT_USER_ID,
++        sender: 'user',
++        text: trimmedMessage,
++      });
+ 
+-    saveMessages(nextMessages);
+-    setMessage('');
+-    setBlockedInfo('');
++      setMessage('');
++      setBlockedInfo('');
++      return;
++    }
++
++    const nextMessages = [...messages, newMessage];
+ 
++    saveMessages(nextMessages);
+     setTimeout(() => {
+       scrollViewRef.current?.scrollToEnd({ animated: true });
+     }, 100);
+@@ -228,9 +298,12 @@ const UzivatelPin = ({ navigation }) => {
+               <View style={[styles.windowButton, styles.closeButton]}>
+-                <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
+-              </View>
++                <Pressable style={styles.closePressable} onPress={goToLogin}>
++                  <Text style={[styles.windowButtonText, styles.closeButtonText]}>
++                    ×
++                  </Text>
++                </Pressable>
++              </View>
+             </View>
+           </View>
+@@ -263,10 +336,12 @@ const UzivatelPin = ({ navigation }) => {
+                 const isUser = item.sender === 'user';
+                 const isSystem = item.sender === 'system';
++                const messageTime = formatMessageTime(item.createdAt);
+ 
+                 if (isSystem) {
+                   return (
+                     <View key={item.id} style={styles.systemMessageRow}>
+                       <View style={styles.systemMessageBox}>
+                         <Text style={styles.systemMessageText}>{item.text}</Text>
++                        <Text style={styles.systemMessageTime}>{messageTime}</Text>
+                       </View>
+                     </View>
+                   );
+@@ -296,6 +371,8 @@ const UzivatelPin = ({ navigation }) => {
+                               {isAdminOnline ? 'on' : 'off'}
+                             </Text>
+                           </>
+                         ) : null}
++
++                        <Text style={styles.messageTime}>{messageTime}</Text>
+                       </View>
+ 
+                       <Text style={styles.messageText}>{item.text}</Text>
+@@ -446,6 +523,12 @@ const styles = StyleSheet.create({
+     lineHeight: 19,
+   },
+ 
++  closePressable: {
++    width: '100%',
++    height: '100%',
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++
+   muteBanner: {
+     backgroundColor: '#ffd7d7',
+     borderBottomWidth: 1,
+@@ -561,6 +644,13 @@ const styles = StyleSheet.create({
+     textTransform: 'uppercase',
+   },
+ 
++  messageTime: {
++    color: '#555555',
++    fontSize: 10,
++    fontWeight: '900',
++    marginLeft: 8,
++  },
++
+   messageText: {
+     color: '#000000',
+     fontSize: 14,
+@@ -586,6 +676,13 @@ const styles = StyleSheet.create({
+     textAlign: 'center',
+   },
+ 
++  systemMessageTime: {
++    color: '#6b5d00',
++    fontSize: 10,
++    fontWeight: '900',
++    marginTop: 3,
++    textAlign: 'center',
++  },
++
+   blockedInfoBox: {
+     backgroundColor: '#fff8d7',
+     borderWidth: 1,
