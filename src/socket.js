@@ -3,11 +3,10 @@
 import { io } from 'socket.io-client';
 
 /**
- * Lokální server na notebooku.
- * Telefon v Expo Go musí být na stejné Wi-Fi jako notebook.
- * Nepoužívej localhost, protože na telefonu by localhost znamenal telefon.
+ * Railway server.
+ * Lokální IP už se nepoužívá.
  */
-const SERVER_URL = 'http://192.168.229.197:3001';
+const SERVER_URL = 'https://mychatfinal-production.up.railway.app';
 
 export const socket = io(SERVER_URL, {
   transports: ['websocket'],
