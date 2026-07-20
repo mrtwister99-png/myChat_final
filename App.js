@@ -18,10 +18,19 @@ const App = () => {
   useEffect(() => {
     const init = async () => {
       // načti posledního uživatele
-      const lastUserId = await AsyncStorage.getItem('lastUserId');
+      const [lastUserId, lastUserName] = await Promise.all([
+        AsyncStorage.getItem('lastUserId'),
+        AsyncStorage.getItem('lastUserName'),
+      ]);
+
       if (lastUserId) {
         globalThis.CUSIIK_LAST_USER_ID = lastUserId;
       }
+
+      if (lastUserName) {
+        globalThis.CUSIIK_CURRENT_USER_NAME = lastUserName;
+      }
+
       // push token
       const token = await registerForPushNotificationsAsync();
       if (token) {
@@ -34,10 +43,16 @@ const App = () => {
   useEffect(() => {
     // FIX CHYBA 1 - kick musí klient poslouchat
     const handleKick = async ({ reason }) => {
+      if (globalThis.CUSIIK_CURRENT_ROLE === 'admin') {
+        return;
+      }
+
       console.log('KICK:', reason);
-      await AsyncStorage.removeItem('lastUserId');
+      await AsyncStorage.multiRemove(['lastUserId', 'lastUserName']);
       globalThis.CUSIIK_LAST_USER_ID = null;
       globalThis.CUSIIK_CURRENT_USER_ID = null;
+      globalThis.CUSIIK_CURRENT_USER_NAME = null;
+      globalThis.CUSIIK_CURRENT_ROLE = null;
       if (navigationRef.isReady()) {
         navigationRef.reset({
           index: 0,

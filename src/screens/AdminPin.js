@@ -1,6 +1,6 @@
 // src/screens/AdminPin.js
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
+import { showLocalMessageNotification } from '../notifications';
 
 const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
 const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '8831';
@@ -164,31 +165,9 @@ const getUserMessageCount = (userId) => {
 };
 
 const AdminPin = ({ navigation }) => {
+  const isFirstChatSyncRef = useRef(true);
+  const usersRef = useRef([]);
   const [users, setUsers] = useState([
-    {
-      id: '1',
-      name: 'Uzivatel 1',
-      status: 'online',
-      online: true,
-      lastSeenAt: Date.now(),
-      colour: '#dceaff',
-    },
-    {
-      id: '2',
-      name: 'Uzivatel 2',
-      status: 'online',
-      online: false,
-      lastSeenAt: Date.now() - 7 * 60 * 1000,
-      colour: '#dceaff',
-    },
-    {
-      id: '3',
-      name: 'Host 224',
-      status: 'online',
-      online: false,
-      lastSeenAt: Date.now() - 2 * 60 * 60 * 1000,
-      colour: '#dceaff',
-    },
   ]);
 
   const [nowTick, setNowTick] = useState(Date.now());
@@ -208,8 +187,6 @@ const AdminPin = ({ navigation }) => {
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [settingsScreen, setSettingsScreen] = useState('menu');
 
-  const [userToKick, setUserToKick] = useState(null);
-
   const [newAdminPin, setNewAdminPin] = useState('');
   const [adminPinError, setAdminPinError] = useState('');
 
@@ -217,7 +194,6 @@ const AdminPin = ({ navigation }) => {
   const [actionUser, setActionUser] = useState(null);
   const [muteModalVisible, setMuteModalVisible] = useState(false);
   const [colourModalVisible, setColourModalVisible] = useState(false);
-  const [kickConfirmVisible, setKickConfirmVisible] = useState(false);
 
   const [readCounts, setReadCounts] = useState(getGlobalReadCounts());
   const [lastActionText, setLastActionText] = useState('');
@@ -226,6 +202,10 @@ const AdminPin = ({ navigation }) => {
   );
 
   const isAdminOnline = adminStatus === 'on';
+
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -238,6 +218,7 @@ const AdminPin = ({ navigation }) => {
   useEffect(() => {
     const handleConnect = () => {
       setConnectionText('Server online');
+      socket.emit('state:get');
     };
 
     const handleDisconnect = () => {
@@ -269,7 +250,8 @@ const AdminPin = ({ navigation }) => {
             ...user,
             online: Boolean(user.online),
             lastSeenAt: user.lastSeenAt || user.lastSeen || Date.now(),
-            colour: user.colour || '#dceaff',
+            silhouetteColour: user.silhouetteColour || user.colour || '#0b3d91',
+            bgColour: user.bgColour || '#ece9d8',
           }))
         );
       }
@@ -279,8 +261,30 @@ const AdminPin = ({ navigation }) => {
 
     const handleChatMessages = ({ userId, messages }) => {
       const chats = getGlobalChats();
+      const previousMessages = chats[userId] || [];
+      const previousUserMessages = previousMessages.filter(
+        (item) => item.sender === 'user'
+      ).length;
+      const safeMessages = messages || [];
+      const nextUserMessages = safeMessages.filter(
+        (item) => item.sender === 'user'
+      ).length;
 
-      chats[userId] = messages || [];
+      chats[userId] = safeMessages;
+
+      if (!isFirstChatSyncRef.current && nextUserMessages > previousUserMessages) {
+        const user = usersRef.current.find((item) => String(item.id) === String(userId));
+
+        showLocalMessageNotification({
+          title: user ? `Nová zpráva: ${user.name}` : 'Nová zpráva od uživatele',
+          body: 'Otevři chat v admin panelu.',
+        });
+      }
+
+      if (isFirstChatSyncRef.current) {
+        isFirstChatSyncRef.current = false;
+      }
+
       setReadCounts({ ...getGlobalReadCounts() });
       setNowTick(Date.now());
     };
@@ -293,6 +297,8 @@ const AdminPin = ({ navigation }) => {
 
     if (!socket.connected) {
       socket.connect();
+    } else {
+      socket.emit('state:get');
     }
 
     return () => {
@@ -348,6 +354,10 @@ const AdminPin = ({ navigation }) => {
   const openUserMenu = (user) => {
     setActionUser(user);
     setUserMenuVisible(true);
+  };
+
+  const goToPinEntry = () => {
+    navigation.replace('PinEntry');
   };
 
   const closeUserMenu = () => {
@@ -437,7 +447,6 @@ const AdminPin = ({ navigation }) => {
     }
 
     globalThis.CUSIIK_USER_PIN = cleanedPin;
-
     setCurrentUserPin(cleanedPin);
     setUsers([]);
 
@@ -456,7 +465,6 @@ const AdminPin = ({ navigation }) => {
 
   const openSettings = () => {
     setSettingsScreen('menu');
-    setUserToKick(null);
     setNewAdminPin('');
     setAdminPinError('');
     setSettingsModalVisible(true);
@@ -465,50 +473,52 @@ const AdminPin = ({ navigation }) => {
   const closeSettings = () => {
     setSettingsModalVisible(false);
     setSettingsScreen('menu');
-    setUserToKick(null);
     setNewAdminPin('');
     setAdminPinError('');
   };
 
   const goBackToSettingsMenu = () => {
     setSettingsScreen('menu');
-    setUserToKick(null);
     setNewAdminPin('');
     setAdminPinError('');
   };
 
   const chooseUserToKick = (user) => {
-    setUserToKick(user);
-    setSettingsScreen('kickConfirm');
+    kickUserById(user, { newPin: '0008' });
+    goBackToSettingsMenu();
   };
 
-  const kickUserById = (user) => {
+  const kickUserById = (user, options = {}) => {
     if (!user) {
       return;
     }
+
+    const targetPin = String(options.newPin || '').replace(/[^0-9]/g, '').slice(0, 4);
 
     setUsers((currentUsers) =>
       currentUsers.filter((currentUser) => currentUser.id !== user.id)
     );
 
+    if (targetPin.length === 4) {
+      globalThis.CUSIIK_USER_PIN = targetPin;
+      setCurrentUserPin(targetPin);
+    }
+
     if (socket.connected) {
       socket.emit('admin:kickUser', {
         userId: user.id,
+        newPin: targetPin || undefined,
       });
     }
 
+    if (targetPin.length === 4) {
+      setLastActionText(
+        `Uživatel ${user.name} byl kicknut. Nový PIN je ${targetPin}.`
+      );
+      return;
+    }
+
     setLastActionText(`Uživatel ${user.name} byl kicknut z roomky.`);
-  };
-
-  const confirmKickUser = () => {
-    kickUserById(userToKick);
-    goBackToSettingsMenu();
-  };
-
-  const confirmActionKickUser = () => {
-    kickUserById(actionUser);
-    setKickConfirmVisible(false);
-    closeUserMenu();
   };
 
   const saveNewAdminPin = () => {
@@ -602,7 +612,7 @@ const AdminPin = ({ navigation }) => {
         currentUser.id === user.id
           ? {
               ...currentUser,
-              colour,
+              silhouetteColour: colour,
             }
           : currentUser
       )
@@ -615,7 +625,7 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setLastActionText(`Barva uživatele ${user.name} byla změněna.`);
+    setLastActionText(`Obrys uživatele ${user.name} byl změněn.`);
     setColourModalVisible(false);
     closeUserMenu();
   };
@@ -634,7 +644,15 @@ const AdminPin = ({ navigation }) => {
             </View>
           ) : (
             <ScrollView style={styles.settingsList}>
-              {users.map((user) => (
+              {[...users]
+                .sort((a, b) => {
+                  if (a.online !== b.online) {
+                    return a.online ? -1 : 1;
+                  }
+
+                  return (b.lastSeenAt || 0) - (a.lastSeenAt || 0);
+                })
+                .map((user) => (
                 <Pressable
                   key={user.id}
                   style={({ pressed }) => [
@@ -646,7 +664,13 @@ const AdminPin = ({ navigation }) => {
                   <View
                     style={[
                       styles.smallUserIconBox,
-                      { backgroundColor: user.colour },
+                      {
+                        backgroundColor: user.bgColour || '#dceaff',
+                        borderTopColor: user.silhouetteColour || '#0b3d91',
+                        borderLeftColor: user.silhouetteColour || '#0b3d91',
+                        borderRightColor: user.silhouetteColour || '#0b3d91',
+                        borderBottomColor: user.silhouetteColour || '#0b3d91',
+                      },
                     ]}
                   >
                     <Text style={styles.smallUserIcon}>👤</Text>
@@ -672,50 +696,6 @@ const AdminPin = ({ navigation }) => {
               onPress={goBackToSettingsMenu}
             >
               <Text style={styles.modalButtonText}>Zpět</Text>
-            </Pressable>
-          </View>
-        </View>
-      );
-    }
-
-    if (settingsScreen === 'kickConfirm') {
-      return (
-        <View style={styles.modalBody}>
-          <Text style={styles.confirmIcon}>⚠️</Text>
-
-          <Text style={styles.confirmTitle}>
-            Opravdu chceš kicknout uživatele?
-          </Text>
-
-          <Text style={styles.confirmUserName}>
-            {userToKick ? userToKick.name : ''}
-          </Text>
-
-          <View style={styles.warningBox}>
-            <Text style={styles.warningText}>
-              Uživatel bude odstraněn ze seznamu uživatelů v roomce.
-            </Text>
-          </View>
-
-          <View style={styles.modalButtons}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={confirmKickUser}
-            >
-              <Text style={styles.modalButtonText}>Ano, kicknout</Text>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={() => setSettingsScreen('kick')}
-            >
-              <Text style={styles.modalButtonText}>Ne</Text>
             </Pressable>
           </View>
         </View>
@@ -816,7 +796,7 @@ const AdminPin = ({ navigation }) => {
         >
           <Text style={styles.settingsOptionTitle}>Kick uživatele</Text>
           <Text style={styles.settingsOptionText}>
-            Vybereš uživatele a potvrdíš jeho kick.
+            Klikneš na uživatele a hned ho kickneš (PIN 0008).
           </Text>
         </Pressable>
 
@@ -879,7 +859,9 @@ const AdminPin = ({ navigation }) => {
               </View>
 
               <View style={[styles.windowButton, styles.closeButton]}>
-                <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
+                <Pressable style={styles.closePressable} onPress={goToPinEntry}>
+                  <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
+                </Pressable>
               </View>
             </View>
           </View>
@@ -902,6 +884,7 @@ const AdminPin = ({ navigation }) => {
                   <Text style={styles.pinText}>{isAdminOnline ? 'ON' : 'OFF'}</Text>
                 </Text>
               </View>
+
             </View>
 
             <View style={styles.usersPanel}>
@@ -926,11 +909,22 @@ const AdminPin = ({ navigation }) => {
                     </Text>
                   </View>
                 ) : (
-                  users.map((user) => {
+                  [...users]
+                    .sort((a, b) => {
+                      if (a.online !== b.online) {
+                        return a.online ? -1 : 1;
+                      }
+
+                      return (b.lastSeenAt || 0) - (a.lastSeenAt || 0);
+                    })
+                    .map((user) => {
                     const unreadCount = getUnreadCount(user.id);
 
                     return (
-                      <View key={user.id} style={styles.userRow}>
+                      <View
+                        key={user.id}
+                        style={[styles.userRow, { backgroundColor: user.bgColour || '#ece9d8' }]}
+                      >
                         <Pressable
                           style={({ pressed }) => [
                             styles.userInfo,
@@ -941,7 +935,13 @@ const AdminPin = ({ navigation }) => {
                           <View
                             style={[
                               styles.userIconBox,
-                              { backgroundColor: user.colour },
+                              {
+                                backgroundColor: user.bgColour || '#dceaff',
+                                borderTopColor: user.silhouetteColour || '#0b3d91',
+                                borderLeftColor: user.silhouetteColour || '#0b3d91',
+                                borderRightColor: user.silhouetteColour || '#0b3d91',
+                                borderBottomColor: user.silhouetteColour || '#0b3d91',
+                              },
                             ]}
                           >
                             <Text style={styles.userIcon}>👤</Text>
@@ -1081,13 +1081,13 @@ const AdminPin = ({ navigation }) => {
                     pressed && styles.xpButtonPressed,
                   ]}
                   onPress={() => {
-                    setKickConfirmVisible(true);
-                    setUserMenuVisible(false);
+                    kickUserById(actionUser, { newPin: '0008' });
+                    closeUserMenu();
                   }}
                 >
                   <Text style={styles.settingsOptionTitle}>Kick</Text>
                   <Text style={styles.settingsOptionText}>
-                    Vyhodí uživatele z roomky.
+                    Vyhodí uživatele z roomky a nastaví PIN 0008.
                   </Text>
                 </Pressable>
 
@@ -1114,9 +1114,9 @@ const AdminPin = ({ navigation }) => {
                     setUserMenuVisible(false);
                   }}
                 >
-                  <Text style={styles.settingsOptionTitle}>Změna barvy</Text>
+                  <Text style={styles.settingsOptionTitle}>Změna obrysu</Text>
                   <Text style={styles.settingsOptionText}>
-                    Změní barvu ikonky vybraného uživatele.
+                    Změní obrys uživatele, který uvidí admin i uživatel.
                   </Text>
                 </Pressable>
               </View>
@@ -1177,7 +1177,7 @@ const AdminPin = ({ navigation }) => {
           <View style={styles.modalOverlay}>
             <View style={styles.modalWindow}>
               <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>Změna barvy</Text>
+                <Text style={styles.modalTitleText}>Změna obrysu</Text>
 
                 <Pressable
                   style={styles.modalCloseButton}
@@ -1188,7 +1188,7 @@ const AdminPin = ({ navigation }) => {
               </View>
 
               <View style={styles.modalBody}>
-                <Text style={styles.modalLabel}>Vyber barvu pro uživatele:</Text>
+                <Text style={styles.modalLabel}>Vyber barvu obrysu pro uživatele:</Text>
                 <Text style={styles.selectedUserText}>
                   {actionUser ? actionUser.name : ''}
                 </Text>
@@ -1212,62 +1212,6 @@ const AdminPin = ({ navigation }) => {
                       <Text style={styles.colourButtonText}>{colour.label}</Text>
                     </Pressable>
                   ))}
-                </View>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        <Modal
-          visible={kickConfirmVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setKickConfirmVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalWindow}>
-              <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>Kick uživatele</Text>
-
-                <Pressable
-                  style={styles.modalCloseButton}
-                  onPress={() => setKickConfirmVisible(false)}
-                >
-                  <Text style={styles.modalCloseButtonText}>×</Text>
-                </Pressable>
-              </View>
-
-              <View style={styles.modalBody}>
-                <Text style={styles.confirmIcon}>⚠️</Text>
-
-                <Text style={styles.confirmTitle}>
-                  Opravdu chceš kicknout uživatele?
-                </Text>
-
-                <Text style={styles.confirmUserName}>
-                  {actionUser ? actionUser.name : ''}
-                </Text>
-
-                <View style={styles.modalButtons}>
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={confirmActionKickUser}
-                  >
-                    <Text style={styles.modalButtonText}>Ano, kicknout</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={() => setKickConfirmVisible(false)}
-                  >
-                    <Text style={styles.modalButtonText}>Ne</Text>
-                  </Pressable>
                 </View>
               </View>
             </View>
@@ -1348,7 +1292,7 @@ const AdminPin = ({ navigation }) => {
               </View>
 
               <View style={styles.modalBody}>
-                <Text style={styles.modalLabel}>Nový PIN pro uživatele:</Text>
+                <Text style={styles.modalLabel}>Nový 4místný PIN pro uživatele:</Text>
 
                 <TextInput
                   value={newPin}
@@ -1383,7 +1327,7 @@ const AdminPin = ({ navigation }) => {
                     ]}
                     onPress={saveChangeAndKickUsers}
                   >
-                    <Text style={styles.modalButtonText}>Uložit</Text>
+                    <Text style={styles.modalButtonText}>Uložit + kicknout</Text>
                   </Pressable>
 
                   <Pressable
@@ -1525,6 +1469,13 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 18,
     lineHeight: 19,
+  },
+
+  closePressable: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   body: {

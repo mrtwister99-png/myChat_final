@@ -9,6 +9,30 @@ const DEFAULT_ADMIN_PIN = '8831';
 const USER_SCREEN = 'UzivatelPin';
 const ADMIN_SCREEN = 'AdminPin';
 
+const LOCAL_RANDOM_USER_NAMES = [
+  'Jiří', 'Jan', 'Petr', 'Josef', 'Pavel', 'Martin', 'Tomáš', 'Jaroslav', 'Miroslav', 'Zdeněk',
+  'Václav', 'Michal', 'František', 'Jakub', 'Milan', 'Karel', 'Lukáš', 'David', 'Vladimír', 'Ondřej',
+  'Ladislav', 'Roman', 'Marek', 'Stanislav', 'Daniel', 'Radek', 'Antonín', 'Vojtěch', 'Filip', 'Adam',
+  'Matěj', 'Dominik', 'Aleš', 'Miloslav', 'Jaromír', 'Patrik', 'Libor', 'Jindřich', 'Vlastimil', 'Miloš',
+  'Lubomír', 'Štěpán', 'Oldřich', 'Rudolf', 'Matyáš', 'Ivan', 'Robert', 'Luboš', 'Radim', 'Richard',
+  'Vít', 'Bohumil', 'Šimon', 'Rostislav', 'Ivo', 'Luděk', 'Dušan', 'Kamil', 'Michael', 'Vladislav',
+  'Zbyněk', 'Viktor', 'Bohuslav', 'Kryštof', 'Alois', 'René', 'Vítězslav', 'Tadeáš', 'Štefan', 'Eduard',
+  'Marcel', 'Ján', 'Jozef', 'Samuel', 'Dalibor', 'Emil', 'Radomír', 'Ludvík', 'Denis', 'Vilém',
+  'Tobiáš', 'Jana', 'Marie', 'Eva', 'Hana', 'Anna', 'Lenka', 'Kateřina', 'Lucie', 'Věra',
+  'Alena', 'Petra', 'Veronika', 'Jaroslava', 'Tereza', 'Martina', 'Michaela', 'Jitka', 'Helena', 'Ludmila',
+  'Zdeňka', 'Ivana', 'Monika', 'Eliška', 'Zuzana', 'Markéta', 'Jarmila', 'Barbora', 'Jiřina', 'Marcela',
+  'Kristýna', 'Dana', 'Dagmar', 'Adéla', 'Pavla', 'Vlasta', 'Miroslava', 'Andrea', 'Irena', 'Božena',
+  'Klára', 'Libuše', 'Marta', 'Šárka', 'Nikola', 'Karolína', 'Iveta', 'Pavlína', 'Natálie', 'Olga',
+  'Blanka', 'Gabriela', 'Renata', 'Aneta', 'Simona', 'Růžena', 'Radka', 'Daniela', 'Denisa', 'Iva',
+  'Milada', 'Milena', 'Romana', 'Miloslava', 'Miluše', 'Ilona', 'Anežka', 'Soňa', 'Kamila', 'Stanislava',
+  'Nela', 'Vladimíra', 'Naděžda', 'Květoslava', 'Danuse', 'Vendula', 'Drahomíra', 'Julie', 'Jindřiška', 'Emilie',
+  'Viktorie',
+];
+
+const getRandomLocalUserName = () => {
+  return LOCAL_RANDOM_USER_NAMES[Math.floor(Math.random() * LOCAL_RANDOM_USER_NAMES.length)] || 'Uživatel';
+};
+
 const PinEntry = ({ navigation }) => {
   const [pin, setPin] = useState('');
   const [errorText, setErrorText] = useState('');
@@ -20,6 +44,41 @@ const PinEntry = ({ navigation }) => {
   useEffect(() => {
     const t = setTimeout(() => inputRef.current?.focus(), 400);
     return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const restoreLastUserIdentity = async () => {
+      try {
+        const [storedLastUserId, storedLastUserName] = await Promise.all([
+          AsyncStorage.getItem('lastUserId'),
+          AsyncStorage.getItem('lastUserName'),
+        ]);
+
+        if (!isActive) {
+          return;
+        }
+
+        globalThis.CUSIIK_LAST_USER_ID = storedLastUserId || null;
+
+        if (storedLastUserName) {
+          globalThis.CUSIIK_CURRENT_USER_NAME = storedLastUserName;
+        }
+
+        if (socket.connected && storedLastUserId) {
+          socket.emit('client:ready', { lastUserId: storedLastUserId });
+        }
+      } catch (error) {
+        globalThis.CUSIIK_LAST_USER_ID = globalThis.CUSIIK_LAST_USER_ID || null;
+      }
+    };
+
+    restoreLastUserIdentity();
+
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -38,10 +97,19 @@ const PinEntry = ({ navigation }) => {
 
       // FIX 2 + 3 - ulož id a pošli push token
       if (payload?.role === 'user') {
+        globalThis.CUSIIK_CURRENT_ROLE = 'user';
         globalThis.CUSIIK_CURRENT_USER_ID = payload.userId;
         globalThis.CUSIIK_CURRENT_USER_NAME = payload.userName;
-        await AsyncStorage.setItem('lastUserId', payload.userId);
+        await AsyncStorage.multiSet([
+          ['lastUserId', payload.userId],
+          ['lastUserName', payload.userName || ''],
+        ]);
         globalThis.CUSIIK_LAST_USER_ID = payload.userId;
+      }
+
+      if (payload?.role === 'admin') {
+        globalThis.CUSIIK_CURRENT_ROLE = 'admin';
+        globalThis.CUSIIK_CURRENT_USER_ID = null;
       }
 
       if (globalThis.CUSIIK_EXPO_PUSH_TOKEN) {
@@ -58,7 +126,14 @@ const PinEntry = ({ navigation }) => {
     };
 
     const handleAuthError = (payload) => { setIsCheckingPin(false); setErrorText(payload?.message || 'Špatný PIN.'); shakeWindow(); };
-    const handleKicked = async () => { await AsyncStorage.removeItem('lastUserId'); globalThis.CUSIIK_LAST_USER_ID=null; navigation.replace('PinEntry'); };
+    const handleKicked = async () => {
+      await AsyncStorage.multiRemove(['lastUserId', 'lastUserName']);
+      globalThis.CUSIIK_LAST_USER_ID = null;
+      globalThis.CUSIIK_CURRENT_USER_ID = null;
+      globalThis.CUSIIK_CURRENT_USER_NAME = null;
+      globalThis.CUSIIK_CURRENT_ROLE = null;
+      navigation.replace('PinEntry');
+    };
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
@@ -126,12 +201,16 @@ const PinEntry = ({ navigation }) => {
     const currentAdminPin = getCurrentAdminPin();
 
     if (cleanValue === currentUserPin) {
+      const localUserName = getRandomLocalUserName();
+      globalThis.CUSIIK_CURRENT_ROLE = 'user';
+      globalThis.CUSIIK_CURRENT_USER_NAME = localUserName;
       setPin('');
-      navigation.replace(USER_SCREEN);
+      navigation.replace(USER_SCREEN, { userName: localUserName });
       return;
     }
 
     if (cleanValue === currentAdminPin) {
+      globalThis.CUSIIK_CURRENT_ROLE = 'admin';
       setPin('');
       navigation.replace(ADMIN_SCREEN);
       return;

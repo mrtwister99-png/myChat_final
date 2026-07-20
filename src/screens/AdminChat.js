@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -90,6 +91,8 @@ const AdminChat = ({ navigation, route }) => {
 
   const [message, setMessage] = useState('');
   const [muteModalVisible, setMuteModalVisible] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState([]);
   const [nowTick, setNowTick] = useState(Date.now());
   const [serverMutedUsers, setServerMutedUsers] = useState(getGlobalMutedUsers());
   const [connectionText, setConnectionText] = useState(
@@ -134,6 +137,12 @@ useEffect(() => {
 useEffect(() => {
   scrollToBottom(true);
 }, [messages.length]);
+
+  useEffect(() => {
+    if (!selectionMode) {
+      setSelectedMessageIds([]);
+    }
+  }, [selectionMode]);
 
   useEffect(() => {
     const handleConnect = () => {
@@ -248,6 +257,50 @@ useEffect(() => {
   };
 
   const sendMessage = () => {
+    if (selectionMode) {
+      const selectedCount = selectedMessageIds.length;
+
+      if (selectedCount === 0) {
+        setSelectionMode(false);
+        return;
+      }
+
+      Alert.alert(
+        'Smazat zprávy',
+        `Opravdu smazat ${selectedCount} zpráv?`,
+        [
+          {
+            text: 'Ne',
+            style: 'cancel',
+          },
+          {
+            text: 'Ano, smazat',
+            style: 'destructive',
+            onPress: () => {
+              if (socket.connected) {
+                socket.emit('chat:deleteMessages', {
+                  userId,
+                  messageIds: selectedMessageIds,
+                });
+              } else {
+                const selectedSet = new Set(selectedMessageIds.map((id) => String(id)));
+                const nextMessages = messages.filter(
+                  (item) => !selectedSet.has(String(item.id))
+                );
+
+                saveMessages(nextMessages);
+              }
+
+              setSelectionMode(false);
+              setSelectedMessageIds([]);
+            },
+          },
+        ]
+      );
+
+      return;
+    }
+
     const trimmedMessage = message.trim();
 
     if (!trimmedMessage) {
@@ -356,6 +409,40 @@ useEffect(() => {
     navigation.replace('AdminPin');
   };
 
+  const toggleMessageSelection = (messageId) => {
+    setSelectedMessageIds((current) => {
+      const nextId = String(messageId);
+      const exists = current.some((item) => String(item) === nextId);
+
+      let nextSelection;
+
+      if (exists) {
+        nextSelection = current.filter((item) => String(item) !== nextId);
+      } else {
+        nextSelection = [...current, messageId];
+      }
+
+      if (nextSelection.length === 0) {
+        setSelectionMode(false);
+      }
+
+      return nextSelection;
+    });
+  };
+
+  const onMessageLongPress = (messageId) => {
+    setSelectionMode(true);
+    toggleMessageSelection(messageId);
+  };
+
+  const onMessagePress = (messageId) => {
+    if (!selectionMode) {
+      return;
+    }
+
+    toggleMessageSelection(messageId);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
@@ -448,6 +535,9 @@ useEffect(() => {
                 const isAdmin = item.sender === 'admin';
                 const isSystem = item.sender === 'system';
                 const messageTime = formatMessageTime(item.createdAt);
+                const isSelected = selectedMessageIds.some(
+                  (selectedId) => String(selectedId) === String(item.id)
+                );
 
                 if (isSystem) {
                   return (
@@ -468,10 +558,16 @@ useEffect(() => {
                       isAdmin ? styles.messageRowAdmin : styles.messageRowUser,
                     ]}
                   >
+                    <Pressable
+                      onLongPress={() => onMessageLongPress(item.id)}
+                      onPress={() => onMessagePress(item.id)}
+                      delayLongPress={250}
+                    >
                     <View
                       style={[
                         styles.messageBubble,
                         isAdmin ? styles.adminBubble : styles.userBubble,
+                        isSelected && styles.selectedMessageBubble,
                       ]}
                     >
                       <View style={styles.messageHeaderRow}>
@@ -484,6 +580,7 @@ useEffect(() => {
 
                       <Text style={styles.messageText}>{item.text}</Text>
                     </View>
+                    </Pressable>
                   </View>
                 );
               })}
@@ -506,18 +603,25 @@ useEffect(() => {
             <Pressable
               style={({ pressed }) => [
                 styles.sendButton,
+                selectionMode && styles.deleteButton,
                 pressed && styles.sendButtonPressed,
               ]}
               onPress={sendMessage}
             >
-              <Text style={styles.sendButtonText}>Odeslat</Text>
+              <Text style={styles.sendButtonText}>
+                {selectionMode ? 'Smazat' : 'Odeslat'}
+              </Text>
             </Pressable>
           </View>
 
           <View style={styles.statusBar}>
             <Text style={styles.statusText}>Admin chat</Text>
             <Text style={styles.statusText}>
-              {isMuted ? `Mute: ${muteTimeLeft}` : connectionText}
+              {selectionMode
+                ? `Vybráno: ${selectedMessageIds.length}`
+                : isMuted
+                  ? `Mute: ${muteTimeLeft}`
+                  : connectionText}
             </Text>
           </View>
         </View>
@@ -835,6 +939,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderWidth: 2,
+    overflow: 'hidden',
   },
 
   userBubble: {
@@ -855,7 +960,7 @@ const styles = StyleSheet.create({
 
   messageHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 3,
   },
@@ -865,18 +970,30 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     marginRight: 10,
+    flex: 1,
+    flexShrink: 1,
   },
 
   messageTime: {
     color: '#555555',
     fontSize: 10,
     fontWeight: '900',
+    flexShrink: 0,
+    marginLeft: 8,
   },
 
   messageText: {
     color: '#000000',
     fontSize: 14,
     lineHeight: 19,
+  },
+
+  selectedMessageBubble: {
+    backgroundColor: '#ffe38d',
+    borderTopColor: '#fff7d1',
+    borderLeftColor: '#fff7d1',
+    borderRightColor: '#9b7f14',
+    borderBottomColor: '#9b7f14',
   },
 
   systemMessageRow: {
@@ -949,6 +1066,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
+  },
+
+  deleteButton: {
+    backgroundColor: '#d84b4b',
+    borderTopColor: '#ffd1d1',
+    borderLeftColor: '#ffd1d1',
+    borderRightColor: '#7f1f1f',
+    borderBottomColor: '#7f1f1f',
   },
 
   sendButtonPressed: {

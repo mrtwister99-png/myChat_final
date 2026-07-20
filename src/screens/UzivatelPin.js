@@ -12,20 +12,63 @@ import {
   Text,
   TextInput,
   View,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { socket } from '../socket';
 import {
-  registerForPushNotificationsAsync,
   showLocalMessageNotification,
 } from '../notifications';
 
 const getCurrentUserId = () => {
-  return globalThis.CUSIIK_currentUserId || '1';
+  return globalThis.CUSIIK_CURRENT_USER_ID || globalThis.CUSIIK_currentUserId || '1';
+};
+
+const LOCAL_RANDOM_USER_NAMES = [
+  'Jiří', 'Jan', 'Petr', 'Josef', 'Pavel', 'Martin', 'Tomáš', 'Jaroslav', 'Miroslav', 'Zdeněk',
+  'Václav', 'Michal', 'František', 'Jakub', 'Milan', 'Karel', 'Lukáš', 'David', 'Vladimír', 'Ondřej',
+  'Ladislav', 'Roman', 'Marek', 'Stanislav', 'Daniel', 'Radek', 'Antonín', 'Vojtěch', 'Filip', 'Adam',
+  'Matěj', 'Dominik', 'Aleš', 'Miloslav', 'Jaromír', 'Patrik', 'Libor', 'Jindřich', 'Vlastimil', 'Miloš',
+  'Lubomír', 'Štěpán', 'Oldřich', 'Rudolf', 'Matyáš', 'Ivan', 'Robert', 'Luboš', 'Radim', 'Richard',
+  'Vít', 'Bohumil', 'Šimon', 'Rostislav', 'Ivo', 'Luděk', 'Dušan', 'Kamil', 'Michael', 'Vladislav',
+  'Zbyněk', 'Viktor', 'Bohuslav', 'Kryštof', 'Alois', 'René', 'Vítězslav', 'Tadeáš', 'Štefan', 'Eduard',
+  'Marcel', 'Ján', 'Jozef', 'Samuel', 'Dalibor', 'Emil', 'Radomír', 'Ludvík', 'Denis', 'Vilém',
+  'Tobiáš', 'Jana', 'Marie', 'Eva', 'Hana', 'Anna', 'Lenka', 'Kateřina', 'Lucie', 'Věra',
+  'Alena', 'Petra', 'Veronika', 'Jaroslava', 'Tereza', 'Martina', 'Michaela', 'Jitka', 'Helena', 'Ludmila',
+  'Zdeňka', 'Ivana', 'Monika', 'Eliška', 'Zuzana', 'Markéta', 'Jarmila', 'Barbora', 'Jiřina', 'Marcela',
+  'Kristýna', 'Dana', 'Dagmar', 'Adéla', 'Pavla', 'Vlasta', 'Miroslava', 'Andrea', 'Irena', 'Božena',
+  'Klára', 'Libuše', 'Marta', 'Šárka', 'Nikola', 'Karolína', 'Iveta', 'Pavlína', 'Natálie', 'Olga',
+  'Blanka', 'Gabriela', 'Renata', 'Aneta', 'Simona', 'Růžena', 'Radka', 'Daniela', 'Denisa', 'Iva',
+  'Milada', 'Milena', 'Romana', 'Miloslava', 'Miluše', 'Ilona', 'Anežka', 'Soňa', 'Kamila', 'Stanislava',
+  'Nela', 'Vladimíra', 'Naděžda', 'Květoslava', 'Danuse', 'Vendula', 'Drahomíra', 'Julie', 'Jindřiška', 'Emilie',
+  'Viktorie',
+];
+
+const getRandomLocalUserName = () => {
+  return LOCAL_RANDOM_USER_NAMES[Math.floor(Math.random() * LOCAL_RANDOM_USER_NAMES.length)] || 'Uživatel';
+};
+
+const isPlaceholderUserName = (name) => {
+  const normalized = String(name || '').trim().toLowerCase();
+
+  return (
+    !normalized ||
+    normalized === 'uzivatel' ||
+    normalized === 'uživatel' ||
+    /^uzivatel\s*\d+$/.test(normalized) ||
+    /^uživatel\s*\d+$/.test(normalized)
+  );
 };
 
 const getCurrentUserName = () => {
-  return globalThis.CUSIIK_currentUserName || 'Uzivatel 1';
+  const storedName = globalThis.CUSIIK_CURRENT_USER_NAME || globalThis.CUSIIK_currentUserName;
+
+  if (!isPlaceholderUserName(storedName)) {
+    return storedName;
+  }
+
+  return getRandomLocalUserName();
 };
 
 const HELPER_MESSAGES = [
@@ -35,10 +78,10 @@ const HELPER_MESSAGES = [
 ];
 
 const USER_ICON_COLOURS = [
-  { label: 'Modrá', value: '#dceaff' },
-  { label: 'Šedá', value: '#b8b8b8' },
-  { label: 'Černá', value: '#111111' },
+  { label: 'Tmavě modrá', value: '#0b3d91' },
+  { label: 'Šedá', value: '#8f959e' },
   { label: 'Bílá', value: '#ffffff' },
+  { label: 'Tmavší šedá', value: '#5b616b' },
 ];
 
 const getAdminStatus = () => {
@@ -134,8 +177,9 @@ const getAdminMessageCount = (messages) => {
 
 const UzivatelPin = ({ navigation }) => {
   const scrollViewRef = useRef(null);
+  const isFirstChatSyncRef = useRef(true);
   const currentUserId = getCurrentUserId();
-  const currentUserName = getCurrentUserName();
+  const [currentUserName, setCurrentUserName] = useState(getCurrentUserName());
   const [screenMode, setScreenMode] = useState('menu');
   const [colourModalVisible, setColourModalVisible] = useState(false);
 
@@ -148,7 +192,10 @@ const UzivatelPin = ({ navigation }) => {
   const [serverMutedUsers, setServerMutedUsers] = useState(getGlobalMutedUsers());
 
   const [userIconColour, setUserIconColour] = useState(
-    globalThis.CUSIIK_USER_ICON_COLOUR || '#dceaff'
+    globalThis.CUSIIK_USER_ICON_COLOUR || '#0b3d91'
+  );
+  const [userBgColour, setUserBgColour] = useState(
+    globalThis.CUSIIK_USER_BG_COLOUR || '#f5f5f5'
   );
 
   const [readAdminCount, setReadAdminCount] = useState(
@@ -224,6 +271,28 @@ const UzivatelPin = ({ navigation }) => {
         globalThis.CUSIIK_ADMIN_STATUS = serverState.adminStatus;
       }
 
+      if (Array.isArray(serverState?.users)) {
+        const currentUser = serverState.users.find(
+          (user) => String(user.id) === String(currentUserId)
+        );
+
+        if (currentUser?.name) {
+          setCurrentUserName(currentUser.name);
+          globalThis.CUSIIK_CURRENT_USER_NAME = currentUser.name;
+        }
+
+        const nextSilhouette = currentUser?.silhouetteColour || currentUser?.colour;
+        if (nextSilhouette) {
+          setUserIconColour(nextSilhouette);
+          globalThis.CUSIIK_USER_ICON_COLOUR = nextSilhouette;
+        }
+
+        if (currentUser?.bgColour) {
+          setUserBgColour(currentUser.bgColour);
+          globalThis.CUSIIK_USER_BG_COLOUR = currentUser.bgColour;
+        }
+      }
+
       if (serverState?.mutedUsers) {
         setServerMutedUsers(serverState.mutedUsers);
         globalThis.CUSIIK_MUTED_USERS = serverState.mutedUsers;
@@ -242,10 +311,28 @@ const UzivatelPin = ({ navigation }) => {
       }
 
       const chats = getGlobalChats();
+      const previousMessages = chats[currentUserId] || [];
       const safeMessages = nextMessages || [];
+      const previousAdminMessages = previousMessages.filter(
+        (item) => item.sender === 'admin'
+      ).length;
+      const nextAdminMessages = safeMessages.filter(
+        (item) => item.sender === 'admin'
+      ).length;
 
       chats[currentUserId] = safeMessages;
       setMessages(safeMessages);
+
+      if (!isFirstChatSyncRef.current && nextAdminMessages > previousAdminMessages && screenMode !== 'chat') {
+        showLocalMessageNotification({
+          title: 'Nová zpráva od admina',
+          body: 'Máš novou zprávu v chatu.',
+        });
+      }
+
+      if (isFirstChatSyncRef.current) {
+        isFirstChatSyncRef.current = false;
+      }
 
       if (screenMode === 'chat') {
         markMessagesAsRead(safeMessages);
@@ -323,9 +410,20 @@ const UzivatelPin = ({ navigation }) => {
     }
   }, [messages.length, screenMode]);
 
-  const goToLogin = () => {
+  const goToLogin = async () => {
     setBlockedInfo('');
-    navigation.replace('PinEntry');
+    Keyboard.dismiss();
+
+    if (socket.connected) {
+      socket.emit('auth:pauseUser');
+    }
+
+    globalThis.CUSIIK_CURRENT_USER_ID = null;
+    globalThis.CUSIIK_CURRENT_ROLE = null;
+
+    setTimeout(() => {
+      navigation.replace('PinEntry');
+    }, 80);
   };
 
   const saveMessages = (nextMessages) => {
@@ -346,8 +444,16 @@ const UzivatelPin = ({ navigation }) => {
   };
 
   const changeUserIconColour = (colour) => {
-    globalThis.CUSIIK_USER_ICON_COLOUR = colour;
-    setUserIconColour(colour);
+    globalThis.CUSIIK_USER_BG_COLOUR = colour;
+    setUserBgColour(colour);
+
+    if (socket.connected) {
+      socket.emit('user:setBgColour', {
+        userId: currentUserId,
+        colour,
+      });
+    }
+
     setColourModalVisible(false);
   };
 
@@ -447,48 +553,64 @@ const UzivatelPin = ({ navigation }) => {
             {renderTitleBar('Uživatel - menu')}
 
             <View style={styles.menuBody}>
-              <View style={[styles.bigUserIconBox, { backgroundColor: userIconColour }]}>
-                <Text style={styles.bigUserIcon}>👤</Text>
+              <View style={styles.menuTopSection}>
+                <View
+                  style={[
+                    styles.bigUserIconBox,
+                    {
+                      backgroundColor: userBgColour,
+                      borderTopColor: userIconColour,
+                      borderLeftColor: userIconColour,
+                      borderRightColor: userIconColour,
+                      borderBottomColor: userIconColour,
+                    },
+                  ]}
+                >
+                  <View style={styles.silhouetteHead} />
+                  <View style={styles.silhouetteBody} />
+                </View>
+
+                <Text style={styles.menuHeading}>{currentUserName}</Text>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.menuButton,
+                    pressed && styles.sendButtonPressed,
+                  ]}
+                  onPress={() => setColourModalVisible(true)}
+                >
+                  <Text style={styles.menuButtonText}>Změnit barvu</Text>
+                </Pressable>
               </View>
 
-              <Text style={styles.menuHeading}>{currentUserName}</Text>
-
-              <View style={styles.menuInfoBox}>
-                <Text style={styles.menuInfoText}>
-                  Admin: {isAdminOnline ? 'online' : 'offline'}
-                </Text>
-
-                {unreadCount > 0 ? (
-                  <Text style={styles.menuUnreadText}>
-                    {unreadCount} {unreadCount === 1 ? 'nová zpráva' : 'nových zpráv'}
+              <View style={styles.menuBottomSection}>
+                <View style={styles.menuInfoBox}>
+                  <Text style={styles.menuInfoText}>
+                    Admin: {isAdminOnline ? 'online' : 'offline'}
                   </Text>
-                ) : (
-                  <Text style={styles.menuInfoText}>Žádné nové zprávy</Text>
-                )}
+
+                  {unreadCount > 0 ? (
+                    <Text style={styles.menuUnreadText}>
+                      {unreadCount} {unreadCount === 1 ? 'nová zpráva' : 'nových zpráv'}
+                    </Text>
+                  ) : (
+                    <Text style={styles.menuInfoText}>Žádné nové zprávy</Text>
+                  )}
+                </View>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.chatButton,
+                    unreadCount > 0 && styles.menuButtonUnread,
+                    pressed && styles.sendButtonPressed,
+                  ]}
+                  onPress={openChat}
+                >
+                  <Text style={styles.chatButtonText}>
+                    Chat{unreadCount > 0 ? ` (${unreadCount} nové)` : ''}
+                  </Text>
+                </Pressable>
               </View>
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.menuButton,
-                  pressed && styles.sendButtonPressed,
-                ]}
-                onPress={() => setColourModalVisible(true)}
-              >
-                <Text style={styles.menuButtonText}>Změnit barvu ikonky</Text>
-              </Pressable>
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.menuButton,
-                  unreadCount > 0 && styles.menuButtonUnread,
-                  pressed && styles.sendButtonPressed,
-                ]}
-                onPress={openChat}
-              >
-                <Text style={styles.menuButtonText}>
-                  Chat{unreadCount > 0 ? ` (${unreadCount} nové)` : ''}
-                </Text>
-              </Pressable>
             </View>
 
             <View style={styles.statusBar}>
@@ -519,7 +641,7 @@ const UzivatelPin = ({ navigation }) => {
                 </View>
 
                 <View style={styles.modalBody}>
-                  <Text style={styles.modalLabel}>Vyber barvu ikonky:</Text>
+                  <Text style={styles.modalLabel}>Vyber barvu backgroundu ikonky:</Text>
 
                   <View style={styles.colourGrid}>
                     {USER_ICON_COLOURS.map((colour) => (
@@ -870,12 +992,22 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 18,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+  },
+
+  menuTopSection: {
+    width: '100%',
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+
+  menuBottomSection: {
+    width: '100%',
   },
 
   bigUserIconBox: {
-    width: 86,
-    height: 86,
+    width: 98,
+    height: 98,
     borderWidth: 3,
     borderTopColor: '#ffffff',
     borderLeftColor: '#ffffff',
@@ -884,10 +1016,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
+    backgroundColor: '#f5f5f5',
   },
 
-  bigUserIcon: {
-    fontSize: 42,
+  silhouetteHead: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    marginBottom: 7,
+    backgroundColor: '#dceaff',
+  },
+
+  silhouetteBody: {
+    width: 52,
+    height: 30,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    backgroundColor: '#dceaff',
   },
 
   menuHeading: {
@@ -903,7 +1050,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#b9a85c',
     padding: 10,
-    marginBottom: 14,
+    marginBottom: 10,
   },
 
   menuInfoText: {
@@ -935,6 +1082,20 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
+  chatButton: {
+    width: '100%',
+    height: 88,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+
   menuButtonUnread: {
     backgroundColor: '#ffd7d7',
   },
@@ -942,6 +1103,12 @@ const styles = StyleSheet.create({
   menuButtonText: {
     color: '#000000',
     fontSize: 15,
+    fontWeight: '900',
+  },
+
+  chatButtonText: {
+    color: '#000000',
+    fontSize: 22,
     fontWeight: '900',
   },
 
