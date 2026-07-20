@@ -3,7 +3,10 @@ const http = require('http');
 const cors = require('cors');
 const { Server } = require('socket.io');
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Chat-XP server běží na portu ${PORT}`);
+});
 
 const app = express();
 
@@ -512,7 +515,4 @@ io.on('connection', (socket) => {
 });
 app.get('/health', (req, res) => {
   res.status(200).json({ ok: true, message: 'Server alive' });
-});
-server.listen(PORT, () => {
-  console.log(`✅ Chat-XP server běží na portu ${PORT}`);
 });
