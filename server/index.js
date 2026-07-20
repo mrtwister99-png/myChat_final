@@ -12,9 +12,7 @@ app.use(express.json());
 
 const server = http.createServer(app);
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Chat-XP server běží na portu ${PORT}`);
-});
+
 
 const io = new Server(server, {
   cors: {
@@ -516,4 +514,8 @@ io.on('connection', (socket) => {
 });
 app.get('/health', (req, res) => {
   res.status(200).json({ ok: true, message: 'Server alive' });
+
+});
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Chat-XP server běží na portu ${PORT}`);
 });
