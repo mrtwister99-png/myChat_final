@@ -1,25 +1,11 @@
-// src/screens/PinEntry.js
-
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  Animated,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
+import { Animated, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { socket } from '../socket';
 
 const DEFAULT_USER_PIN = '1111';
 const DEFAULT_ADMIN_PIN = '8831';
-
 const USER_SCREEN = 'UzivatelPin';
 const ADMIN_SCREEN = 'AdminPin';
 
@@ -28,72 +14,61 @@ const PinEntry = ({ navigation }) => {
   const [errorText, setErrorText] = useState('');
   const [serverStatusText, setServerStatusText] = useState('Připojuji server...');
   const [isCheckingPin, setIsCheckingPin] = useState(false);
-
   const inputRef = useRef(null);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      inputRef.current?.focus();
-    }, 400);
-
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => inputRef.current?.focus(), 400);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
     const handleConnect = () => {
       setServerStatusText('Server online');
+      const lastId = globalThis.CUSIIK_LAST_USER_ID;
+      if (lastId) socket.emit('client:ready', { lastUserId: lastId });
     };
+    const handleDisconnect = () => { setServerStatusText('Server offline - jede lokální režim'); setIsCheckingPin(false); };
+    const handleConnectError = () => { setServerStatusText('Server nedostupný'); setIsCheckingPin(false); };
 
-    const handleDisconnect = () => {
-      setServerStatusText('Server offline - jede lokální režim');
-      setIsCheckingPin(false);
-    };
-
-    const handleConnectError = () => {
-      setServerStatusText('Server nedostupný - jede lokální režim');
-      setIsCheckingPin(false);
-    };
-
-    const handleAuthSuccess = (payload) => {
+    const handleAuthSuccess = async (payload) => {
       setIsCheckingPin(false);
       setPin('');
       setErrorText('');
 
-      if (payload?.role === 'admin') {
-        navigation.replace(ADMIN_SCREEN);
-        return;
+      // FIX 2 + 3 - ulož id a pošli push token
+      if (payload?.role === 'user') {
+        globalThis.CUSIIK_CURRENT_USER_ID = payload.userId;
+        globalThis.CUSIIK_CURRENT_USER_NAME = payload.userName;
+        await AsyncStorage.setItem('lastUserId', payload.userId);
+        globalThis.CUSIIK_LAST_USER_ID = payload.userId;
       }
 
-      if (payload?.role === 'user') {
-  globalThis.CUSIIK_CURRENT_USER_ID = payload.userId;
-  globalThis.CUSIIK_CURRENT_USER_NAME = payload.userName;
+      if (globalThis.CUSIIK_EXPO_PUSH_TOKEN) {
+        socket.emit('notifications:registerToken', {
+          token: globalThis.CUSIIK_EXPO_PUSH_TOKEN,
+          role: payload.role,
+          userId: payload.userId || null,
+        });
+      }
 
-  setPin('');
-  navigation.replace(USER_SCREEN);
-  return;
-}
-
+      if (payload?.role === 'admin') { navigation.replace(ADMIN_SCREEN); return; }
+      if (payload?.role === 'user') { navigation.replace(USER_SCREEN, { userId: payload.userId }); return; }
       handleWrongPin();
     };
 
-    const handleAuthError = (payload) => {
-      setIsCheckingPin(false);
-      setErrorText(payload?.message || 'Špatný PIN.');
-      shakeWindow();
-    };
+    const handleAuthError = (payload) => { setIsCheckingPin(false); setErrorText(payload?.message || 'Špatný PIN.'); shakeWindow(); };
+    const handleKicked = async () => { await AsyncStorage.removeItem('lastUserId'); globalThis.CUSIIK_LAST_USER_ID=null; navigation.replace('PinEntry'); };
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
     socket.on('auth:success', handleAuthSuccess);
     socket.on('auth:error', handleAuthError);
+    socket.on('user:kicked', handleKicked);
+    socket.on('room:kicked', handleKicked);
 
-    if (socket.connected) {
-      setServerStatusText('Server online');
-    } else {
-      socket.connect();
-    }
+    if (socket.connected) setServerStatusText('Server online'); else socket.connect();
 
     return () => {
       socket.off('connect', handleConnect);
@@ -101,33 +76,15 @@ const PinEntry = ({ navigation }) => {
       socket.off('connect_error', handleConnectError);
       socket.off('auth:success', handleAuthSuccess);
       socket.off('auth:error', handleAuthError);
+      socket.off('user:kicked', handleKicked);
+      socket.off('room:kicked', handleKicked);
     };
   }, [navigation]);
 
-  const getCurrentUserPin = () => {
-    return globalThis.CUSIIK_USER_PIN || DEFAULT_USER_PIN;
-  };
-
-  const getCurrentAdminPin = () => {
-    return globalThis.CUSIIK_ADMIN_PIN || DEFAULT_ADMIN_PIN;
-  };
-
-  const focusKeyboard = () => {
-    inputRef.current?.blur();
-
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 120);
-  };
-
-  const resetAndFocus = () => {
-    setPin('');
-    setIsCheckingPin(false);
-
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 150);
-  };
+  const getCurrentUserPin = () => globalThis.CUSIIK_USER_PIN || DEFAULT_USER_PIN;
+  const getCurrentAdminPin = () => globalThis.CUSIIK_ADMIN_PIN || DEFAULT_ADMIN_PIN;
+  const focusKeyboard = () => { inputRef.current?.blur(); setTimeout(()=>inputRef.current?.focus(), 120); };
+  const resetAndFocus = () => { setPin(''); setIsCheckingPin(false); setTimeout(()=>inputRef.current?.focus(), 150); };
 
   const shakeWindow = () => {
     Animated.sequence([
@@ -217,7 +174,7 @@ const PinEntry = ({ navigation }) => {
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
 
-      <TouchableWithoutFeedback onPress={focusKeyboard}>
+      <Pressable onPress={focusKeyboard} style={{ flex: 1 }}>
         <KeyboardAvoidingView
           style={styles.page}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -344,7 +301,7 @@ const PinEntry = ({ navigation }) => {
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
-      </TouchableWithoutFeedback>
+      </Pressable>
     </SafeAreaView>
   );
 };

@@ -1,40 +1,63 @@
 // App.js
-
 import React, { useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import PinEntry from './src/screens/PinEntry';
 import UzivatelPin from './src/screens/UzivatelPin';
 import AdminPin from './src/screens/AdminPin';
 import AdminChat from './src/screens/AdminChat';
-
 import { registerForPushNotificationsAsync } from './src/notifications';
+import { socket } from './src/socket';
 
 const Stack = createNativeStackNavigator();
+export const navigationRef = createNavigationContainerRef();
 
 const App = () => {
   useEffect(() => {
-    const setupNotifications = async () => {
+    const init = async () => {
+      // načti posledního uživatele
+      const lastUserId = await AsyncStorage.getItem('lastUserId');
+      if (lastUserId) {
+        globalThis.CUSIIK_LAST_USER_ID = lastUserId;
+      }
+      // push token
       const token = await registerForPushNotificationsAsync();
-
       if (token) {
         globalThis.CUSIIK_EXPO_PUSH_TOKEN = token;
-        console.log('Expo push token:', token);
-      } else {
-        console.log('Expo push token nebyl získán.');
+      }
+    };
+    init();
+  }, []);
+
+  useEffect(() => {
+    // FIX CHYBA 1 - kick musí klient poslouchat
+    const handleKick = async ({ reason }) => {
+      console.log('KICK:', reason);
+      await AsyncStorage.removeItem('lastUserId');
+      globalThis.CUSIIK_LAST_USER_ID = null;
+      globalThis.CUSIIK_CURRENT_USER_ID = null;
+      if (navigationRef.isReady()) {
+        navigationRef.reset({
+          index: 0,
+          routes: [{ name: 'PinEntry' }],
+        });
       }
     };
 
-    setupNotifications();
+    socket.on('user:kicked', handleKick);
+    socket.on('room:kicked', handleKick);
+
+    return () => {
+      socket.off('user:kicked', handleKick);
+      socket.off('room:kicked', handleKick);
+    };
   }, []);
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName="PinEntry"
-        screenOptions={{ headerShown: false }}
-      >
+    <NavigationContainer ref={navigationRef}>
+      <Stack.Navigator initialRouteName="PinEntry" screenOptions={{ headerShown: false }}>
         <Stack.Screen name="PinEntry" component={PinEntry} />
         <Stack.Screen name="UzivatelPin" component={UzivatelPin} />
         <Stack.Screen name="AdminPin" component={AdminPin} />

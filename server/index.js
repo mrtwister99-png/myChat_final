@@ -6,43 +6,15 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 8080;
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
 const server = http.createServer(app);
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Chat-XP server běží na portu ${PORT}`);
-});
-
-// Přidán základní error handling pro server
-server.on('error', (err) => {
-  console.error('Server error:', err);
-});
-
-// Přidán základní error handling pro uncaught exceptions
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-
-
 const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST'],
-  },
+  cors: { origin: '*', methods: ['GET','POST'] }
 });
 
-/**
- * Dočasná paměť serveru.
- * Později se to nahradí databází.
- */
 const state = {
   userPin: '1111',
   adminPin: '8831',
@@ -215,8 +187,9 @@ io.on('connection', (socket) => {
 
   socket.emit('server:state', getPublicState());
 
-  socket.on('auth:checkPin', ({ pin }) => {
+  socket.on('auth:checkPin', ({ pin, lastUserId }) => {
     const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 4);
+    const cleanLastId = String(lastUserId || socket.data.lastUserId || '').trim();
 
     if (cleanPin === state.adminPin) {
       socket.data.role = 'admin';
@@ -226,13 +199,36 @@ io.on('connection', (socket) => {
         role: 'admin',
       });
 
-      socket.emit('server:state', getPublicState());
-
+      emitState();
       return;
     }
 
     if (cleanPin === state.userPin) {
+      if (cleanLastId) {
+        const existing = getUserById(cleanLastId);
+
+        if (existing) {
+          markUserOnline(existing.id, socket);
+          socket.data.lastUserId = existing.id;
+
+          socket.emit('auth:success', {
+            role: 'user',
+            userId: existing.id,
+            userName: existing.name,
+          });
+
+          socket.emit('chat:messages', {
+            userId: existing.id,
+            messages: state.chats[existing.id] || [],
+          });
+
+          emitState();
+          return;
+        }
+      }
+
       const user = createUserForSocket(socket);
+      socket.data.lastUserId = user.id;
 
       socket.emit('auth:success', {
         role: 'user',
@@ -246,7 +242,6 @@ io.on('connection', (socket) => {
       });
 
       emitState();
-
       return;
     }
 
@@ -265,72 +260,72 @@ io.on('connection', (socket) => {
   });
 
   socket.on('chat:send', ({ userId, sender, text }) => {
-    const cleanUserId = String(userId || '');
-    const cleanSender = String(sender || '');
-    const trimmedText = String(text || '').trim();
+  const cleanUserId = String(userId || '');
+  const cleanSender = String(sender || '');
+  const trimmedText = String(text || '').trim();
 
-    if (!cleanUserId || !trimmedText) {
+  if (!cleanUserId || !trimmedText) {
+    return;
+  }
+
+  const user = getUserById(cleanUserId);
+
+  if (cleanSender === 'user') {
+    if (!user) {
+      socket.emit('user:kicked', {
+        userId: cleanUserId,
+        reason: 'Už nejsi v roomce. Přihlaš se znovu.',
+      });
       return;
     }
 
-    const user = getUserById(cleanUserId);
-
-    if (cleanSender === 'user') {
-      if (!user) {
-        socket.emit('user:kicked', {
-          userId: cleanUserId,
-          reason: 'Už nejsi v roomce. Přihlaš se znovu.',
-        });
-        return;
-      }
-
-      if (socket.data.userId !== cleanUserId) {
-        socket.emit('user:kicked', {
-          userId: cleanUserId,
-          reason: 'Neplatné přihlášení. Přihlaš se znovu.',
-        });
-        return;
-      }
-
-      const muteUntil = state.mutedUsers[cleanUserId] || 0;
-
-      if (muteUntil > Date.now()) {
-        socket.emit('chat:muted', {
-          userId: cleanUserId,
-          muteUntil,
-        });
-        return;
-      }
-
-      markUserOnline(cleanUserId, socket);
-    }
-
-    const allowedSenders = ['user', 'admin', 'system'];
-
-    if (!allowedSenders.includes(cleanSender)) {
+    if (socket.data.userId !== cleanUserId) {
+      socket.emit('user:kicked', {
+        userId: cleanUserId,
+        reason: 'Neplatné přihlášení. Přihlaš se znovu.',
+      });
       return;
     }
 
-    const newMessage = {
-      id: createMessageId(),
-      sender: cleanSender,
-      text: trimmedText,
-      createdAt: Date.now(),
-    };
+    const muteUntil = state.mutedUsers[cleanUserId] || 0;
 
-    if (!state.chats[cleanUserId]) {
-      state.chats[cleanUserId] = [];
+    if (muteUntil > Date.now()) {
+      socket.emit('chat:muted', {
+        userId: cleanUserId,
+        muteUntil,
+      });
+      return;
     }
 
-    state.chats[cleanUserId].push(newMessage);
+    markUserOnline(cleanUserId, socket);
+  }
 
-    io.emit('chat:messages', {
-      userId: cleanUserId,
-      messages: state.chats[cleanUserId],
-    });
+  const allowedSenders = ['user', 'admin', 'system'];
 
-    emitState();
+  if (!allowedSenders.includes(cleanSender)) {
+    return;
+  }
+
+  const newMessage = {
+    id: createMessageId(),
+    sender: cleanSender,
+    text: trimmedText,
+    createdAt: Date.now(),
+  };
+
+  if (!state.chats[cleanUserId]) {
+    state.chats[cleanUserId] = [];
+  }
+
+  state.chats[cleanUserId].push(newMessage);
+
+  io.emit('chat:messages', {
+    userId: cleanUserId,
+    messages: state.chats[cleanUserId],
   });
+
+  emitState();
+});
 
   socket.on('admin:setStatus', ({ status }) => {
     if (socket.data.role !== 'admin') {
