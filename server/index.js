@@ -12,6 +12,24 @@ app.use(express.json());
 
 const server = http.createServer(app);
 
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Chat-XP server běží na portu ${PORT}`);
+});
+
+// Přidán základní error handling pro server
+server.on('error', (err) => {
+  console.error('Server error:', err);
+});
+
+// Přidán základní error handling pro uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 
 
 const io = new Server(server, {
