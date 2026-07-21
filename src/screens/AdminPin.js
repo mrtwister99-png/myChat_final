@@ -499,11 +499,6 @@ const AdminPin = ({ navigation }) => {
       currentUsers.filter((currentUser) => currentUser.id !== user.id)
     );
 
-    if (targetPin.length === 4) {
-      globalThis.CUSIIK_USER_PIN = targetPin;
-      setCurrentUserPin(targetPin);
-    }
-
     if (socket.connected) {
       socket.emit('admin:kickUser', {
         userId: user.id,
@@ -513,7 +508,7 @@ const AdminPin = ({ navigation }) => {
 
     if (targetPin.length === 4) {
       setLastActionText(
-        `Uživatel ${user.name} byl kicknut. Nový PIN je ${targetPin}.`
+        `Uživatel ${user.name} byl kicknut. Jeho speciální PIN je ${targetPin}.`
       );
       return;
     }

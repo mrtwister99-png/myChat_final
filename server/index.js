@@ -29,6 +29,10 @@ const state = {
   mutedUsers: {},
 
   secretMutedUsers: {},
+
+  userPinsById: {},
+  kickedRoomUserIds: {},
+  userProfilesById: {},
 };
 
 const RANDOM_USER_NAMES = [
@@ -142,6 +146,40 @@ const getPublicState = () => {
   };
 };
 
+const rememberUserProfile = (user) => {
+  if (!user || !user.id) {
+    return;
+  }
+
+  const cleanUserId = String(user.id);
+
+  state.userProfilesById[cleanUserId] = {
+    name: user.name,
+    silhouetteColour: user.silhouetteColour,
+    bgColour: user.bgColour,
+  };
+};
+
+const getStoredUserProfile = (userId) => {
+  const cleanUserId = String(userId || '').trim();
+
+  if (!cleanUserId) {
+    return null;
+  }
+
+  return state.userProfilesById[cleanUserId] || null;
+};
+
+const clearRoomKickReuseBlock = (userId) => {
+  const cleanUserId = String(userId || '').trim();
+
+  if (!cleanUserId) {
+    return;
+  }
+
+  delete state.kickedRoomUserIds[cleanUserId];
+};
+
 const emitState = () => {
   io.emit('server:state', getPublicState());
 };
@@ -176,6 +214,48 @@ const createUserForSocket = (socket) => {
    };
 
   state.users.push(user);
+  rememberUserProfile(user);
+
+  socket.data.role = 'user';
+  socket.data.userId = user.id;
+
+  socket.join('users');
+  socket.join(`user:${user.id}`);
+
+  ensureChatForUser(user);
+
+  return user;
+};
+
+const createUserWithKnownIdForSocket = (socket, userId) => {
+  const cleanUserId = String(userId || '').trim();
+
+  if (!cleanUserId) {
+    return null;
+  }
+
+  const profile = getStoredUserProfile(cleanUserId);
+  const nextName = !isPlaceholderUserName(profile?.name)
+    ? profile.name
+    : pickRandomUserName();
+
+  const user = {
+    id: cleanUserId,
+    name: nextName,
+    silhouetteColour: profile?.silhouetteColour || '#0b3d91',
+    bgColour: profile?.bgColour || '#ece9d8',
+    online: true,
+    lastSeenAt: Date.now(),
+    socketId: socket.id,
+  };
+
+  state.users.push(user);
+  rememberUserProfile(user);
+
+  const numericUserId = Number.parseInt(cleanUserId, 10);
+  if (Number.isFinite(numericUserId) && numericUserId >= state.nextUserNumber) {
+    state.nextUserNumber = numericUserId + 1;
+  }
 
   socket.data.role = 'user';
   socket.data.userId = user.id;
@@ -209,6 +289,9 @@ const markUserOnline = (userId, socket) => {
 
   socket.join('users');
   socket.join(`user:${userId}`);
+
+  const currentUser = getUserById(userId);
+  rememberUserProfile(currentUser);
 };
 
 const markUserOfflineBySocket = (socket) => {
@@ -241,24 +324,35 @@ const removeUserById = (userId) => {
   delete state.chats[cleanUserId];
   delete state.mutedUsers[cleanUserId];
   delete state.secretMutedUsers[cleanUserId];
+  delete state.userPinsById[cleanUserId];
 };
 
 const kickUser = (userId, reason = 'Byl jsi vyhozen z roomky.') => {
-  const user = getUserById(userId);
+  const cleanUserId = String(userId || '').trim();
+  const user = getUserById(cleanUserId);
 
   if (!user) {
     return;
   }
 
-  io.to(`user:${userId}`).emit('user:kicked', {
-    userId,
+  rememberUserProfile(user);
+  const specialPin = state.userPinsById[cleanUserId] || null;
+
+  io.to(`user:${cleanUserId}`).emit('user:kicked', {
+    userId: cleanUserId,
     reason,
+    preserveIdentity: Boolean(specialPin),
+    specialPin,
   });
 
-  state.users = state.users.filter((item) => item.id !== userId);
+  state.users = state.users.filter((item) => item.id !== cleanUserId);
 
-  delete state.mutedUsers[userId];
-  delete state.secretMutedUsers[userId];
+  delete state.mutedUsers[cleanUserId];
+  delete state.secretMutedUsers[cleanUserId];
+
+  if (!specialPin) {
+    delete state.userPinsById[cleanUserId];
+  }
 
   emitState();
 };
@@ -268,9 +362,15 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
     reason,
   });
 
+  state.users.forEach((user) => {
+    state.kickedRoomUserIds[String(user.id)] = Date.now();
+  });
+
   state.users = [];
+  state.chats = {};
   state.mutedUsers = {};
   state.secretMutedUsers = {};
+  state.userPinsById = {};
 
   emitState();
 };
@@ -301,6 +401,11 @@ io.on('connection', (socket) => {
   socket.on('auth:checkPin', ({ pin, lastUserId }) => {
     const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 4);
     const cleanLastId = String(lastUserId || socket.data.lastUserId || '').trim();
+    const specialPinForLastId = cleanLastId ? state.userPinsById[cleanLastId] : null;
+    const isSpecialPinLogin = Boolean(
+      cleanLastId && specialPinForLastId && cleanPin === specialPinForLastId
+    );
+    const isRoomPinLogin = cleanPin === state.userPin;
 
     if (cleanPin === state.adminPin) {
       socket.leave('users');
@@ -320,17 +425,26 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (cleanPin === state.userPin) {
+    if (isRoomPinLogin || isSpecialPinLogin) {
       socket.leave('admins');
+
+      if (cleanLastId && state.kickedRoomUserIds[cleanLastId] && !isSpecialPinLogin) {
+        removeUserById(cleanLastId);
+      }
 
       if (cleanLastId) {
         const existing = getUserById(cleanLastId);
 
-        if (existing) {
+        if (existing && !state.kickedRoomUserIds[cleanLastId]) {
           const normalizedUser = ensureRandomNameForUser(existing.id) || existing;
 
           markUserOnline(existing.id, socket);
           socket.data.lastUserId = existing.id;
+          clearRoomKickReuseBlock(existing.id);
+
+          if (isSpecialPinLogin) {
+            delete state.userPinsById[existing.id];
+          }
 
           socket.emit('auth:success', {
             role: 'user',
@@ -345,6 +459,30 @@ io.on('connection', (socket) => {
 
           emitState();
           return;
+        }
+
+        if (isSpecialPinLogin) {
+          const restoredUser = createUserWithKnownIdForSocket(socket, cleanLastId);
+
+          if (restoredUser) {
+            socket.data.lastUserId = restoredUser.id;
+            clearRoomKickReuseBlock(restoredUser.id);
+            delete state.userPinsById[restoredUser.id];
+
+            socket.emit('auth:success', {
+              role: 'user',
+              userId: restoredUser.id,
+              userName: restoredUser.name,
+            });
+
+            socket.emit('chat:messages', {
+              userId: restoredUser.id,
+              messages: state.chats[restoredUser.id] || [],
+            });
+
+            emitState();
+            return;
+          }
         }
       }
 
@@ -588,6 +726,9 @@ io.on('connection', (socket) => {
         : user
     );
 
+    const renamedUser = getUserById(cleanUserId);
+    rememberUserProfile(renamedUser);
+
     emitState();
   });
 
@@ -603,11 +744,10 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (cleanPin.length === 4) {
-      state.userPin = cleanPin;
-    }
+    const targetPin = cleanPin.length === 4 ? cleanPin : '0008';
+    state.userPinsById[cleanUserId] = targetPin;
 
-    kickUser(cleanUserId, 'Byl jsi vyhozen adminem z roomky.');
+    kickUser(cleanUserId, `Byl jsi vyhozen adminem z roomky. Tvůj PIN je ${targetPin}.`);
   });
 
   socket.on('admin:muteUser', ({ userId, milliseconds }) => {
@@ -680,6 +820,9 @@ io.on('connection', (socket) => {
         : user
     );
 
+    const updatedUser = getUserById(cleanUserId);
+    rememberUserProfile(updatedUser);
+
     emitState();
   });
 
@@ -703,6 +846,9 @@ io.on('connection', (socket) => {
           }
         : user
     );
+
+    const updatedUser = getUserById(cleanUserId);
+    rememberUserProfile(updatedUser);
 
     emitState();
   });

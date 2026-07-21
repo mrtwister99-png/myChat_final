@@ -126,12 +126,33 @@ const PinEntry = ({ navigation }) => {
     };
 
     const handleAuthError = (payload) => { setIsCheckingPin(false); setErrorText(payload?.message || 'Špatný PIN.'); shakeWindow(); };
-    const handleKicked = async () => {
+    const handleUserKicked = async ({ userId, preserveIdentity, specialPin } = {}) => {
+      const shouldPreserveIdentity = Boolean(preserveIdentity && userId);
+
+      if (shouldPreserveIdentity) {
+        const cleanUserId = String(userId);
+        globalThis.CUSIIK_LAST_USER_ID = cleanUserId;
+        await AsyncStorage.setItem('lastUserId', cleanUserId);
+        globalThis.CUSIIK_SPECIAL_RELOGIN_PIN = specialPin || '0008';
+      } else {
+        await AsyncStorage.multiRemove(['lastUserId', 'lastUserName']);
+        globalThis.CUSIIK_LAST_USER_ID = null;
+        globalThis.CUSIIK_SPECIAL_RELOGIN_PIN = null;
+      }
+
+      globalThis.CUSIIK_CURRENT_USER_ID = null;
+      globalThis.CUSIIK_CURRENT_USER_NAME = null;
+      globalThis.CUSIIK_CURRENT_ROLE = null;
+      navigation.replace('PinEntry');
+    };
+
+    const handleRoomKicked = async () => {
       await AsyncStorage.multiRemove(['lastUserId', 'lastUserName']);
       globalThis.CUSIIK_LAST_USER_ID = null;
       globalThis.CUSIIK_CURRENT_USER_ID = null;
       globalThis.CUSIIK_CURRENT_USER_NAME = null;
       globalThis.CUSIIK_CURRENT_ROLE = null;
+      globalThis.CUSIIK_SPECIAL_RELOGIN_PIN = null;
       navigation.replace('PinEntry');
     };
 
@@ -140,8 +161,8 @@ const PinEntry = ({ navigation }) => {
     socket.on('connect_error', handleConnectError);
     socket.on('auth:success', handleAuthSuccess);
     socket.on('auth:error', handleAuthError);
-    socket.on('user:kicked', handleKicked);
-    socket.on('room:kicked', handleKicked);
+    socket.on('user:kicked', handleUserKicked);
+    socket.on('room:kicked', handleRoomKicked);
 
     if (socket.connected) setServerStatusText('Server online'); else socket.connect();
 
@@ -151,8 +172,8 @@ const PinEntry = ({ navigation }) => {
       socket.off('connect_error', handleConnectError);
       socket.off('auth:success', handleAuthSuccess);
       socket.off('auth:error', handleAuthError);
-      socket.off('user:kicked', handleKicked);
-      socket.off('room:kicked', handleKicked);
+      socket.off('user:kicked', handleUserKicked);
+      socket.off('room:kicked', handleRoomKicked);
     };
   }, [navigation]);
 

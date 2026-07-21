@@ -41,18 +41,7 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    // FIX CHYBA 1 - kick musí klient poslouchat
-    const handleKick = async ({ reason }) => {
-      if (globalThis.CUSIIK_CURRENT_ROLE === 'admin') {
-        return;
-      }
-
-      console.log('KICK:', reason);
-      await AsyncStorage.multiRemove(['lastUserId', 'lastUserName']);
-      globalThis.CUSIIK_LAST_USER_ID = null;
-      globalThis.CUSIIK_CURRENT_USER_ID = null;
-      globalThis.CUSIIK_CURRENT_USER_NAME = null;
-      globalThis.CUSIIK_CURRENT_ROLE = null;
+    const resetToPinEntry = () => {
       if (navigationRef.isReady()) {
         navigationRef.reset({
           index: 0,
@@ -61,12 +50,54 @@ const App = () => {
       }
     };
 
-    socket.on('user:kicked', handleKick);
-    socket.on('room:kicked', handleKick);
+    const handleUserKick = async ({ reason, userId, preserveIdentity, specialPin } = {}) => {
+      if (globalThis.CUSIIK_CURRENT_ROLE === 'admin') {
+        return;
+      }
+
+      console.log('KICK:', reason);
+
+      const shouldPreserveIdentity = Boolean(preserveIdentity && userId);
+
+      if (shouldPreserveIdentity) {
+        const cleanUserId = String(userId);
+        globalThis.CUSIIK_LAST_USER_ID = cleanUserId;
+        await AsyncStorage.setItem('lastUserId', cleanUserId);
+        globalThis.CUSIIK_SPECIAL_RELOGIN_PIN = specialPin || '0008';
+      } else {
+        await AsyncStorage.multiRemove(['lastUserId', 'lastUserName']);
+        globalThis.CUSIIK_LAST_USER_ID = null;
+      }
+
+      globalThis.CUSIIK_CURRENT_USER_ID = null;
+      globalThis.CUSIIK_CURRENT_USER_NAME = null;
+      globalThis.CUSIIK_CURRENT_ROLE = null;
+
+      resetToPinEntry();
+    };
+
+    const handleRoomKick = async ({ reason } = {}) => {
+      if (globalThis.CUSIIK_CURRENT_ROLE === 'admin') {
+        return;
+      }
+
+      console.log('ROOM KICK:', reason);
+      await AsyncStorage.multiRemove(['lastUserId', 'lastUserName']);
+      globalThis.CUSIIK_LAST_USER_ID = null;
+      globalThis.CUSIIK_CURRENT_USER_ID = null;
+      globalThis.CUSIIK_CURRENT_USER_NAME = null;
+      globalThis.CUSIIK_CURRENT_ROLE = null;
+      globalThis.CUSIIK_SPECIAL_RELOGIN_PIN = null;
+
+      resetToPinEntry();
+    };
+
+    socket.on('user:kicked', handleUserKick);
+    socket.on('room:kicked', handleRoomKick);
 
     return () => {
-      socket.off('user:kicked', handleKick);
-      socket.off('room:kicked', handleKick);
+      socket.off('user:kicked', handleUserKick);
+      socket.off('room:kicked', handleRoomKick);
     };
   }, []);
 
