@@ -570,6 +570,17 @@ const UzivatelPin = ({ navigation, route }) => {
         </View>
 
         <View style={styles.windowButtons}>
+          {screenMode === 'chat' ? (
+            <View style={styles.windowButton}>
+              <Pressable
+                style={styles.closePressable}
+                onPress={() => setScreenMode('menu')}
+              >
+                <Text style={styles.windowButtonText}>←</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           <View style={styles.windowButton}>
             <Text style={styles.windowButtonText}>_</Text>
           </View>

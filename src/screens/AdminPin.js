@@ -275,7 +275,6 @@ const AdminPin = ({ navigation }) => {
         );
       }
 
-      setNowTick(Date.now());
     };
 
     const handleChatMessages = ({ userId, messages }) => {

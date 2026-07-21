@@ -43,7 +43,6 @@ const App = () => {
 
   useEffect(() => {
     const lastUserMessageCounts = {};
-    let isFirstSync = true;
 
     const handleChatMessages = ({ userId, messages }) => {
       if (globalThis.CUSIIK_CURRENT_ROLE !== 'admin') {
@@ -57,14 +56,10 @@ const App = () => {
 
       const safeMessages = Array.isArray(messages) ? messages : [];
       const nextUserCount = safeMessages.filter((item) => item?.sender === 'user').length;
-      const previousUserCount = lastUserMessageCounts[cleanUserId] || 0;
+      const hasPrevious = Object.prototype.hasOwnProperty.call(lastUserMessageCounts, cleanUserId);
+      const previousUserCount = hasPrevious ? lastUserMessageCounts[cleanUserId] : 0;
 
       lastUserMessageCounts[cleanUserId] = nextUserCount;
-
-      if (isFirstSync) {
-        isFirstSync = false;
-        return;
-      }
 
       if (nextUserCount > previousUserCount) {
         showLocalMessageNotification({

@@ -190,6 +190,27 @@ const getStoredUserProfile = (userId) => {
   return state.userProfilesById[cleanUserId] || null;
 };
 
+const patchStoredUserProfile = (userId, patch) => {
+  const cleanUserId = String(userId || '').trim();
+
+  if (!cleanUserId || !patch || typeof patch !== 'object') {
+    return;
+  }
+
+  const existing = state.userProfilesById[cleanUserId] || {
+    name: pickRandomUserName(),
+    silhouetteColour: '#0b3d91',
+    bgColour: '#ece9d8',
+    avatarIcon: 'uzivatel',
+  };
+
+  state.userProfilesById[cleanUserId] = {
+    ...existing,
+    ...patch,
+    avatarIcon: normalizeAvatarIcon(patch.avatarIcon || existing.avatarIcon),
+  };
+};
+
 const clearRoomKickReuseBlock = (userId) => {
   const cleanUserId = String(userId || '').trim();
 
@@ -465,6 +486,29 @@ io.on('connection', (socket) => {
         const existing = getUserById(cleanLastId);
 
         if (existing && !state.kickedRoomUserIds[cleanLastId]) {
+          const isUsedByOtherSocket = Boolean(
+            existing.online && existing.socketId && existing.socketId !== socket.id
+          );
+
+          if (isUsedByOtherSocket && !isSpecialPinLogin) {
+            const user = createUserForSocket(socket);
+            socket.data.lastUserId = user.id;
+
+            socket.emit('auth:success', {
+              role: 'user',
+              userId: user.id,
+              userName: user.name,
+            });
+
+            socket.emit('chat:messages', {
+              userId: user.id,
+              messages: state.chats[user.id] || [],
+            });
+
+            emitState();
+            return;
+          }
+
           const normalizedUser = ensureRandomNameForUser(existing.id) || existing;
 
           markUserOnline(existing.id, socket);
@@ -779,6 +823,9 @@ io.on('connection', (socket) => {
 
     const renamedUser = getUserById(cleanUserId);
     rememberUserProfile(renamedUser);
+    patchStoredUserProfile(cleanUserId, {
+      name: cleanName,
+    });
 
     emitState();
   });
@@ -873,6 +920,9 @@ io.on('connection', (socket) => {
 
     const updatedUser = getUserById(cleanUserId);
     rememberUserProfile(updatedUser);
+    patchStoredUserProfile(cleanUserId, {
+      silhouetteColour: cleanColour,
+    });
 
     emitState();
   });
@@ -900,6 +950,9 @@ io.on('connection', (socket) => {
 
     const updatedUser = getUserById(cleanUserId);
     rememberUserProfile(updatedUser);
+    patchStoredUserProfile(cleanUserId, {
+      bgColour: cleanColour,
+    });
 
     emitState();
   });
@@ -927,6 +980,9 @@ io.on('connection', (socket) => {
 
     const updatedUser = getUserById(cleanUserId);
     rememberUserProfile(updatedUser);
+    patchStoredUserProfile(cleanUserId, {
+      avatarIcon: normalizedIcon,
+    });
 
     emitState();
   });

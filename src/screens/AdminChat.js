@@ -18,7 +18,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
 
-const MUTE_ICON = require('../assets/icons/okoskrt.png');
+const EYE_ICON = require('../assets/icons/oko.png');
+const EYE_SLASH_ICON = require('../assets/icons/okoskrt.png');
 
 const MUTE_OPTIONS = [
   { label: '10 min', milliseconds: 10 * 60 * 1000 },
@@ -98,6 +99,9 @@ const AdminChat = ({ navigation, route }) => {
   const [selectedMessageIds, setSelectedMessageIds] = useState([]);
   const [nowTick, setNowTick] = useState(Date.now());
   const [serverMutedUsers, setServerMutedUsers] = useState(getGlobalMutedUsers());
+  const [secretMutedUsers, setSecretMutedUsers] = useState(
+    globalThis.CUSIIK_SECRET_MUTED_USERS || {}
+  );
   const [connectionText, setConnectionText] = useState(
     socket.connected ? 'Server online' : 'Připojuji server...'
   );
@@ -170,6 +174,11 @@ useEffect(() => {
         globalThis.CUSIIK_MUTED_USERS = serverState.mutedUsers;
       }
 
+      if (serverState?.secretMutedUsers) {
+        setSecretMutedUsers(serverState.secretMutedUsers);
+        globalThis.CUSIIK_SECRET_MUTED_USERS = serverState.secretMutedUsers;
+      }
+
       setNowTick(Date.now());
     };
 
@@ -230,6 +239,7 @@ useEffect(() => {
   const muteUntil = getMuteUntil();
   const isMuted = muteUntil > nowTick;
   const muteTimeLeft = isMuted ? formatMuteTimeLeft(muteUntil) : 'není umlčen';
+  const isSecretMuted = Boolean(secretMutedUsers[userId]);
 
   const saveMessages = (nextMessages) => {
     const chats = getGlobalChats();
@@ -446,6 +456,24 @@ useEffect(() => {
     toggleMessageSelection(messageId);
   };
 
+  const toggleSecretMute = () => {
+    const nextValue = !isSecretMuted;
+    const nextSecretMutedUsers = {
+      ...secretMutedUsers,
+      [userId]: nextValue,
+    };
+
+    setSecretMutedUsers(nextSecretMutedUsers);
+    globalThis.CUSIIK_SECRET_MUTED_USERS = nextSecretMutedUsers;
+
+    if (socket.connected) {
+      socket.emit('admin:secretMuteUser', {
+        userId,
+        enabled: nextValue,
+      });
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
@@ -477,7 +505,9 @@ useEffect(() => {
               </View>
 
               <View style={[styles.windowButton, styles.closeButton]}>
-                <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
+                <Pressable style={styles.closePressable} onPress={goBack}>
+                  <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
+                </Pressable>
               </View>
             </View>
           </View>
@@ -513,12 +543,19 @@ useEffect(() => {
             <Pressable
               style={({ pressed }) => [
                 styles.muteButton,
+                isSecretMuted && styles.eyeButtonActive,
                 isMuted && styles.muteButtonActive,
                 pressed && styles.xpButtonPressed,
               ]}
-              onPress={openMuteModal}
+              onPress={toggleSecretMute}
+              onLongPress={openMuteModal}
+              delayLongPress={260}
             >
-              <Image source={MUTE_ICON} style={styles.muteButtonIcon} resizeMode="contain" />
+              <Image
+                source={isSecretMuted ? EYE_SLASH_ICON : EYE_ICON}
+                style={styles.muteButtonIcon}
+                resizeMode="contain"
+              />
             </Pressable>
           </View>
 
@@ -556,11 +593,10 @@ useEffect(() => {
                     key={item.id}
                     style={[
                       styles.messageRow,
-                      isAdmin ? styles.messageRowAdmin : styles.messageRowUser,
+                      isAdmin ? styles.messageRowUser : styles.messageRowAdmin,
                     ]}
                   >
                     <Pressable
-                      style={styles.messagePressable}
                       onLongPress={() => onMessageLongPress(item.id)}
                       onPress={() => onMessagePress(item.id)}
                       delayLongPress={250}
@@ -786,6 +822,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#e04b31',
   },
 
+  closePressable: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   windowButtonText: {
     color: '#003c8f',
     fontSize: 13,
@@ -888,6 +931,13 @@ const styles = StyleSheet.create({
     height: 18,
   },
 
+  eyeButtonActive: {
+    borderTopColor: '#ff9f9f',
+    borderLeftColor: '#ff9f9f',
+    borderRightColor: '#a00000',
+    borderBottomColor: '#a00000',
+  },
+
   muteButtonActive: {
     backgroundColor: '#ffd7d7',
   },
@@ -920,21 +970,15 @@ const styles = StyleSheet.create({
   },
 
   messageRowUser: {
-    justifyContent: 'flex-start',
-  },
-
-  messageRowAdmin: {
     justifyContent: 'flex-end',
   },
 
-  messagePressable: {
-    width: '92%',
-    minWidth: 210,
-    maxWidth: '92%',
+  messageRowAdmin: {
+    justifyContent: 'flex-start',
   },
 
   messageBubble: {
-    width: '100%',
+    maxWidth: '82%',
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderWidth: 2,
