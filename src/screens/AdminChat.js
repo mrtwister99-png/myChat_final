@@ -528,14 +528,6 @@ useEffect(() => {
             </View>
 
             <View style={styles.windowButtons}>
-              <View style={styles.windowButton}>
-                <Text style={styles.windowButtonText}>_</Text>
-              </View>
-
-              <View style={styles.windowButton}>
-                <Text style={styles.windowButtonText}>□</Text>
-              </View>
-
               <View style={[styles.windowButton, styles.closeButton]}>
                 <Pressable style={styles.closePressable} onPress={goBack}>
                   <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
@@ -556,7 +548,13 @@ useEffect(() => {
             </Pressable>
 
             <View style={styles.userInfoBox}>
-              <Text style={styles.userName}>{userName}</Text>
+              <View style={styles.userNameRow}>
+                <Text style={styles.userName}>{userName}</Text>
+
+                {isSecretMuted ? <Text style={styles.userNameMetaText}> (potají)</Text> : null}
+
+                {isMuted ? <Text style={styles.userNameMetaText}> ({muteTimeLeft})</Text> : null}
+              </View>
 
               <View style={styles.muteStatusRow}>
                 <View
@@ -942,6 +940,19 @@ const styles = StyleSheet.create({
   userName: {
     color: '#000000',
     fontSize: 16,
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+
+  userNameMetaText: {
+    color: '#8a4d00',
+    fontSize: 12,
     fontWeight: '900',
     marginBottom: 3,
   },

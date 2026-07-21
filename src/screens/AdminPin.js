@@ -272,6 +272,7 @@ const AdminPin = ({ navigation }) => {
   const [colourModalVisible, setColourModalVisible] = useState(false);
 
   const [readCounts, setReadCounts] = useState(getGlobalReadCounts());
+  const [secretMutedUsers, setSecretMutedUsers] = useState(getGlobalSecretMutedUsers());
   const [lastActionText, setLastActionText] = useState('');
   const [connectionText, setConnectionText] = useState(
     socket.connected ? 'Server online' : 'Připojuji server...'
@@ -342,6 +343,7 @@ const AdminPin = ({ navigation }) => {
       }
 
       if (serverState?.secretMutedUsers) {
+        setSecretMutedUsers(serverState.secretMutedUsers);
         globalThis.CUSIIK_SECRET_MUTED_USERS = serverState.secretMutedUsers;
       }
 
@@ -406,7 +408,6 @@ const AdminPin = ({ navigation }) => {
 
   const renderUserNameWithMute = (user, textStyle) => {
     const muteText = formatMuteLeft(user.id, nowTick);
-    const secretMutedUsers = getGlobalSecretMutedUsers();
     const isSecretMuted = Boolean(secretMutedUsers[user.id]);
 
     return (
@@ -775,6 +776,7 @@ const AdminPin = ({ navigation }) => {
     }
 
     setNowTick(Date.now());
+    setSecretMutedUsers({ ...secretMutedUsers });
     setLastActionText(
       nextValue
         ? `Uživatel ${user.name} byl umlčen potají.`
@@ -843,6 +845,26 @@ const AdminPin = ({ navigation }) => {
         ? `Uživatel ${user.name} má uzamčenou ikonku na fuckera.`
         : `Uživatel ${user.name} už nemá uzamčenou ikonku na fuckera.`
     );
+  };
+
+  const totalUnreadMessages = users.reduce((sum, user) => {
+    return sum + getUnreadCount(user.id);
+  }, 0);
+
+  const getUnreadSummaryText = () => {
+    if (totalUnreadMessages <= 0) {
+      return 'Nemáte nové zprávy';
+    }
+
+    if (totalUnreadMessages === 1) {
+      return 'Máte 1 novou zprávu';
+    }
+
+    if (totalUnreadMessages >= 2 && totalUnreadMessages <= 4) {
+      return `Máte ${totalUnreadMessages} nové zprávy`;
+    }
+
+    return `Máte ${totalUnreadMessages} nových zpráv`;
   };
 
   const renderSettingsContent = () => {
@@ -1097,14 +1119,6 @@ const AdminPin = ({ navigation }) => {
             </View>
 
             <View style={styles.windowButtons}>
-              <View style={styles.windowButton}>
-                <Text style={styles.windowButtonText}>_</Text>
-              </View>
-
-              <View style={styles.windowButton}>
-                <Text style={styles.windowButtonText}>□</Text>
-              </View>
-
               <View style={[styles.windowButton, styles.closeButton]}>
                 <Pressable style={styles.closePressable} onPress={goToPinEntry}>
                   <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
@@ -1115,26 +1129,30 @@ const AdminPin = ({ navigation }) => {
 
           <View style={styles.body}>
             <View style={styles.topInfoPanel}>
-              <Text style={styles.topInfoText}>
-                Uživatelský PIN: <Text style={styles.pinText}>{currentUserPin}</Text>
-              </Text>
-
-              <View style={styles.adminStatusRow}>
-                <View
-                  style={[
-                    styles.adminStatusDot,
-                    isAdminOnline
-                      ? styles.statusDotOn
-                      : isAdminJob
-                        ? styles.statusDotJob
-                        : styles.statusDotOff,
-                  ]}
-                />
+              <View style={styles.topInfoLeftColumn}>
                 <Text style={styles.topInfoText}>
-                  Admin status:{' '}
-                  <Text style={styles.pinText}>{getAdminStatusLabel()}</Text>
+                  Uživatelský PIN: <Text style={styles.pinText}>{currentUserPin}</Text>
                 </Text>
+
+                <View style={styles.adminStatusRow}>
+                  <View
+                    style={[
+                      styles.adminStatusDot,
+                      isAdminOnline
+                        ? styles.statusDotOn
+                        : isAdminJob
+                          ? styles.statusDotJob
+                          : styles.statusDotOff,
+                    ]}
+                  />
+                  <Text style={styles.topInfoText}>
+                    Admin status:{' '}
+                    <Text style={styles.pinText}>{getAdminStatusLabel()}</Text>
+                  </Text>
+                </View>
               </View>
+
+              <Text style={styles.topInfoUnreadText}>{getUnreadSummaryText()}</Text>
 
             </View>
 
@@ -1806,6 +1824,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 
   topInfoText: {
@@ -1941,7 +1962,7 @@ const styles = StyleSheet.create({
   },
 
   mutedMinutesText: {
-    color: '#d00000',
+    color: '#c46a00',
     fontSize: 15,
     fontWeight: '900',
   },
@@ -1950,6 +1971,19 @@ const styles = StyleSheet.create({
     color: '#7a00cc',
     fontSize: 12,
     fontWeight: '900',
+  },
+
+  topInfoLeftColumn: {
+    flex: 1,
+    paddingRight: 10,
+  },
+
+  topInfoUnreadText: {
+    color: '#8a4d00',
+    fontSize: 13,
+    fontWeight: '900',
+    textAlign: 'right',
+    flexShrink: 1,
   },
 
   unreadBadge: {
