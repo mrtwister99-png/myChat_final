@@ -22,8 +22,17 @@ import {
   showLocalMessageNotification,
 } from '../notifications';
 
-const getCurrentUserId = () => {
-  return globalThis.CUSIIK_CURRENT_USER_ID || globalThis.CUSIIK_currentUserId || '1';
+const resolveCurrentUserId = (routeUserId) => {
+  const cleanRouteUserId = String(routeUserId || '').trim();
+
+  if (cleanRouteUserId) {
+    return cleanRouteUserId;
+  }
+
+  const globalUserId = globalThis.CUSIIK_CURRENT_USER_ID || globalThis.CUSIIK_currentUserId;
+  const cleanGlobalUserId = String(globalUserId || '').trim();
+
+  return cleanGlobalUserId || '1';
 };
 
 const LOCAL_RANDOM_USER_NAMES = [
@@ -199,13 +208,13 @@ const getAdminMessageCount = (messages) => {
   return messages.filter((item) => item.sender === 'admin').length;
 };
 
-const UzivatelPin = ({ navigation }) => {
+const UzivatelPin = ({ navigation, route }) => {
   const scrollViewRef = useRef(null);
   const isFirstChatSyncRef = useRef(true);
-  const currentUserId = getCurrentUserId();
+  const currentUserId = resolveCurrentUserId(route?.params?.userId);
   const [currentUserName, setCurrentUserName] = useState(getCurrentUserName());
   const [screenMode, setScreenMode] = useState('menu');
-  const [colourModalVisible, setColourModalVisible] = useState(false);
+  const [iconModalVisible, setIconModalVisible] = useState(false);
 
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState(getInitialMessages);
@@ -228,6 +237,10 @@ const UzivatelPin = ({ navigation }) => {
   const [readAdminCount, setReadAdminCount] = useState(
     getGlobalUserReadCounts()[currentUserId] || 0
   );
+
+  useEffect(() => {
+    globalThis.CUSIIK_CURRENT_USER_ID = currentUserId;
+  }, [currentUserId]);
 
   const secretMutedUsers = getGlobalSecretMutedUsers();
   const isSecretMuted = Boolean(secretMutedUsers[currentUserId]);
@@ -489,7 +502,7 @@ const UzivatelPin = ({ navigation }) => {
       });
     }
 
-    setColourModalVisible(false);
+    setIconModalVisible(false);
   };
 
   const sendMessage = () => {
@@ -615,7 +628,7 @@ const UzivatelPin = ({ navigation }) => {
                     styles.menuButton,
                     pressed && styles.sendButtonPressed,
                   ]}
-                  onPress={() => setColourModalVisible(true)}
+                  onPress={() => setIconModalVisible(true)}
                 >
                   <Text style={styles.menuButtonText}>Změnit ikonku</Text>
                 </Pressable>
@@ -660,10 +673,10 @@ const UzivatelPin = ({ navigation }) => {
           </View>
 
           <Modal
-            visible={colourModalVisible}
+            visible={iconModalVisible}
             transparent
             animationType="fade"
-            onRequestClose={() => setColourModalVisible(false)}
+            onRequestClose={() => setIconModalVisible(false)}
           >
             <View style={styles.modalOverlay}>
               <View style={styles.modalWindow}>
@@ -672,7 +685,7 @@ const UzivatelPin = ({ navigation }) => {
 
                   <Pressable
                     style={styles.modalCloseButton}
-                    onPress={() => setColourModalVisible(false)}
+                    onPress={() => setIconModalVisible(false)}
                   >
                     <Text style={styles.modalCloseButtonText}>×</Text>
                   </Pressable>

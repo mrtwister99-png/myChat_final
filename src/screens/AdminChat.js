@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -16,6 +17,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
+
+const MUTE_ICON = require('../assets/icons/okoskrt.png');
 
 const MUTE_OPTIONS = [
   { label: '10 min', milliseconds: 10 * 60 * 1000 },
@@ -515,6 +518,7 @@ useEffect(() => {
               ]}
               onPress={openMuteModal}
             >
+              <Image source={MUTE_ICON} style={styles.muteButtonIcon} resizeMode="contain" />
               <Text style={styles.muteButtonText}>
                 {isMuted ? 'Umlčení' : 'Umlčet'}
               </Text>
@@ -559,6 +563,7 @@ useEffect(() => {
                     ]}
                   >
                     <Pressable
+                      style={styles.messagePressable}
                       onLongPress={() => onMessageLongPress(item.id)}
                       onPress={() => onMessagePress(item.id)}
                       delayLongPress={250}
@@ -884,9 +889,16 @@ const styles = StyleSheet.create({
     borderLeftColor: '#ffffff',
     borderRightColor: '#777777',
     borderBottomColor: '#777777',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 10,
+  },
+
+  muteButtonIcon: {
+    width: 16,
+    height: 16,
+    marginRight: 6,
   },
 
   muteButtonActive: {
@@ -934,8 +946,14 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
 
+  messagePressable: {
+    width: '92%',
+    minWidth: 210,
+    maxWidth: '92%',
+  },
+
   messageBubble: {
-    maxWidth: '82%',
+    width: '100%',
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderWidth: 2,
