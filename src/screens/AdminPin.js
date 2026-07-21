@@ -17,6 +17,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
 
+const EYE_ICON = require('../assets/icons/oko.png');
+const EYE_SLASH_ICON = require('../assets/icons/okoskrt.png');
+
 const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
 const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '8831';
 const DEFAULT_ADMIN_STATUS = globalThis.CUSIIK_ADMIN_STATUS || 'off';
@@ -260,6 +263,10 @@ const AdminPin = ({ navigation }) => {
 
       if (serverState?.mutedUsers) {
         globalThis.CUSIIK_MUTED_USERS = serverState.mutedUsers;
+      }
+
+      if (serverState?.secretMutedUsers) {
+        globalThis.CUSIIK_SECRET_MUTED_USERS = serverState.secretMutedUsers;
       }
 
       if (Array.isArray(serverState?.users)) {
@@ -571,6 +578,16 @@ const AdminPin = ({ navigation }) => {
     setLastActionText(`Uživatel ${user.name} byl umlčen na ${option.label}.`);
     setMuteModalVisible(false);
     closeUserMenu();
+  };
+
+  const openMuteModalForUser = (user) => {
+    if (!user) {
+      return;
+    }
+
+    setActionUser(user);
+    setMuteModalVisible(true);
+    setUserMenuVisible(false);
   };
 
   const toggleSecretMute = (user) => {
@@ -942,11 +959,21 @@ const AdminPin = ({ navigation }) => {
                     })
                     .map((user) => {
                     const unreadCount = getUnreadCount(user.id);
+                    const isUserMuted = getMuteMsLeft(user.id, nowTick) > 0;
+                    const secretMutedUsers = getGlobalSecretMutedUsers();
+                    const isUserSecretMuted = Boolean(secretMutedUsers[user.id]);
 
                     return (
                       <View
                         key={user.id}
-                        style={styles.userRow}
+                        style={[
+                          styles.userRow,
+                          isUserSecretMuted
+                            ? styles.userRowSecretMuted
+                            : isUserMuted
+                              ? styles.userRowMuted
+                              : null,
+                        ]}
                       >
                         <Pressable
                           style={({ pressed }) => [
@@ -1001,6 +1028,24 @@ const AdminPin = ({ navigation }) => {
 
                         <Pressable
                           style={({ pressed }) => [
+                            styles.eyeToggleButton,
+                            isUserSecretMuted && styles.eyeToggleButtonActive,
+                            isUserMuted && styles.eyeToggleButtonMuted,
+                            pressed && styles.xpButtonPressed,
+                          ]}
+                          onPress={() => toggleSecretMute(user)}
+                          onLongPress={() => openMuteModalForUser(user)}
+                          delayLongPress={260}
+                        >
+                          <Image
+                            source={isUserSecretMuted ? EYE_SLASH_ICON : EYE_ICON}
+                            style={styles.eyeToggleIcon}
+                            resizeMode="contain"
+                          />
+                        </Pressable>
+
+                        <Pressable
+                          style={({ pressed }) => [
                             styles.gearButton,
                             pressed && styles.xpButtonPressed,
                           ]}
@@ -1039,7 +1084,7 @@ const AdminPin = ({ navigation }) => {
                 ]}
                 onPress={openSettings}
               >
-                <Text style={styles.bottomButtonText}>nastaveni</Text>
+                <Text style={styles.bottomButtonText}>Nastavení</Text>
               </Pressable>
             </View>
           </View>
@@ -1092,13 +1137,13 @@ const AdminPin = ({ navigation }) => {
                     pressed && styles.xpButtonPressed,
                   ]}
                   onPress={() => {
-                    setMuteModalVisible(true);
+                    setColourModalVisible(true);
                     setUserMenuVisible(false);
                   }}
                 >
-                  <Text style={styles.settingsOptionTitle}>Umlčet</Text>
+                  <Text style={styles.settingsOptionTitle}>Změna obrysu</Text>
                   <Text style={styles.settingsOptionText}>
-                    Uživatel nebude moct psát po zvolenou dobu.
+                    Změní obrys uživatele, který uvidí admin i uživatel.
                   </Text>
                 </Pressable>
 
@@ -1121,6 +1166,21 @@ const AdminPin = ({ navigation }) => {
                 <Pressable
                   style={({ pressed }) => [
                     styles.settingsOption,
+                    styles.settingsOptionMute,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => openMuteModalForUser(actionUser)}
+                >
+                  <Text style={styles.settingsOptionTitle}>Umlčet</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Uživatel nebude moct psát po zvolenou dobu.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    styles.settingsOptionSecretMute,
                     pressed && styles.xpButtonPressed,
                   ]}
                   onPress={() => toggleSecretMute(actionUser)}
@@ -1128,22 +1188,6 @@ const AdminPin = ({ navigation }) => {
                   <Text style={styles.settingsOptionTitle}>Umlčet potají</Text>
                   <Text style={styles.settingsOptionText}>
                     Uživatel uvidí admin status OFF, i když bude pro ostatní ON.
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.settingsOption,
-                    pressed && styles.xpButtonPressed,
-                  ]}
-                  onPress={() => {
-                    setColourModalVisible(true);
-                    setUserMenuVisible(false);
-                  }}
-                >
-                  <Text style={styles.settingsOptionTitle}>Změna obrysu</Text>
-                  <Text style={styles.settingsOptionText}>
-                    Změní obrys uživatele, který uvidí admin i uživatel.
                   </Text>
                 </Pressable>
               </View>
@@ -1705,6 +1749,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  eyeToggleButton: {
+    width: 38,
+    height: 34,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+
+  eyeToggleButtonActive: {
+    borderColor: '#ff3b30',
+  },
+
+  eyeToggleButtonMuted: {
+    borderColor: '#c46a00',
+  },
+
+  eyeToggleIcon: {
+    width: 20,
+    height: 20,
+  },
+
   gearButtonText: {
     color: '#000000',
     fontSize: 18,
@@ -2012,6 +2083,28 @@ const styles = StyleSheet.create({
     color: '#333333',
     fontSize: 12,
     lineHeight: 17,
+  },
+
+  settingsOptionMute: {
+    borderColor: '#ff3b30',
+  },
+
+  settingsOptionSecretMute: {
+    borderColor: '#7a00cc',
+  },
+
+  userRowMuted: {
+    borderTopColor: '#c46a00',
+    borderLeftColor: '#c46a00',
+    borderRightColor: '#8b4700',
+    borderBottomColor: '#8b4700',
+  },
+
+  userRowSecretMuted: {
+    borderTopColor: '#9c4dcc',
+    borderLeftColor: '#9c4dcc',
+    borderRightColor: '#5d1f85',
+    borderBottomColor: '#5d1f85',
   },
 
   settingsList: {

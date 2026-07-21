@@ -912,8 +912,6 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const existingProfile = getStoredUserProfile(cleanUserId);
-
     state.users = state.users.map((user) =>
       user.id === cleanUserId
         ? {
@@ -927,9 +925,6 @@ io.on('connection', (socket) => {
     rememberUserProfile(updatedUser);
     patchStoredUserProfile(cleanUserId, {
       silhouetteColour: cleanColour,
-      name: existingProfile?.name,
-      bgColour: existingProfile?.bgColour,
-      avatarIcon: existingProfile?.avatarIcon,
     });
 
     emitState();

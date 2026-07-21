@@ -210,6 +210,8 @@ const getAdminMessageCount = (messages) => {
 const UzivatelPin = ({ navigation, route }) => {
   const scrollViewRef = useRef(null);
   const isFirstChatSyncRef = useRef(true);
+  const screenModeRef = useRef('menu');
+  const skipNotifyOnNextChatSyncRef = useRef(false);
   const currentUserId = resolveCurrentUserId(route?.params?.userId);
   const [currentUserName, setCurrentUserName] = useState(getCurrentUserName());
   const [screenMode, setScreenMode] = useState('menu');
@@ -240,6 +242,10 @@ const UzivatelPin = ({ navigation, route }) => {
   useEffect(() => {
     globalThis.CUSIIK_CURRENT_USER_ID = currentUserId;
   }, [currentUserId]);
+
+  useEffect(() => {
+    screenModeRef.current = screenMode;
+  }, [screenMode]);
 
   const secretMutedUsers = getGlobalSecretMutedUsers();
   const isSecretMuted = Boolean(secretMutedUsers[currentUserId]);
@@ -368,7 +374,20 @@ const UzivatelPin = ({ navigation, route }) => {
       chats[currentUserId] = safeMessages;
       setMessages(safeMessages);
 
-      if (!isFirstChatSyncRef.current && nextAdminMessages > previousAdminMessages && screenMode !== 'chat') {
+      const currentReadCount = getGlobalUserReadCounts()[currentUserId] || 0;
+      const previousUnread = Math.max(previousAdminMessages - currentReadCount, 0);
+      const nextUnread = Math.max(nextAdminMessages - currentReadCount, 0);
+      const shouldSkipNotification = skipNotifyOnNextChatSyncRef.current;
+
+      skipNotifyOnNextChatSyncRef.current = false;
+
+      if (
+        !isFirstChatSyncRef.current &&
+        !shouldSkipNotification &&
+        screenModeRef.current !== 'chat' &&
+        previousUnread === 0 &&
+        nextUnread > 0
+      ) {
         showLocalMessageNotification({
           title: 'Nová zpráva od admina',
           body: 'Máš novou zprávu v chatu.',
@@ -379,7 +398,7 @@ const UzivatelPin = ({ navigation, route }) => {
         isFirstChatSyncRef.current = false;
       }
 
-      if (screenMode === 'chat') {
+      if (screenModeRef.current === 'chat') {
         markMessagesAsRead(safeMessages);
       }
     };
@@ -403,6 +422,8 @@ const UzivatelPin = ({ navigation, route }) => {
       socket.connect();
     }
 
+    skipNotifyOnNextChatSyncRef.current = true;
+    socket.emit('state:get');
     socket.emit('chat:get', {
       userId: currentUserId,
     });
@@ -412,7 +433,7 @@ const UzivatelPin = ({ navigation, route }) => {
       socket.off('chat:messages', handleChatMessages);
       socket.off('chat:muted', handleMuted);
     };
-  }, [screenMode, messages]);
+  }, [currentUserId]);
 
   useEffect(() => {
     const helperInterval = setInterval(() => {
@@ -433,6 +454,8 @@ const UzivatelPin = ({ navigation, route }) => {
       refreshScreenData();
 
       if (socket.connected) {
+        skipNotifyOnNextChatSyncRef.current = true;
+        socket.emit('state:get');
         socket.emit('chat:get', {
           userId: currentUserId,
         });
