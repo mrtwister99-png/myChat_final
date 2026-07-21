@@ -414,6 +414,9 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
   state.mutedUsers = {};
   state.secretMutedUsers = {};
   state.userPinsById = {};
+  state.userProfilesById = {};
+  state.kickedRoomUserIds = {};
+  state.nextUserNumber = 1;
 
   emitState();
 };
@@ -909,6 +912,8 @@ io.on('connection', (socket) => {
       return;
     }
 
+    const existingProfile = getStoredUserProfile(cleanUserId);
+
     state.users = state.users.map((user) =>
       user.id === cleanUserId
         ? {
@@ -922,6 +927,9 @@ io.on('connection', (socket) => {
     rememberUserProfile(updatedUser);
     patchStoredUserProfile(cleanUserId, {
       silhouetteColour: cleanColour,
+      name: existingProfile?.name,
+      bgColour: existingProfile?.bgColour,
+      avatarIcon: existingProfile?.avatarIcon,
     });
 
     emitState();

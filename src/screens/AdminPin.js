@@ -445,7 +445,6 @@ const AdminPin = ({ navigation }) => {
 
     globalThis.CUSIIK_USER_PIN = cleanedPin;
     setCurrentUserPin(cleanedPin);
-    setUsers([]);
 
     if (socket.connected) {
       socket.emit('admin:setUserPin', {

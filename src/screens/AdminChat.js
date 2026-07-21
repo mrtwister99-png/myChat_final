@@ -141,10 +141,6 @@ useEffect(() => {
   return unsubscribe;
 }, [navigation]);
 
-useEffect(() => {
-  scrollToBottom(true);
-}, [messages.length]);
-
   useEffect(() => {
     if (!selectionMode) {
       setSelectedMessageIds([]);
@@ -191,10 +187,6 @@ useEffect(() => {
 
       chats[userId] = nextMessages || [];
       setMessages(nextMessages || []);
-
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
     };
 
     socket.on('connect', handleConnect);
@@ -240,6 +232,7 @@ useEffect(() => {
   const isMuted = muteUntil > nowTick;
   const muteTimeLeft = isMuted ? formatMuteTimeLeft(muteUntil) : 'není umlčen';
   const isSecretMuted = Boolean(secretMutedUsers[userId]);
+  const isServerOnline = socket.connected;
 
   const saveMessages = (nextMessages) => {
     const chats = getGlobalChats();
@@ -342,10 +335,6 @@ useEffect(() => {
 
     saveMessages(nextMessages);
     setMessage('');
-
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
   };
 
   const openMuteModal = () => {
@@ -378,10 +367,6 @@ useEffect(() => {
 
     setNowTick(Date.now());
     closeMuteModal();
-
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
   };
 
   const unmuteUser = () => {
@@ -407,10 +392,6 @@ useEffect(() => {
 
     setNowTick(Date.now());
     closeMuteModal();
-
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
   };
 
   const goBack = () => {
@@ -493,6 +474,15 @@ useEffect(() => {
               </View>
 
               <Text style={styles.titleText}>Chat s uživatelem</Text>
+
+              <View
+                style={[
+                  styles.titleStatusDot,
+                  isServerOnline ? styles.titleStatusOnline : styles.titleStatusOffline,
+                ]}
+              />
+
+              <Text style={styles.titleStatusText}>{isServerOnline ? 'on' : 'off'}</Text>
             </View>
 
             <View style={styles.windowButtons}>
@@ -565,9 +555,6 @@ useEffect(() => {
               style={styles.messagesScroll}
               contentContainerStyle={styles.messagesContent}
               keyboardShouldPersistTaps="handled"
-              onContentSizeChange={() => {
-                scrollViewRef.current?.scrollToEnd({ animated: true });
-              }}
             >
               {messages.map((item) => {
                 const isAdmin = item.sender === 'admin';
@@ -604,7 +591,7 @@ useEffect(() => {
                     <View
                       style={[
                         styles.messageBubble,
-                        isAdmin ? styles.adminBubble : styles.userBubble,
+                        isAdmin ? styles.userBubble : styles.adminBubble,
                         isSelected && styles.selectedMessageBubble,
                       ]}
                     >
@@ -797,6 +784,31 @@ const styles = StyleSheet.create({
     textShadowColor: '#00245c',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 1,
+  },
+
+  titleStatusDot: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    marginLeft: 8,
+  },
+
+  titleStatusText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '900',
+    marginLeft: 4,
+    textTransform: 'uppercase',
+  },
+
+  titleStatusOnline: {
+    backgroundColor: '#28c840',
+  },
+
+  titleStatusOffline: {
+    backgroundColor: '#ff3b30',
   },
 
   windowButtons: {

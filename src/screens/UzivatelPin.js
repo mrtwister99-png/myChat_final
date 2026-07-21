@@ -381,7 +381,6 @@ const UzivatelPin = ({ navigation, route }) => {
 
       if (screenMode === 'chat') {
         markMessagesAsRead(safeMessages);
-        scrollToBottom(true);
       }
     };
 
@@ -441,19 +440,11 @@ const UzivatelPin = ({ navigation, route }) => {
 
       if (screenMode === 'chat') {
         markMessagesAsRead(messages);
-        scrollToBottom(false);
       }
     });
 
     return unsubscribe;
   }, [navigation, screenMode, messages]);
-
-  useEffect(() => {
-    if (screenMode === 'chat') {
-      scrollToBottom(true);
-      markMessagesAsRead(messages);
-    }
-  }, [messages.length, screenMode]);
 
   const goToLogin = async () => {
     setBlockedInfo('');
@@ -540,8 +531,6 @@ const UzivatelPin = ({ navigation, route }) => {
     saveMessages(nextMessages);
     setMessage('');
     setBlockedInfo('');
-
-    scrollToBottom(true);
   };
 
   const renderTitleBar = (title) => {
@@ -760,9 +749,6 @@ const UzivatelPin = ({ navigation, route }) => {
               style={styles.messagesScroll}
               contentContainerStyle={styles.messagesContent}
               keyboardShouldPersistTaps="handled"
-              onContentSizeChange={() => {
-                scrollToBottom(true);
-              }}
             >
               {messages.map((item) => {
                 const isUser = item.sender === 'user';
