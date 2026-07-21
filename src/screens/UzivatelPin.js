@@ -1,4 +1,4 @@
-// src/screens/uzivatelPin.js
+// src/screens/UzivatelPin.js
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -28,7 +28,7 @@ const resolveCurrentUserId = (routeUserId) => {
     return cleanRouteUserId;
   }
 
-  const globalUserId = globalThis.CUSIIK_CURRENT_USER_ID || globalThis.CUSIIK_currentUserId;
+  const globalUserId = globalThis.CUSIIK_CURRENT_USER_ID;
   const cleanGlobalUserId = String(globalUserId || '').trim();
 
   return cleanGlobalUserId || '1';
@@ -71,7 +71,7 @@ const isPlaceholderUserName = (name) => {
 };
 
 const getCurrentUserName = () => {
-  const storedName = globalThis.CUSIIK_CURRENT_USER_NAME || globalThis.CUSIIK_currentUserName;
+  const storedName = globalThis.CUSIIK_CURRENT_USER_NAME;
 
   if (!isPlaceholderUserName(storedName)) {
     return storedName;
@@ -81,25 +81,31 @@ const getCurrentUserName = () => {
 };
 
 const HELPER_MESSAGES = [
-  'server lagguje , muzes zkusit zvysit rate na 0,5 ?',
-  'mam ted 1200 ms , da se s tim neco delat ?',
-  'muzes me teleportovat na souradnice [2,0]',
+  'Server laguje, můžeš zkusit zvýšit rate na 0,5?',
+  'Mám teď 1200 ms, dá se s tím něco dělat?',
+  'Můžeš mě teleportovat na souřadnice [2,0]?',
 ];
 
 const USER_ICON_SOURCES = {
   uzivatel: require('../assets/icons/uzivatel.png'),
+  cat: require('../assets/icons/cat.png'),
+  pes: require('../assets/icons/pes.png'),
   happy: require('../assets/icons/happy.png'),
-  sad: require('../assets/icons/sad.png'),
   devil: require('../assets/icons/devil.png'),
   klaun: require('../assets/icons/klaun.png'),
+  stop: require('../assets/icons/stop.png'),
+  vykricnik: require('../assets/icons/vykricnik.png'),
+  fucker: require('../assets/icons/fucker.png'),
 };
 
 const USER_ICON_OPTIONS = [
-  { key: 'uzivatel', label: 'Uživatel' },
-  { key: 'happy', label: 'happy' },
-  { key: 'sad', label: 'sad' },
+  { key: 'cat', label: 'kočka' },
+  { key: 'pes', label: 'pes' },
   { key: 'devil', label: 'devil' },
   { key: 'klaun', label: 'klaun' },
+  { key: 'happy', label: 'prsa' },
+  { key: 'stop', label: 'stop' },
+  { key: 'vykricnik', label: 'výstraha' },
 ];
 
 const normalizeAvatarIcon = (iconKey) => {
@@ -209,7 +215,6 @@ const getAdminMessageCount = (messages) => {
 
 const UzivatelPin = ({ navigation, route }) => {
   const scrollViewRef = useRef(null);
-  const isFirstChatSyncRef = useRef(true);
   const initialSyncDoneRef = useRef(false);
   const screenMountAtRef = useRef(Date.now());
   const screenModeRef = useRef('menu');
@@ -235,6 +240,9 @@ const UzivatelPin = ({ navigation, route }) => {
   );
   const [userAvatarIcon, setUserAvatarIcon] = useState(
     normalizeAvatarIcon(globalThis.CUSIIK_USER_AVATAR_ICON || 'uzivatel')
+  );
+  const [isAvatarLocked, setIsAvatarLocked] = useState(
+    Boolean(globalThis.CUSIIK_USER_AVATAR_LOCKED)
   );
 
   const [readAdminCount, setReadAdminCount] = useState(
@@ -375,6 +383,10 @@ const UzivatelPin = ({ navigation, route }) => {
           setUserAvatarIcon(normalizedIcon);
           globalThis.CUSIIK_USER_AVATAR_ICON = normalizedIcon;
         }
+
+        const nextAvatarLocked = Boolean(currentUser?.avatarLocked);
+        setIsAvatarLocked(nextAvatarLocked);
+        globalThis.CUSIIK_USER_AVATAR_LOCKED = nextAvatarLocked;
       }
 
       if (serverState?.mutedUsers) {
@@ -424,7 +436,6 @@ const UzivatelPin = ({ navigation, route }) => {
 
       if (isInitialSync) {
         initialSyncDoneRef.current = true;
-        isFirstChatSyncRef.current = false;
 
         // First sync can contain old server history; do not notify for that backlog.
         if (looksLikeHistoricalSync) {
@@ -568,6 +579,12 @@ const UzivatelPin = ({ navigation, route }) => {
   };
 
   const changeUserAvatarIcon = (iconKey) => {
+    if (isAvatarLocked) {
+      setBlockedInfo('Ikonka je uzamčená adminem a nelze ji změnit.');
+      setIconModalVisible(false);
+      return;
+    }
+
     const normalizedIcon = normalizeAvatarIcon(iconKey);
 
     setUserAvatarIcon(normalizedIcon);
@@ -717,11 +734,21 @@ const UzivatelPin = ({ navigation, route }) => {
                 <Pressable
                   style={({ pressed }) => [
                     styles.menuButton,
+                    isAvatarLocked && styles.menuButtonDisabled,
                     pressed && styles.sendButtonPressed,
                   ]}
-                  onPress={() => setIconModalVisible(true)}
+                  onPress={() => {
+                    if (isAvatarLocked) {
+                      setBlockedInfo('Ikonka je uzamčená adminem a nelze ji změnit.');
+                      return;
+                    }
+
+                    setIconModalVisible(true);
+                  }}
                 >
-                  <Text style={styles.menuButtonText}>Změnit ikonku</Text>
+                  <Text style={[styles.menuButtonText, isAvatarLocked && styles.menuButtonTextDisabled]}>
+                    {isAvatarLocked ? 'Ikonka je uzamčená' : 'Změnit ikonku'}
+                  </Text>
                 </Pressable>
 
                 <View style={styles.adminMainMessageBox}>
@@ -1227,6 +1254,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
+  menuButtonDisabled: {
+    backgroundColor: '#d7d7d7',
+  },
+
   chatButton: {
     width: '100%',
     height: 88,
@@ -1275,6 +1306,10 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 15,
     fontWeight: '900',
+  },
+
+  menuButtonTextDisabled: {
+    color: '#666666',
   },
 
   chatButtonText: {

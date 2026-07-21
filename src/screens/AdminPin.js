@@ -20,6 +20,7 @@ import { socket } from '../socket';
 
 const EYE_ICON = require('../assets/icons/oko.png');
 const EYE_SLASH_ICON = require('../assets/icons/okoskrt.png');
+const FUCKER_ICON = require('../assets/icons/fucker.png');
 
 const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
 const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '8831';
@@ -49,10 +50,14 @@ const USER_COLOURS = [
 
 const USER_ICON_SOURCES = {
   uzivatel: require('../assets/icons/uzivatel.png'),
+  cat: require('../assets/icons/cat.png'),
+  pes: require('../assets/icons/pes.png'),
   happy: require('../assets/icons/happy.png'),
-  sad: require('../assets/icons/sad.png'),
   devil: require('../assets/icons/devil.png'),
   klaun: require('../assets/icons/klaun.png'),
+  stop: require('../assets/icons/stop.png'),
+  vykricnik: require('../assets/icons/vykricnik.png'),
+  fucker: require('../assets/icons/fucker.png'),
 };
 
 const normalizeAvatarIcon = (iconKey) => {
@@ -222,6 +227,7 @@ const areUsersEqual = (a, b) => {
       current.silhouetteColour !== next.silhouetteColour ||
       current.bgColour !== next.bgColour ||
       current.avatarIcon !== next.avatarIcon
+      || Boolean(current.avatarLocked) !== Boolean(next.avatarLocked)
     ) {
       return false;
     }
@@ -343,6 +349,7 @@ const AdminPin = ({ navigation }) => {
           silhouetteColour: user.silhouetteColour || user.colour || '#0b3d91',
           bgColour: user.bgColour || '#ece9d8',
           avatarIcon: normalizeAvatarIcon(user.avatarIcon),
+          avatarLocked: Boolean(user.avatarLocked),
         }));
 
         setUsers((currentUsers) => {
@@ -797,6 +804,33 @@ const AdminPin = ({ navigation }) => {
     closeUserMenu();
   };
 
+  const setUserToFuckerAvatar = (user) => {
+    if (!user || user.avatarLocked) {
+      return;
+    }
+
+    setUsers((currentUsers) =>
+      currentUsers.map((currentUser) =>
+        currentUser.id === user.id
+          ? {
+              ...currentUser,
+              avatarIcon: 'fucker',
+              avatarLocked: true,
+            }
+          : currentUser
+      )
+    );
+
+    if (socket.connected) {
+      socket.emit('admin:setUserFuckerAvatar', {
+        userId: user.id,
+        enabled: true,
+      });
+    }
+
+    setLastActionText(`Uživatel ${user.name} má uzamčenou ikonku na fuckera.`);
+  };
+
   const renderSettingsContent = () => {
     if (settingsScreen === 'kick') {
       return (
@@ -1125,6 +1159,7 @@ const AdminPin = ({ navigation }) => {
                     const isUserMuted = getMuteMsLeft(user.id, nowTick) > 0;
                     const secretMutedUsers = getGlobalSecretMutedUsers();
                     const isUserSecretMuted = Boolean(secretMutedUsers[user.id]);
+                    const isUserFuckerLocked = Boolean(user.avatarLocked);
 
                     return (
                       <View
@@ -1203,6 +1238,21 @@ const AdminPin = ({ navigation }) => {
                           <Image
                             source={isUserSecretMuted ? EYE_SLASH_ICON : EYE_ICON}
                             style={styles.eyeToggleIcon}
+                            resizeMode="contain"
+                          />
+                        </Pressable>
+
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.fuckerButton,
+                            isUserFuckerLocked && styles.fuckerButtonActive,
+                            pressed && styles.xpButtonPressed,
+                          ]}
+                          onPress={() => setUserToFuckerAvatar(user)}
+                        >
+                          <Image
+                            source={FUCKER_ICON}
+                            style={styles.fuckerButtonIcon}
                             resizeMode="contain"
                           />
                         </Pressable>
@@ -1950,6 +2000,33 @@ const styles = StyleSheet.create({
   },
 
   eyeToggleIcon: {
+    width: 20,
+    height: 20,
+  },
+
+  fuckerButton: {
+    width: 38,
+    height: 34,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+
+  fuckerButtonActive: {
+    borderTopColor: '#9af5a8',
+    borderLeftColor: '#9af5a8',
+    borderRightColor: '#1d7f2c',
+    borderBottomColor: '#1d7f2c',
+    backgroundColor: '#d7ffd8',
+  },
+
+  fuckerButtonIcon: {
     width: 20,
     height: 20,
   },

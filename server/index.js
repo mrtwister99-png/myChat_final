@@ -37,10 +37,14 @@ const state = {
 
 const SUPPORTED_AVATAR_ICONS = new Set([
   'uzivatel',
+  'cat',
+  'pes',
   'happy',
-  'sad',
   'devil',
   'klaun',
+  'stop',
+  'vykricnik',
+  'fucker',
 ]);
 
 const normalizeAvatarIcon = (icon) => {
@@ -147,6 +151,7 @@ const getPublicUsers = () => {
         silhouetteColour: normalizedUser.silhouetteColour,
         bgColour: normalizedUser.bgColour,
         avatarIcon: normalizeAvatarIcon(normalizedUser.avatarIcon),
+        avatarLocked: Boolean(normalizedUser.avatarLocked),
         colour: normalizedUser.silhouetteColour,
         online: normalizedUser.online,
         lastSeenAt: normalizedUser.lastSeenAt,
@@ -177,6 +182,7 @@ const rememberUserProfile = (user) => {
     silhouetteColour: user.silhouetteColour,
     bgColour: user.bgColour,
     avatarIcon: normalizeAvatarIcon(user.avatarIcon),
+    avatarLocked: Boolean(user.avatarLocked),
   };
 };
 
@@ -202,12 +208,17 @@ const patchStoredUserProfile = (userId, patch) => {
     silhouetteColour: '#0b3d91',
     bgColour: '#ece9d8',
     avatarIcon: 'uzivatel',
+    avatarLocked: false,
   };
 
   state.userProfilesById[cleanUserId] = {
     ...existing,
     ...patch,
     avatarIcon: normalizeAvatarIcon(patch.avatarIcon || existing.avatarIcon),
+    avatarLocked:
+      typeof patch.avatarLocked === 'boolean'
+        ? patch.avatarLocked
+        : Boolean(existing.avatarLocked),
   };
 };
 
@@ -250,6 +261,7 @@ const createUserForSocket = (socket) => {
     silhouetteColour: '#0b3d91',
     bgColour: '#ece9d8',
     avatarIcon: 'uzivatel',
+    avatarLocked: false,
     online: true,
     lastSeenAt: Date.now(),
     socketId: socket.id,
@@ -287,6 +299,7 @@ const createUserWithKnownIdForSocket = (socket, userId) => {
     silhouetteColour: profile?.silhouetteColour || '#0b3d91',
     bgColour: profile?.bgColour || '#ece9d8',
     avatarIcon: normalizeAvatarIcon(profile?.avatarIcon),
+    avatarLocked: Boolean(profile?.avatarLocked),
     online: true,
     lastSeenAt: Date.now(),
     socketId: socket.id,
@@ -936,6 +949,38 @@ io.on('connection', (socket) => {
     emitState();
   });
 
+  socket.on('admin:setUserFuckerAvatar', ({ userId, enabled }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '').trim();
+    const isEnabled = Boolean(enabled);
+
+    if (!cleanUserId) {
+      return;
+    }
+
+    state.users = state.users.map((user) =>
+      user.id === cleanUserId
+        ? {
+            ...user,
+            avatarIcon: isEnabled ? 'fucker' : user.avatarIcon,
+            avatarLocked: isEnabled,
+          }
+        : user
+    );
+
+    const updatedUser = getUserById(cleanUserId);
+    rememberUserProfile(updatedUser);
+    patchStoredUserProfile(cleanUserId, {
+      avatarIcon: isEnabled ? 'fucker' : updatedUser?.avatarIcon,
+      avatarLocked: isEnabled,
+    });
+
+    emitState();
+  });
+
   socket.on('user:setBgColour', ({ userId, colour }) => {
     const cleanUserId = String(userId || '');
     const cleanColour = String(colour || '').trim();
@@ -975,6 +1020,11 @@ io.on('connection', (socket) => {
     }
 
     if (socket.data.role !== 'user' || socket.data.userId !== cleanUserId) {
+      return;
+    }
+
+    const currentUser = getUserById(cleanUserId);
+    if (currentUser?.avatarLocked) {
       return;
     }
 
