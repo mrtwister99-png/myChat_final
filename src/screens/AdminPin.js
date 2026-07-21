@@ -19,8 +19,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
 
 const EYE_ICON = require('../assets/icons/oko.png');
-const EYE_SLASH_ICON = require('../assets/icons/okoskrt.png');
-const FUCKER_ICON = require('../assets/icons/fucker.png');
+const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
+const FUCKER_ICON = require('../assets/icons/fuckerr.png');
 
 const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
 const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '8831';
@@ -57,7 +57,7 @@ const USER_ICON_SOURCES = {
   klaun: require('../assets/icons/klaun.png'),
   stop: require('../assets/icons/stop.png'),
   vykricnik: require('../assets/icons/vykricnik.png'),
-  fucker: require('../assets/icons/fucker.png'),
+  fuckerr: require('../assets/icons/fuckerr.png'),
 };
 
 const normalizeAvatarIcon = (iconKey) => {
@@ -65,6 +65,10 @@ const normalizeAvatarIcon = (iconKey) => {
 
   if (cleanIcon === 'klan') {
     return 'klaun';
+  }
+
+  if (cleanIcon === 'fucker') {
+    return 'fuckerr';
   }
 
   return USER_ICON_SOURCES[cleanIcon] ? cleanIcon : 'uzivatel';
@@ -805,17 +809,19 @@ const AdminPin = ({ navigation }) => {
   };
 
   const setUserToFuckerAvatar = (user) => {
-    if (!user || user.avatarLocked) {
+    if (!user) {
       return;
     }
+
+    const nextEnabled = !Boolean(user.avatarLocked);
 
     setUsers((currentUsers) =>
       currentUsers.map((currentUser) =>
         currentUser.id === user.id
           ? {
               ...currentUser,
-              avatarIcon: 'fucker',
-              avatarLocked: true,
+              avatarIcon: nextEnabled ? 'fuckerr' : 'uzivatel',
+              avatarLocked: nextEnabled,
             }
           : currentUser
       )
@@ -824,11 +830,15 @@ const AdminPin = ({ navigation }) => {
     if (socket.connected) {
       socket.emit('admin:setUserFuckerAvatar', {
         userId: user.id,
-        enabled: true,
+        enabled: nextEnabled,
       });
     }
 
-    setLastActionText(`Uživatel ${user.name} má uzamčenou ikonku na fuckera.`);
+    setLastActionText(
+      nextEnabled
+        ? `Uživatel ${user.name} má uzamčenou ikonku na fuckera.`
+        : `Uživatel ${user.name} už nemá uzamčenou ikonku na fuckera.`
+    );
   };
 
   const renderSettingsContent = () => {
@@ -1228,7 +1238,7 @@ const AdminPin = ({ navigation }) => {
                           style={({ pressed }) => [
                             styles.eyeToggleButton,
                             isUserSecretMuted && styles.eyeToggleButtonActive,
-                            isUserMuted && styles.eyeToggleButtonMuted,
+                            !isUserSecretMuted && isUserMuted && styles.eyeToggleButtonMuted,
                             pressed && styles.xpButtonPressed,
                           ]}
                           onPress={() => toggleSecretMute(user)}
@@ -2277,7 +2287,7 @@ const styles = StyleSheet.create({
   },
 
   statusOptionJob: {
-    borderColor: '#556bff',
+    borderColor: '#f5a623',
   },
 
   statusOptionOff: {
@@ -2308,7 +2318,7 @@ const styles = StyleSheet.create({
   },
 
   statusDotJob: {
-    backgroundColor: '#556bff',
+    backgroundColor: '#f5a623',
   },
 
   statusOptionTitle: {

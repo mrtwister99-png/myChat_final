@@ -44,7 +44,7 @@ const SUPPORTED_AVATAR_ICONS = new Set([
   'klaun',
   'stop',
   'vykricnik',
-  'fucker',
+  'fuckerr',
 ]);
 
 const normalizeAvatarIcon = (icon) => {
@@ -52,6 +52,10 @@ const normalizeAvatarIcon = (icon) => {
 
   if (cleanIcon === 'klan') {
     return 'klaun';
+  }
+
+  if (cleanIcon === 'fucker') {
+    return 'fuckerr';
   }
 
   return SUPPORTED_AVATAR_ICONS.has(cleanIcon) ? cleanIcon : 'uzivatel';
@@ -965,7 +969,7 @@ io.on('connection', (socket) => {
       user.id === cleanUserId
         ? {
             ...user,
-            avatarIcon: isEnabled ? 'fucker' : user.avatarIcon,
+            avatarIcon: isEnabled ? 'fuckerr' : 'uzivatel',
             avatarLocked: isEnabled,
           }
         : user
@@ -974,7 +978,7 @@ io.on('connection', (socket) => {
     const updatedUser = getUserById(cleanUserId);
     rememberUserProfile(updatedUser);
     patchStoredUserProfile(cleanUserId, {
-      avatarIcon: isEnabled ? 'fucker' : updatedUser?.avatarIcon,
+      avatarIcon: isEnabled ? 'fuckerr' : 'uzivatel',
       avatarLocked: isEnabled,
     });
 

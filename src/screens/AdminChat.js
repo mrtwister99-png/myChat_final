@@ -19,7 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
 
 const EYE_ICON = require('../assets/icons/oko.png');
-const EYE_SLASH_ICON = require('../assets/icons/okoskrt.png');
+const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
 
 const MUTE_OPTIONS = [
   { label: '10 min', milliseconds: 10 * 60 * 1000 },
@@ -571,7 +571,7 @@ useEffect(() => {
               style={({ pressed }) => [
                 styles.muteButton,
                 isSecretMuted && styles.eyeButtonActive,
-                isMuted && styles.muteButtonActive,
+                !isSecretMuted && isMuted && styles.muteButtonActive,
                 pressed && styles.xpButtonPressed,
               ]}
               onPress={toggleSecretMute}

@@ -95,7 +95,7 @@ const USER_ICON_SOURCES = {
   klaun: require('../assets/icons/klaun.png'),
   stop: require('../assets/icons/stop.png'),
   vykricnik: require('../assets/icons/vykricnik.png'),
-  fucker: require('../assets/icons/fucker.png'),
+  fuckerr: require('../assets/icons/fuckerr.png'),
 };
 
 const USER_ICON_OPTIONS = [
@@ -113,6 +113,10 @@ const normalizeAvatarIcon = (iconKey) => {
 
   if (cleanIcon === 'klan') {
     return 'klaun';
+  }
+
+  if (cleanIcon === 'fucker') {
+    return 'fuckerr';
   }
 
   return USER_ICON_SOURCES[cleanIcon] ? cleanIcon : 'uzivatel';
@@ -218,7 +222,6 @@ const UzivatelPin = ({ navigation, route }) => {
   const initialSyncDoneRef = useRef(false);
   const screenMountAtRef = useRef(Date.now());
   const screenModeRef = useRef('menu');
-  const skipNotifyOnNextChatSyncRef = useRef(false);
   const currentUserId = resolveCurrentUserId(route?.params?.userId);
   const [currentUserName, setCurrentUserName] = useState(getCurrentUserName());
   const [screenMode, setScreenMode] = useState('menu');
@@ -422,7 +425,6 @@ const UzivatelPin = ({ navigation, route }) => {
       const currentReadCount = getGlobalUserReadCounts()[currentUserId] || 0;
       const previousUnread = Math.max(previousAdminMessages - currentReadCount, 0);
       const nextUnread = Math.max(nextAdminMessages - currentReadCount, 0);
-      const shouldSkipNotification = skipNotifyOnNextChatSyncRef.current;
       const activeChatUserId = String(globalThis.CUSIIK_ACTIVE_USER_CHAT_ID || '').trim();
       const isActiveInThisChat = activeChatUserId === String(currentUserId);
       const newestAdminMessage = [...safeMessages]
@@ -431,8 +433,6 @@ const UzivatelPin = ({ navigation, route }) => {
       const newestAdminAt = Number(newestAdminMessage?.createdAt || 0);
       const looksLikeHistoricalSync = newestAdminAt > 0 && newestAdminAt < screenMountAtRef.current;
       const isInitialSync = !initialSyncDoneRef.current;
-
-      skipNotifyOnNextChatSyncRef.current = false;
 
       if (isInitialSync) {
         initialSyncDoneRef.current = true;
@@ -448,7 +448,6 @@ const UzivatelPin = ({ navigation, route }) => {
       }
 
       const shouldNotify =
-        !shouldSkipNotification &&
         !isActiveInThisChat &&
         screenModeRef.current !== 'chat' &&
         nextUnread > previousUnread;
@@ -484,7 +483,6 @@ const UzivatelPin = ({ navigation, route }) => {
       socket.connect();
     }
 
-    skipNotifyOnNextChatSyncRef.current = true;
     socket.emit('state:get');
     socket.emit('chat:get', {
       userId: currentUserId,
@@ -516,7 +514,6 @@ const UzivatelPin = ({ navigation, route }) => {
       refreshScreenData();
 
       if (socket.connected) {
-        skipNotifyOnNextChatSyncRef.current = true;
         socket.emit('state:get');
         socket.emit('chat:get', {
           userId: currentUserId,
@@ -1127,7 +1124,7 @@ const styles = StyleSheet.create({
   },
 
   statusJob: {
-    backgroundColor: '#556bff',
+    backgroundColor: '#f5a623',
   },
 
   windowButtons: {
