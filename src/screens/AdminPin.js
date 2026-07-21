@@ -194,6 +194,42 @@ const getUserMessageCount = (userId) => {
   return messages.filter((message) => message.sender === 'user').length;
 };
 
+const areReadCountsEqual = (a, b) => {
+  const aKeys = Object.keys(a || {});
+  const bKeys = Object.keys(b || {});
+
+  if (aKeys.length !== bKeys.length) {
+    return false;
+  }
+
+  return aKeys.every((key) => (a?.[key] || 0) === (b?.[key] || 0));
+};
+
+const areUsersEqual = (a, b) => {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  for (let index = 0; index < a.length; index += 1) {
+    const current = a[index];
+    const next = b[index];
+
+    if (
+      current.id !== next.id ||
+      current.name !== next.name ||
+      current.online !== next.online ||
+      current.lastSeenAt !== next.lastSeenAt ||
+      current.silhouetteColour !== next.silhouetteColour ||
+      current.bgColour !== next.bgColour ||
+      current.avatarIcon !== next.avatarIcon
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 const AdminPin = ({ navigation }) => {
   const [users, setUsers] = useState([
   ]);
@@ -275,16 +311,22 @@ const AdminPin = ({ navigation }) => {
       }
 
       if (Array.isArray(serverState?.users)) {
-        setUsers(
-          serverState.users.map((user) => ({
-            ...user,
-            online: Boolean(user.online),
-            lastSeenAt: user.lastSeenAt || user.lastSeen || Date.now(),
-            silhouetteColour: user.silhouetteColour || user.colour || '#0b3d91',
-            bgColour: user.bgColour || '#ece9d8',
-            avatarIcon: normalizeAvatarIcon(user.avatarIcon),
-          }))
-        );
+        const normalizedUsers = serverState.users.map((user) => ({
+          ...user,
+          online: Boolean(user.online),
+          lastSeenAt: user.lastSeenAt || user.lastSeen || 0,
+          silhouetteColour: user.silhouetteColour || user.colour || '#0b3d91',
+          bgColour: user.bgColour || '#ece9d8',
+          avatarIcon: normalizeAvatarIcon(user.avatarIcon),
+        }));
+
+        setUsers((currentUsers) => {
+          if (areUsersEqual(currentUsers, normalizedUsers)) {
+            return currentUsers;
+          }
+
+          return normalizedUsers;
+        });
       }
 
     };
@@ -295,7 +337,14 @@ const AdminPin = ({ navigation }) => {
 
       chats[userId] = safeMessages;
 
-      setReadCounts({ ...getGlobalReadCounts() });
+      const nextReadCounts = { ...getGlobalReadCounts() };
+      setReadCounts((currentReadCounts) => {
+        if (areReadCountsEqual(currentReadCounts, nextReadCounts)) {
+          return currentReadCounts;
+        }
+
+        return nextReadCounts;
+      });
     };
 
     socket.on('connect', handleConnect);
@@ -2176,11 +2225,17 @@ const styles = StyleSheet.create({
   },
 
   settingsOptionMute: {
-    borderColor: '#c46a00',
+    borderTopColor: '#e49b38',
+    borderLeftColor: '#e49b38',
+    borderRightColor: '#8b4700',
+    borderBottomColor: '#8b4700',
   },
 
   settingsOptionSecretMute: {
-    borderColor: '#7a00cc',
+    borderTopColor: '#b67ae8',
+    borderLeftColor: '#b67ae8',
+    borderRightColor: '#5d1f85',
+    borderBottomColor: '#5d1f85',
   },
 
   userRowMuted: {

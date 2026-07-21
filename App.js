@@ -81,6 +81,11 @@ const App = () => {
         return;
       }
 
+      const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
+      if (activeAdminChatUserId && activeAdminChatUserId === cleanUserId) {
+        return;
+      }
+
       if (secretMutedUsersById[cleanUserId]) {
         return;
       }

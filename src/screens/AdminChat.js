@@ -135,11 +135,25 @@ const AdminChat = ({ navigation, route }) => {
 
 useEffect(() => {
   const unsubscribe = navigation.addListener('focus', () => {
+    globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID = String(userId);
     scrollToBottom(false);
   });
 
-  return unsubscribe;
-}, [navigation]);
+  const unsubscribeBlur = navigation.addListener('blur', () => {
+    if (String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '') === String(userId)) {
+      globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID = null;
+    }
+  });
+
+  return () => {
+    unsubscribe();
+    unsubscribeBlur();
+
+    if (String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '') === String(userId)) {
+      globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID = null;
+    }
+  };
+}, [navigation, userId]);
 
   useEffect(() => {
     scrollToBottom(true);
