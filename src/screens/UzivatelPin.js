@@ -202,14 +202,7 @@ const getInitialMessages = (userId) => {
   const chats = getGlobalChats();
 
   if (!chats[userId]) {
-    chats[userId] = [
-      {
-        id: 1,
-        sender: 'admin',
-        text: 'Ahoj, tady admin. Napiš mi zprávu.',
-        createdAt: Date.now(),
-      },
-    ];
+    chats[userId] = [];
   }
 
   return chats[userId];

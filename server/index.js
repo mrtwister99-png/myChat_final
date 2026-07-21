@@ -248,14 +248,7 @@ const emitState = () => {
 
 const ensureChatForUser = (user) => {
   if (!state.chats[user.id]) {
-    state.chats[user.id] = [
-      {
-        id: createMessageId(),
-        sender: 'admin',
-        text: 'Ahoj, tady admin. Napiš mi zprávu.',
-        createdAt: Date.now(),
-      },
-    ];
+    state.chats[user.id] = [];
   }
 };
 

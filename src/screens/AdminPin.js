@@ -43,6 +43,8 @@ const USER_COLOURS = [
   { label: 'Žlutá', value: '#ffcc00' },
   { label: 'Oranžová', value: '#ff9500' },
   { label: 'Fialová', value: '#af52de' },
+  { label: 'Bílá', value: '#ffffff' },
+  { label: 'Růžová', value: '#ff6fb7' },
   { label: 'Černá', value: '#111111' },
   { label: 'Hnědá', value: '#8b5a2b' },
   { label: 'Tyrkysová', value: '#40e0d0' },
@@ -680,12 +682,23 @@ const AdminPin = ({ navigation }) => {
     }
 
     const mutedUsers = getGlobalMutedUsers();
+    const secretMutedUsersMap = getGlobalSecretMutedUsers();
     const muteUntilTime = Date.now() + option.milliseconds;
+
+    delete secretMutedUsersMap[user.id];
+    globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsersMap;
 
     mutedUsers[user.id] = muteUntilTime;
     globalThis.CUSIIK_MUTED_USERS = mutedUsers;
 
+    setSecretMutedUsers({ ...secretMutedUsersMap });
+
     if (socket.connected) {
+      socket.emit('admin:secretMuteUser', {
+        userId: user.id,
+        enabled: false,
+      });
+
       socket.emit('admin:muteUser', {
         userId: user.id,
         milliseconds: option.milliseconds,

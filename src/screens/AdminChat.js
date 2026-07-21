@@ -365,9 +365,17 @@ useEffect(() => {
 
   const muteUser = (option) => {
     const mutedUsers = getGlobalMutedUsers();
+    const secretMutedUsersMap = {
+      ...secretMutedUsers,
+    };
     const muteUntilTime = Date.now() + option.milliseconds;
 
+    delete secretMutedUsersMap[userId];
+    setSecretMutedUsers(secretMutedUsersMap);
+    globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsersMap;
+
     mutedUsers[userId] = muteUntilTime;
+    globalThis.CUSIIK_MUTED_USERS = mutedUsers;
 
     setServerMutedUsers({
       ...serverMutedUsers,
@@ -375,6 +383,11 @@ useEffect(() => {
     });
 
     if (socket.connected) {
+      socket.emit('admin:secretMuteUser', {
+        userId,
+        enabled: false,
+      });
+
       socket.emit('admin:muteUser', {
         userId,
         milliseconds: option.milliseconds,
@@ -551,9 +564,9 @@ useEffect(() => {
               <View style={styles.userNameRow}>
                 <Text style={styles.userName}>{userName}</Text>
 
-                {isSecretMuted ? <Text style={styles.userNameMetaText}> (potají)</Text> : null}
+                {isSecretMuted ? <Text style={styles.userNameSecretText}> (potají)</Text> : null}
 
-                {isMuted ? <Text style={styles.userNameMetaText}> ({muteTimeLeft})</Text> : null}
+                {isMuted ? <Text style={styles.userNameMuteText}> ({muteTimeLeft})</Text> : null}
               </View>
 
               <View style={styles.muteStatusRow}>
@@ -951,6 +964,20 @@ const styles = StyleSheet.create({
   },
 
   userNameMetaText: {
+    color: '#8a4d00',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+
+  userNameSecretText: {
+    color: '#7a00cc',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+
+  userNameMuteText: {
     color: '#8a4d00',
     fontSize: 12,
     fontWeight: '900',
