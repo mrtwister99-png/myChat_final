@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -106,6 +107,10 @@ const getMuteMsLeft = (userId, nowTick) => {
   const diff = muteUntil - nowTick;
 
   return diff > 0 ? diff : 0;
+};
+
+const isUserMutedNow = (userId, nowTick) => {
+  return getMuteMsLeft(userId, nowTick) > 0;
 };
 
 const formatMuteLeft = (userId, nowTick) => {
@@ -323,7 +328,7 @@ const AdminPin = ({ navigation }) => {
       <Text style={textStyle}>
         {user.name}
         {muteText ? <Text style={styles.mutedMinutesText}> ({muteText})</Text> : null}
-        {isSecretMuted ? <Text style={styles.secretMutedText}> potají</Text> : null}
+        {isSecretMuted ? <Text style={styles.secretMutedText}> (potají)</Text> : null}
       </Text>
     );
   };
@@ -450,20 +455,51 @@ const AdminPin = ({ navigation }) => {
       return;
     }
 
-    globalThis.CUSIIK_USER_PIN = cleanedPin;
-    setCurrentUserPin(cleanedPin);
+    Alert.alert(
+      'HARD ROOM RESET',
+      'Po potvrzení se nastaví nový PIN pro všechny uživatele, všichni uživatelé budou kicknuti z roomky a smazáni!\n\nOpravdu chceš toto udělat?\nInformoval jsi všechny důležité o novém PINu?',
+      [
+        {
+          text: 'NE',
+          style: 'cancel',
+        },
+        {
+          text: 'OK',
+          onPress: () => {
+            Alert.alert(
+              'Poslední potvrzení',
+              'Tento krok je nevratný... Opravdu potvrdit?',
+              [
+                {
+                  text: 'NE',
+                  style: 'cancel',
+                },
+                {
+                  text: 'ANO',
+                  style: 'destructive',
+                  onPress: () => {
+                    globalThis.CUSIIK_USER_PIN = cleanedPin;
+                    setCurrentUserPin(cleanedPin);
 
-    if (socket.connected) {
-      socket.emit('admin:setUserPin', {
-        pin: cleanedPin,
-      });
-    }
+                    if (socket.connected) {
+                      socket.emit('admin:setUserPin', {
+                        pin: cleanedPin,
+                      });
+                    }
 
-    setLastActionText(
-      `PIN změněn na ${cleanedPin}. Všichni uživatelé byli vykopnuti.`
+                    setLastActionText(
+                      `HARD ROOM RESET proveden. Nový PIN je ${cleanedPin}.`
+                    );
+
+                    closeChangeModal();
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
     );
-
-    closeChangeModal();
   };
 
   const openSettings = () => {
@@ -580,6 +616,33 @@ const AdminPin = ({ navigation }) => {
     closeUserMenu();
   };
 
+  const unmuteUser = (user) => {
+    if (!user) {
+      return;
+    }
+
+    const mutedUsers = getGlobalMutedUsers();
+    delete mutedUsers[user.id];
+    globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+
+    if (socket.connected) {
+      socket.emit('admin:unmuteUser', {
+        userId: user.id,
+      });
+
+      socket.emit('chat:send', {
+        userId: user.id,
+        sender: 'system',
+        text: `Uživatel ${user.name} už není umlčen.`,
+      });
+    }
+
+    setNowTick(Date.now());
+    setLastActionText(`Umlčení uživatele ${user.name} bylo zrušeno.`);
+    setMuteModalVisible(false);
+    closeUserMenu();
+  };
+
   const openMuteModalForUser = (user) => {
     if (!user) {
       return;
@@ -597,15 +660,27 @@ const AdminPin = ({ navigation }) => {
 
     const secretMutedUsers = getGlobalSecretMutedUsers();
     const nextValue = !secretMutedUsers[user.id];
+    const mutedUsers = getGlobalMutedUsers();
 
     secretMutedUsers[user.id] = nextValue;
     globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsers;
+
+    if (nextValue) {
+      delete mutedUsers[user.id];
+      globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+    }
 
     if (socket.connected) {
       socket.emit('admin:secretMuteUser', {
         userId: user.id,
         enabled: nextValue,
       });
+
+      if (nextValue) {
+        socket.emit('admin:unmuteUser', {
+          userId: user.id,
+        });
+      }
     }
 
     setNowTick(Date.now());
@@ -1074,7 +1149,7 @@ const AdminPin = ({ navigation }) => {
                 ]}
                 onPress={openChangeModal}
               >
-                <Text style={styles.bottomButtonText}>Pin + KICK</Text>
+                <Text style={styles.bottomButtonText}>HARD ROOM RESET</Text>
               </Pressable>
 
               <Pressable
@@ -1169,11 +1244,22 @@ const AdminPin = ({ navigation }) => {
                     styles.settingsOptionMute,
                     pressed && styles.xpButtonPressed,
                   ]}
-                  onPress={() => openMuteModalForUser(actionUser)}
+                  onPress={() => {
+                    if (isUserMutedNow(actionUser?.id, nowTick)) {
+                      unmuteUser(actionUser);
+                      return;
+                    }
+
+                    openMuteModalForUser(actionUser);
+                  }}
                 >
-                  <Text style={styles.settingsOptionTitle}>Umlčet</Text>
+                  <Text style={styles.settingsOptionTitle}>
+                    {isUserMutedNow(actionUser?.id, nowTick) ? 'Zrušit mlčení' : 'Umlčet'}
+                  </Text>
                   <Text style={styles.settingsOptionText}>
-                    Uživatel nebude moct psát po zvolenou dobu.
+                    {isUserMutedNow(actionUser?.id, nowTick)
+                      ? 'Okamžitě zruší aktivní umlčení uživatele.'
+                      : 'Uživatel nebude moct psát po zvolenou dobu.'}
                   </Text>
                 </Pressable>
 
@@ -1355,7 +1441,7 @@ const AdminPin = ({ navigation }) => {
           <View style={styles.modalOverlay}>
             <View style={styles.modalWindow}>
               <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>Pin + KICK</Text>
+                <Text style={styles.modalTitleText}>HARD ROOM RESET</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeChangeModal}>
                   <Text style={styles.modalCloseButtonText}>×</Text>
@@ -1382,7 +1468,11 @@ const AdminPin = ({ navigation }) => {
 
                 <View style={styles.warningBox}>
                   <Text style={styles.warningText}>
-                    Po uložení budou všichni uživatelé vykopnuti z roomky.
+                    Po potvrzení se nastaví nový PIN pro všechny uživatele, všichni uživatelé budou kicknuti z roomky a smazáni!
+                  </Text>
+                  <Text style={styles.warningText}>Opravdu chceš toto udělat?</Text>
+                  <Text style={styles.warningText}>
+                    Informoval jsi všechny důležité o novém PINu?
                   </Text>
                 </View>
 
@@ -1398,7 +1488,7 @@ const AdminPin = ({ navigation }) => {
                     ]}
                     onPress={saveChangeAndKickUsers}
                   >
-                    <Text style={styles.modalButtonText}>Uložit + kicknout</Text>
+                    <Text style={styles.modalButtonText}>Potvrdit HARD ROOM RESET</Text>
                   </Pressable>
 
                   <Pressable
@@ -1425,7 +1515,7 @@ const AdminPin = ({ navigation }) => {
           <View style={styles.modalOverlay}>
             <View style={styles.modalWindow}>
               <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>nastaveni</Text>
+                <Text style={styles.modalTitleText}>Nastavení</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeSettings}>
                   <Text style={styles.modalCloseButtonText}>×</Text>
@@ -1764,7 +1854,7 @@ const styles = StyleSheet.create({
   },
 
   eyeToggleButtonActive: {
-    borderColor: '#ff3b30',
+    borderColor: '#7a00cc',
   },
 
   eyeToggleButtonMuted: {
@@ -2086,7 +2176,7 @@ const styles = StyleSheet.create({
   },
 
   settingsOptionMute: {
-    borderColor: '#ff3b30',
+    borderColor: '#c46a00',
   },
 
   settingsOptionSecretMute: {

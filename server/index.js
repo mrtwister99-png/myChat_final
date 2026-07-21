@@ -890,12 +890,17 @@ io.on('connection', (socket) => {
     }
 
     const cleanUserId = String(userId || '');
+    const isEnabled = Boolean(enabled);
 
     if (!cleanUserId) {
       return;
     }
 
-    state.secretMutedUsers[cleanUserId] = Boolean(enabled);
+    state.secretMutedUsers[cleanUserId] = isEnabled;
+
+    if (isEnabled) {
+      delete state.mutedUsers[cleanUserId];
+    }
 
     emitState();
   });

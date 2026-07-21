@@ -142,6 +142,10 @@ useEffect(() => {
 }, [navigation]);
 
   useEffect(() => {
+    scrollToBottom(true);
+  }, [messages.length]);
+
+  useEffect(() => {
     if (!selectionMode) {
       setSelectedMessageIds([]);
     }
@@ -452,6 +456,25 @@ useEffect(() => {
         userId,
         enabled: nextValue,
       });
+
+      if (nextValue) {
+        socket.emit('admin:unmuteUser', {
+          userId,
+        });
+      }
+    }
+
+    if (nextValue) {
+      const mutedUsers = getGlobalMutedUsers();
+      delete mutedUsers[userId];
+
+      const nextServerMutedUsers = {
+        ...serverMutedUsers,
+      };
+
+      delete nextServerMutedUsers[userId];
+      setServerMutedUsers(nextServerMutedUsers);
+      setNowTick(Date.now());
     }
   };
 
@@ -706,7 +729,7 @@ useEffect(() => {
                       ]}
                       onPress={unmuteUser}
                     >
-                      <Text style={styles.modalButtonText}>Zrušit umlčení</Text>
+                      <Text style={styles.modalButtonText}>Zrušit mlčení</Text>
                     </Pressable>
                   ) : null}
 
@@ -754,21 +777,29 @@ const styles = StyleSheet.create({
 
   titleBar: {
     height: 38,
-    width: 42,
+    backgroundColor: '#0058d8',
     borderBottomWidth: 2,
     borderBottomColor: '#003f9e',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingLeft: 8,
+    paddingRight: 5,
   },
 
-    paddingHorizontal: 0,
+  titleLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+  },
+
+  windowsIcon: {
     width: 18,
     height: 18,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginRight: 7,
+  },
 
   winSquare: {
     width: 8,
@@ -944,10 +975,10 @@ const styles = StyleSheet.create({
   },
 
   eyeButtonActive: {
-    borderTopColor: '#ff9f9f',
-    borderLeftColor: '#ff9f9f',
-    borderRightColor: '#a00000',
-    borderBottomColor: '#a00000',
+    borderTopColor: '#cda0f0',
+    borderLeftColor: '#cda0f0',
+    borderRightColor: '#6d2ea4',
+    borderBottomColor: '#6d2ea4',
   },
 
   muteButtonActive: {
@@ -998,19 +1029,19 @@ const styles = StyleSheet.create({
   },
 
   userBubble: {
-    backgroundColor: '#ece9d8',
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#777777',
-    borderBottomColor: '#777777',
-  },
-
-  adminBubble: {
     backgroundColor: '#dceaff',
     borderTopColor: '#ffffff',
     borderLeftColor: '#ffffff',
     borderRightColor: '#245aa8',
     borderBottomColor: '#245aa8',
+  },
+
+  adminBubble: {
+    backgroundColor: '#ece9d8',
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
   },
 
   messageHeaderRow: {

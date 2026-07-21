@@ -43,6 +43,33 @@ const App = () => {
 
   useEffect(() => {
     const lastUserMessageCounts = {};
+    const userNamesById = {};
+    let secretMutedUsersById = {};
+
+    const handleServerState = (serverState) => {
+      if (Array.isArray(serverState?.users)) {
+        const nextNames = {};
+
+        serverState.users.forEach((user) => {
+          const cleanUserId = String(user?.id || '').trim();
+          const cleanUserName = String(user?.name || '').trim();
+
+          if (cleanUserId && cleanUserName) {
+            nextNames[cleanUserId] = cleanUserName;
+          }
+        });
+
+        Object.keys(userNamesById).forEach((key) => {
+          delete userNamesById[key];
+        });
+
+        Object.assign(userNamesById, nextNames);
+      }
+
+      if (serverState?.secretMutedUsers && typeof serverState.secretMutedUsers === 'object') {
+        secretMutedUsersById = serverState.secretMutedUsers;
+      }
+    };
 
     const handleChatMessages = ({ userId, messages }) => {
       if (globalThis.CUSIIK_CURRENT_ROLE !== 'admin') {
@@ -54,6 +81,10 @@ const App = () => {
         return;
       }
 
+      if (secretMutedUsersById[cleanUserId]) {
+        return;
+      }
+
       const safeMessages = Array.isArray(messages) ? messages : [];
       const nextUserCount = safeMessages.filter((item) => item?.sender === 'user').length;
       const hasPrevious = Object.prototype.hasOwnProperty.call(lastUserMessageCounts, cleanUserId);
@@ -62,16 +93,20 @@ const App = () => {
       lastUserMessageCounts[cleanUserId] = nextUserCount;
 
       if (nextUserCount > previousUserCount) {
+        const senderName = userNamesById[cleanUserId] || `Uživatel ${cleanUserId}`;
+
         showLocalMessageNotification({
-          title: 'Nová zpráva od uživatele',
+          title: `Nová zpráva od ${senderName}`,
           body: 'Otevři admin chat.',
         });
       }
     };
 
+    socket.on('server:state', handleServerState);
     socket.on('chat:messages', handleChatMessages);
 
     return () => {
+      socket.off('server:state', handleServerState);
       socket.off('chat:messages', handleChatMessages);
     };
   }, []);

@@ -95,11 +95,11 @@ const USER_ICON_SOURCES = {
 };
 
 const USER_ICON_OPTIONS = [
-  { key: 'uzivatel', label: 'uzivatel' },
+  { key: 'uzivatel', label: 'Uživatel' },
   { key: 'happy', label: 'happy' },
   { key: 'sad', label: 'sad' },
   { key: 'devil', label: 'devil' },
-  { key: 'klaun', label: 'klan' },
+  { key: 'klaun', label: 'klaun' },
 ];
 
 const normalizeAvatarIcon = (iconKey) => {
@@ -468,6 +468,12 @@ const UzivatelPin = ({ navigation, route }) => {
 
     return unsubscribe;
   }, [navigation, screenMode, messages]);
+
+  useEffect(() => {
+    if (screenMode === 'chat') {
+      scrollToBottom(true);
+    }
+  }, [messages.length, screenMode]);
 
   const goToLogin = async () => {
     setBlockedInfo('');
