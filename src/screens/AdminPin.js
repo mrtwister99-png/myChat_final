@@ -268,6 +268,31 @@ const AdminPin = ({ navigation }) => {
   );
 
   const isAdminOnline = adminStatus === 'on';
+  const isAdminJob = adminStatus === 'job';
+
+  const getAdminStatusLabel = () => {
+    if (adminStatus === 'on') {
+      return 'ON';
+    }
+
+    if (adminStatus === 'job') {
+      return 'JOB';
+    }
+
+    return 'OFF';
+  };
+
+  const getNextAdminStatus = () => {
+    if (adminStatus === 'off') {
+      return 'on';
+    }
+
+    if (adminStatus === 'on') {
+      return 'job';
+    }
+
+    return 'off';
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -424,7 +449,7 @@ const AdminPin = ({ navigation }) => {
   };
 
   const toggleAdminStatus = () => {
-    const nextStatus = adminStatus === 'on' ? 'off' : 'on';
+    const nextStatus = getNextAdminStatus();
 
     globalThis.CUSIIK_ADMIN_STATUS = nextStatus;
     setAdminStatus(nextStatus);
@@ -438,7 +463,9 @@ const AdminPin = ({ navigation }) => {
     setLastActionText(
       nextStatus === 'on'
         ? 'Status admina byl přepnut na ON.'
-        : 'Status admina byl přepnut na OFF.'
+        : nextStatus === 'job'
+          ? 'Status admina byl přepnut na JOB.'
+          : 'Status admina byl přepnut na OFF.'
     );
   };
 
@@ -928,7 +955,11 @@ const AdminPin = ({ navigation }) => {
         <Pressable
           style={({ pressed }) => [
             styles.statusOption,
-            isAdminOnline ? styles.statusOptionOn : styles.statusOptionOff,
+            isAdminOnline
+              ? styles.statusOptionOn
+              : isAdminJob
+                ? styles.statusOptionJob
+                : styles.statusOptionOff,
             pressed && styles.xpButtonPressed,
           ]}
           onPress={toggleAdminStatus}
@@ -937,12 +968,16 @@ const AdminPin = ({ navigation }) => {
             <View
               style={[
                 styles.statusDot,
-                isAdminOnline ? styles.statusDotOn : styles.statusDotOff,
+                isAdminOnline
+                  ? styles.statusDotOn
+                  : isAdminJob
+                    ? styles.statusDotJob
+                    : styles.statusDotOff,
               ]}
             />
 
             <Text style={styles.statusOptionTitle}>
-              Status admina: {isAdminOnline ? 'ON' : 'OFF'}
+              Status admina: {getAdminStatusLabel()}
             </Text>
           </View>
 
@@ -1040,12 +1075,16 @@ const AdminPin = ({ navigation }) => {
                 <View
                   style={[
                     styles.adminStatusDot,
-                    isAdminOnline ? styles.statusDotOn : styles.statusDotOff,
+                    isAdminOnline
+                      ? styles.statusDotOn
+                      : isAdminJob
+                        ? styles.statusDotJob
+                        : styles.statusDotOff,
                   ]}
                 />
                 <Text style={styles.topInfoText}>
                   Admin status:{' '}
-                  <Text style={styles.pinText}>{isAdminOnline ? 'ON' : 'OFF'}</Text>
+                  <Text style={styles.pinText}>{getAdminStatusLabel()}</Text>
                 </Text>
               </View>
 
@@ -2160,6 +2199,10 @@ const styles = StyleSheet.create({
     borderColor: '#28c840',
   },
 
+  statusOptionJob: {
+    borderColor: '#556bff',
+  },
+
   statusOptionOff: {
     borderColor: '#ff3b30',
   },
@@ -2185,6 +2228,10 @@ const styles = StyleSheet.create({
 
   statusDotOff: {
     backgroundColor: '#ff3b30',
+  },
+
+  statusDotJob: {
+    backgroundColor: '#556bff',
   },
 
   statusOptionTitle: {

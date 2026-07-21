@@ -1060,8 +1060,7 @@ const styles = StyleSheet.create({
 
   messageHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 3,
   },
 
@@ -1069,17 +1068,14 @@ const styles = StyleSheet.create({
     color: '#003c9e',
     fontSize: 11,
     fontWeight: '900',
-    marginRight: 10,
-    flex: 1,
-    flexShrink: 1,
+    marginRight: 8,
   },
 
   messageTime: {
     color: '#555555',
     fontSize: 10,
     fontWeight: '900',
-    flexShrink: 0,
-    marginLeft: 8,
+    marginLeft: 6,
   },
 
   messageText: {

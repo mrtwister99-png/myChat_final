@@ -42,7 +42,7 @@ const LOCAL_RANDOM_USER_NAMES = [
   'Lubomír', 'Štěpán', 'Oldřich', 'Rudolf', 'Matyáš', 'Ivan', 'Robert', 'Luboš', 'Radim', 'Richard',
   'Vít', 'Bohumil', 'Šimon', 'Rostislav', 'Ivo', 'Luděk', 'Dušan', 'Kamil', 'Michael', 'Vladislav',
   'Zbyněk', 'Viktor', 'Bohuslav', 'Kryštof', 'Alois', 'René', 'Vítězslav', 'Tadeáš', 'Štefan', 'Eduard',
-  'Marcel', 'Ján', 'Jozef', 'Samuel', 'Dalibor', 'Emil', 'Radomír', 'Ludvík', 'Denis', 'Vilém',
+  'Marcel', 'Jan', 'Jozef', 'Samuel', 'Dalibor', 'Emil', 'Radomír', 'Ludvík', 'Denis', 'Vilém',
   'Tobiáš', 'Jana', 'Marie', 'Eva', 'Hana', 'Anna', 'Lenka', 'Kateřina', 'Lucie', 'Věra',
   'Alena', 'Petra', 'Veronika', 'Jaroslava', 'Tereza', 'Martina', 'Michaela', 'Jitka', 'Helena', 'Ludmila',
   'Zdeňka', 'Ivana', 'Monika', 'Eliška', 'Zuzana', 'Markéta', 'Jarmila', 'Barbora', 'Jiřina', 'Marcela',
@@ -210,6 +210,8 @@ const getAdminMessageCount = (messages) => {
 const UzivatelPin = ({ navigation, route }) => {
   const scrollViewRef = useRef(null);
   const isFirstChatSyncRef = useRef(true);
+  const initialSyncDoneRef = useRef(false);
+  const screenMountAtRef = useRef(Date.now());
   const screenModeRef = useRef('menu');
   const skipNotifyOnNextChatSyncRef = useRef(false);
   const currentUserId = resolveCurrentUserId(route?.params?.userId);
@@ -245,12 +247,43 @@ const UzivatelPin = ({ navigation, route }) => {
 
   useEffect(() => {
     screenModeRef.current = screenMode;
+    if (screenMode === 'chat') {
+      globalThis.CUSIIK_ACTIVE_USER_CHAT_ID = String(currentUserId);
+    } else if (String(globalThis.CUSIIK_ACTIVE_USER_CHAT_ID || '') === String(currentUserId)) {
+      globalThis.CUSIIK_ACTIVE_USER_CHAT_ID = null;
+    }
   }, [screenMode]);
 
   const secretMutedUsers = getGlobalSecretMutedUsers();
   const isSecretMuted = Boolean(secretMutedUsers[currentUserId]);
 
-  const isAdminOnline = !isSecretMuted && adminStatus === 'on';
+  const effectiveAdminStatus = isSecretMuted ? 'off' : adminStatus;
+  const isAdminOnline = effectiveAdminStatus === 'on';
+  const isAdminJob = effectiveAdminStatus === 'job';
+
+  const getAdminStatusLabel = () => {
+    if (effectiveAdminStatus === 'on') {
+      return 'on';
+    }
+
+    if (effectiveAdminStatus === 'job') {
+      return 'job';
+    }
+
+    return 'off';
+  };
+
+  const getAdminStatusText = () => {
+    if (effectiveAdminStatus === 'on') {
+      return 'online';
+    }
+
+    if (effectiveAdminStatus === 'job') {
+      return 'JOB';
+    }
+
+    return 'offline';
+  };
   const currentHelperMessage = HELPER_MESSAGES[helperMessageIndex];
 
   const adminMessageCount = getAdminMessageCount(messages);
@@ -378,24 +411,42 @@ const UzivatelPin = ({ navigation, route }) => {
       const previousUnread = Math.max(previousAdminMessages - currentReadCount, 0);
       const nextUnread = Math.max(nextAdminMessages - currentReadCount, 0);
       const shouldSkipNotification = skipNotifyOnNextChatSyncRef.current;
+      const activeChatUserId = String(globalThis.CUSIIK_ACTIVE_USER_CHAT_ID || '').trim();
+      const isActiveInThisChat = activeChatUserId === String(currentUserId);
+      const newestAdminMessage = [...safeMessages]
+        .reverse()
+        .find((item) => item?.sender === 'admin');
+      const newestAdminAt = Number(newestAdminMessage?.createdAt || 0);
+      const looksLikeHistoricalSync = newestAdminAt > 0 && newestAdminAt < screenMountAtRef.current;
+      const isInitialSync = !initialSyncDoneRef.current;
 
       skipNotifyOnNextChatSyncRef.current = false;
 
-      if (
-        !isFirstChatSyncRef.current &&
+      if (isInitialSync) {
+        initialSyncDoneRef.current = true;
+        isFirstChatSyncRef.current = false;
+
+        // First sync can contain old server history; do not notify for that backlog.
+        if (looksLikeHistoricalSync) {
+          if (screenModeRef.current === 'chat') {
+            markMessagesAsRead(safeMessages);
+          }
+
+          return;
+        }
+      }
+
+      const shouldNotify =
         !shouldSkipNotification &&
+        !isActiveInThisChat &&
         screenModeRef.current !== 'chat' &&
-        previousUnread === 0 &&
-        nextUnread > 0
-      ) {
+        nextUnread > previousUnread;
+
+      if (shouldNotify) {
         showLocalMessageNotification({
           title: 'Nová zpráva od admina',
           body: 'Máš novou zprávu v chatu.',
         });
-      }
-
-      if (isFirstChatSyncRef.current) {
-        isFirstChatSyncRef.current = false;
       }
 
       if (screenModeRef.current === 'chat') {
@@ -468,6 +519,14 @@ const UzivatelPin = ({ navigation, route }) => {
 
     return unsubscribe;
   }, [navigation, screenMode, messages]);
+
+  useEffect(() => {
+    return () => {
+      if (String(globalThis.CUSIIK_ACTIVE_USER_CHAT_ID || '') === String(currentUserId)) {
+        globalThis.CUSIIK_ACTIVE_USER_CHAT_ID = null;
+      }
+    };
+  }, [currentUserId]);
 
   useEffect(() => {
     if (screenMode === 'chat') {
@@ -578,12 +637,16 @@ const UzivatelPin = ({ navigation, route }) => {
           <View
             style={[
               styles.titleStatusDot,
-              isAdminOnline ? styles.statusOnline : styles.statusOffline,
+              isAdminOnline
+                ? styles.statusOnline
+                : isAdminJob
+                  ? styles.statusJob
+                  : styles.statusOffline,
             ]}
           />
 
           <Text style={styles.titleStatusText}>
-            {isAdminOnline ? 'on' : 'off'}
+            {getAdminStatusLabel()}
           </Text>
         </View>
 
@@ -660,12 +723,22 @@ const UzivatelPin = ({ navigation, route }) => {
                 >
                   <Text style={styles.menuButtonText}>Změnit ikonku</Text>
                 </Pressable>
+
+                <View style={styles.adminMainMessageBox}>
+                  <Text style={styles.adminMainMessageText}>
+                    Sleduj status - tím zjistíš jestli ti aktuálně mohu pomoct (status je vidět nahoře v liště)
+                  </Text>
+                  <Text style={styles.adminMainMessageText}>
+                    Když zádrhel nevyřešíme online lepší bude se sejít a problém vyřešit třeba u piva :D
+                  </Text>
+                  <Text style={styles.adminMainMessageText}>Žijem pouze jednou! Tak si hru hlavně užívej!!!</Text>
+                </View>
               </View>
 
               <View style={styles.menuBottomSection}>
                 <View style={styles.menuInfoBox}>
                   <Text style={styles.menuInfoText}>
-                    Admin: {isAdminOnline ? 'online' : 'offline'}
+                    Admin: {getAdminStatusText()}
                   </Text>
 
                   {unreadCount > 0 ? (
@@ -680,6 +753,7 @@ const UzivatelPin = ({ navigation, route }) => {
                 <Pressable
                   style={({ pressed }) => [
                     styles.chatButton,
+                    styles.chatButtonGreenOutline,
                     unreadCount > 0 && styles.menuButtonUnread,
                     pressed && styles.sendButtonPressed,
                   ]}
@@ -821,12 +895,14 @@ const UzivatelPin = ({ navigation, route }) => {
                                 styles.messageStatusDot,
                                 isAdminOnline
                                   ? styles.statusOnline
-                                  : styles.statusOffline,
+                                  : isAdminJob
+                                    ? styles.statusJob
+                                    : styles.statusOffline,
                               ]}
                             />
 
                             <Text style={styles.messageStatusText}>
-                              {isAdminOnline ? 'on' : 'off'}
+                              {getAdminStatusLabel()}
                             </Text>
                           </>
                         ) : null}
@@ -924,7 +1000,7 @@ const UzivatelPin = ({ navigation, route }) => {
             <Text style={styles.statusText}>
               {isMuted
                 ? `Umlčen: ${muteTimeLeft}`
-                : `Admin: ${isAdminOnline ? 'online' : 'offline'}`}
+                : `Admin: ${getAdminStatusText()}`}
             </Text>
           </View>
         </View>
@@ -1021,6 +1097,10 @@ const styles = StyleSheet.create({
 
   statusOffline: {
     backgroundColor: '#ff3b30',
+  },
+
+  statusJob: {
+    backgroundColor: '#556bff',
   },
 
   windowButtons: {
@@ -1159,6 +1239,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
+  },
+
+  chatButtonGreenOutline: {
+    borderTopColor: '#67d977',
+    borderLeftColor: '#67d977',
+    borderRightColor: '#1e7a2e',
+    borderBottomColor: '#1e7a2e',
+  },
+
+  adminMainMessageBox: {
+    width: '100%',
+    backgroundColor: '#eef6ff',
+    borderWidth: 1,
+    borderColor: '#8aa8d8',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+
+  adminMainMessageText: {
+    color: '#1d3557',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+    textAlign: 'left',
+    marginBottom: 4,
   },
 
   menuButtonUnread: {

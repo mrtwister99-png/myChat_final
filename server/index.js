@@ -758,7 +758,8 @@ io.on('connection', (socket) => {
       return;
     }
 
-    state.adminStatus = status === 'on' ? 'on' : 'off';
+    const nextStatus = String(status || '').toLowerCase();
+    state.adminStatus = ['on', 'off', 'job'].includes(nextStatus) ? nextStatus : 'off';
 
     emitState();
   });
