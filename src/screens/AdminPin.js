@@ -1,6 +1,6 @@
 // src/screens/AdminPin.js
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -285,7 +285,6 @@ const AdminPin = ({ navigation }) => {
       chats[userId] = safeMessages;
 
       setReadCounts({ ...getGlobalReadCounts() });
-      setNowTick(Date.now());
     };
 
     socket.on('connect', handleConnect);
@@ -822,7 +821,7 @@ const AdminPin = ({ navigation }) => {
         >
           <Text style={styles.settingsOptionTitle}>Kick uživatele</Text>
           <Text style={styles.settingsOptionText}>
-            Klikneš na uživatele a hned ho kickneš (PIN 0008).
+            Nastavíš PIN pro vybraného uživatele a pak ho kickneš.
           </Text>
         </Pressable>
 

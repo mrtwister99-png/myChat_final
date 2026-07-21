@@ -519,9 +519,6 @@ useEffect(() => {
               onPress={openMuteModal}
             >
               <Image source={MUTE_ICON} style={styles.muteButtonIcon} resizeMode="contain" />
-              <Text style={styles.muteButtonText}>
-                {isMuted ? 'Umlčení' : 'Umlčet'}
-              </Text>
             </Pressable>
           </View>
 
@@ -734,29 +731,21 @@ const styles = StyleSheet.create({
 
   titleBar: {
     height: 38,
-    backgroundColor: '#0058d8',
+    width: 42,
     borderBottomWidth: 2,
     borderBottomColor: '#003f9e',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingLeft: 8,
-    paddingRight: 5,
   },
 
-  titleLeft: {
+    paddingHorizontal: 0,
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-  },
-
-  windowsIcon: {
     width: 18,
     height: 18,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginRight: 7,
-  },
 
   winSquare: {
     width: 8,
@@ -882,33 +871,25 @@ const styles = StyleSheet.create({
 
   muteButton: {
     height: 38,
-    minWidth: 82,
+    width: 42,
     backgroundColor: '#ece9d8',
     borderWidth: 2,
     borderTopColor: '#ffffff',
     borderLeftColor: '#ffffff',
     borderRightColor: '#777777',
     borderBottomColor: '#777777',
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 0,
   },
 
   muteButtonIcon: {
-    width: 16,
-    height: 16,
-    marginRight: 6,
+    width: 18,
+    height: 18,
   },
 
   muteButtonActive: {
     backgroundColor: '#ffd7d7',
-  },
-
-  muteButtonText: {
-    color: '#000000',
-    fontSize: 13,
-    fontWeight: '900',
   },
 
   chatArea: {
