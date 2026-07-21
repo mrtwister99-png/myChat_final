@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -41,6 +42,28 @@ const USER_COLOURS = [
   { label: 'Hnědá', value: '#8b5a2b' },
   { label: 'Tyrkysová', value: '#40e0d0' },
 ];
+
+const USER_ICON_SOURCES = {
+  uzivatel: require('../assets/icons/uzivatel.png'),
+  happy: require('../assets/icons/happy.png'),
+  sad: require('../assets/icons/sad.png'),
+  devil: require('../assets/icons/devil.png'),
+  klaun: require('../assets/icons/klaun.png'),
+};
+
+const normalizeAvatarIcon = (iconKey) => {
+  const cleanIcon = String(iconKey || '').trim().toLowerCase();
+
+  if (cleanIcon === 'klan') {
+    return 'klaun';
+  }
+
+  return USER_ICON_SOURCES[cleanIcon] ? cleanIcon : 'uzivatel';
+};
+
+const getUserIconSource = (iconKey) => {
+  return USER_ICON_SOURCES[normalizeAvatarIcon(iconKey)] || USER_ICON_SOURCES.uzivatel;
+};
 
 const getGlobalMutedUsers = () => {
   if (!globalThis.CUSIIK_MUTED_USERS) {
@@ -183,6 +206,8 @@ const AdminPin = ({ navigation }) => {
 
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [settingsScreen, setSettingsScreen] = useState('menu');
+  const [kickPin, setKickPin] = useState('0008');
+  const [kickPinError, setKickPinError] = useState('');
 
   const [newAdminPin, setNewAdminPin] = useState('');
   const [adminPinError, setAdminPinError] = useState('');
@@ -245,6 +270,7 @@ const AdminPin = ({ navigation }) => {
             lastSeenAt: user.lastSeenAt || user.lastSeen || Date.now(),
             silhouetteColour: user.silhouetteColour || user.colour || '#0b3d91',
             bgColour: user.bgColour || '#ece9d8',
+            avatarIcon: normalizeAvatarIcon(user.avatarIcon),
           }))
         );
       }
@@ -440,6 +466,8 @@ const AdminPin = ({ navigation }) => {
     setSettingsScreen('menu');
     setNewAdminPin('');
     setAdminPinError('');
+    setKickPin('0008');
+    setKickPinError('');
     setSettingsModalVisible(true);
   };
 
@@ -448,17 +476,27 @@ const AdminPin = ({ navigation }) => {
     setSettingsScreen('menu');
     setNewAdminPin('');
     setAdminPinError('');
+    setKickPin('0008');
+    setKickPinError('');
   };
 
   const goBackToSettingsMenu = () => {
     setSettingsScreen('menu');
     setNewAdminPin('');
     setAdminPinError('');
+    setKickPinError('');
   };
 
   const chooseUserToKick = (user) => {
-    kickUserById(user, { newPin: '0008' });
-    goBackToSettingsMenu();
+    const cleanedPin = String(kickPin || '').replace(/[^0-9]/g, '').slice(0, 4);
+
+    if (cleanedPin.length !== 4) {
+      setKickPinError('PIN pro kick musí mít přesně 4 číslice.');
+      return;
+    }
+
+    kickUserById(user, { newPin: cleanedPin });
+    closeSettings();
   };
 
   const kickUserById = (user, options = {}) => {
@@ -467,10 +505,6 @@ const AdminPin = ({ navigation }) => {
     }
 
     const targetPin = String(options.newPin || '').replace(/[^0-9]/g, '').slice(0, 4);
-
-    setUsers((currentUsers) =>
-      currentUsers.filter((currentUser) => currentUser.id !== user.id)
-    );
 
     if (socket.connected) {
       socket.emit('admin:kickUser', {
@@ -602,6 +636,26 @@ const AdminPin = ({ navigation }) => {
     if (settingsScreen === 'kick') {
       return (
         <View style={styles.modalBody}>
+          <Text style={styles.modalLabel}>PIN pro kicknutého uživatele:</Text>
+
+          <TextInput
+            value={kickPin}
+            onChangeText={(value) => {
+              setKickPinError('');
+              setKickPin(value.replace(/[^0-9]/g, '').slice(0, 4));
+            }}
+            style={styles.modalInput}
+            placeholder="Např. 0008"
+            placeholderTextColor="#666666"
+            maxLength={4}
+            keyboardType="number-pad"
+            inputMode="numeric"
+          />
+
+          {kickPinError ? (
+            <Text style={styles.errorText}>{kickPinError}</Text>
+          ) : null}
+
           <Text style={styles.modalLabel}>Vyber uživatele ke kicku:</Text>
 
           {users.length === 0 ? (
@@ -641,7 +695,11 @@ const AdminPin = ({ navigation }) => {
                       },
                     ]}
                   >
-                    <Text style={styles.smallUserIcon}>👤</Text>
+                    <Image
+                      source={getUserIconSource(user.avatarIcon)}
+                      style={styles.smallUserIconImage}
+                      resizeMode="contain"
+                    />
                   </View>
 
                   <View style={styles.settingsUserTextBox}>
@@ -912,7 +970,11 @@ const AdminPin = ({ navigation }) => {
                               },
                             ]}
                           >
-                            <Text style={styles.userIcon}>👤</Text>
+                            <Image
+                              source={getUserIconSource(user.avatarIcon)}
+                              style={styles.userIconImage}
+                              resizeMode="contain"
+                            />
                           </View>
 
                           <View style={styles.userTextBox}>
@@ -1573,8 +1635,9 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
 
-  userIcon: {
-    fontSize: 22,
+  userIconImage: {
+    width: 26,
+    height: 26,
   },
 
   userTextBox: {
@@ -1985,8 +2048,9 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
 
-  smallUserIcon: {
-    fontSize: 20,
+  smallUserIconImage: {
+    width: 22,
+    height: 22,
   },
 
   settingsUserTextBox: {

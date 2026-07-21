@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -77,12 +78,35 @@ const HELPER_MESSAGES = [
   'muzes me teleportovat na souradnice [2,0]',
 ];
 
-const USER_ICON_COLOURS = [
-  { label: 'Tmavě modrá', value: '#0b3d91' },
-  { label: 'Šedá', value: '#8f959e' },
-  { label: 'Bílá', value: '#ffffff' },
-  { label: 'Tmavší šedá', value: '#5b616b' },
+const USER_ICON_SOURCES = {
+  uzivatel: require('../assets/icons/uzivatel.png'),
+  happy: require('../assets/icons/happy.png'),
+  sad: require('../assets/icons/sad.png'),
+  devil: require('../assets/icons/devil.png'),
+  klaun: require('../assets/icons/klaun.png'),
+};
+
+const USER_ICON_OPTIONS = [
+  { key: 'uzivatel', label: 'uzivatel' },
+  { key: 'happy', label: 'happy' },
+  { key: 'sad', label: 'sad' },
+  { key: 'devil', label: 'devil' },
+  { key: 'klaun', label: 'klan' },
 ];
+
+const normalizeAvatarIcon = (iconKey) => {
+  const cleanIcon = String(iconKey || '').trim().toLowerCase();
+
+  if (cleanIcon === 'klan') {
+    return 'klaun';
+  }
+
+  return USER_ICON_SOURCES[cleanIcon] ? cleanIcon : 'uzivatel';
+};
+
+const getIconSource = (iconKey) => {
+  return USER_ICON_SOURCES[normalizeAvatarIcon(iconKey)] || USER_ICON_SOURCES.uzivatel;
+};
 
 const getAdminStatus = () => {
   return globalThis.CUSIIK_ADMIN_STATUS || 'off';
@@ -197,6 +221,9 @@ const UzivatelPin = ({ navigation }) => {
   const [userBgColour, setUserBgColour] = useState(
     globalThis.CUSIIK_USER_BG_COLOUR || '#f5f5f5'
   );
+  const [userAvatarIcon, setUserAvatarIcon] = useState(
+    normalizeAvatarIcon(globalThis.CUSIIK_USER_AVATAR_ICON || 'uzivatel')
+  );
 
   const [readAdminCount, setReadAdminCount] = useState(
     getGlobalUserReadCounts()[currentUserId] || 0
@@ -290,6 +317,12 @@ const UzivatelPin = ({ navigation }) => {
         if (currentUser?.bgColour) {
           setUserBgColour(currentUser.bgColour);
           globalThis.CUSIIK_USER_BG_COLOUR = currentUser.bgColour;
+        }
+
+        if (currentUser?.avatarIcon) {
+          const normalizedIcon = normalizeAvatarIcon(currentUser.avatarIcon);
+          setUserAvatarIcon(normalizedIcon);
+          globalThis.CUSIIK_USER_AVATAR_ICON = normalizedIcon;
         }
       }
 
@@ -443,14 +476,16 @@ const UzivatelPin = ({ navigation }) => {
     setMessage(currentHelperMessage);
   };
 
-  const changeUserIconColour = (colour) => {
-    globalThis.CUSIIK_USER_BG_COLOUR = colour;
-    setUserBgColour(colour);
+  const changeUserAvatarIcon = (iconKey) => {
+    const normalizedIcon = normalizeAvatarIcon(iconKey);
+
+    setUserAvatarIcon(normalizedIcon);
+    globalThis.CUSIIK_USER_AVATAR_ICON = normalizedIcon;
 
     if (socket.connected) {
-      socket.emit('user:setBgColour', {
+      socket.emit('user:setAvatarIcon', {
         userId: currentUserId,
-        colour,
+        icon: normalizedIcon,
       });
     }
 
@@ -566,8 +601,11 @@ const UzivatelPin = ({ navigation }) => {
                     },
                   ]}
                 >
-                  <View style={styles.silhouetteHead} />
-                  <View style={styles.silhouetteBody} />
+                  <Image
+                    source={getIconSource(userAvatarIcon)}
+                    style={styles.menuUserIconImage}
+                    resizeMode="contain"
+                  />
                 </View>
 
                 <Text style={styles.menuHeading}>{currentUserName}</Text>
@@ -579,7 +617,7 @@ const UzivatelPin = ({ navigation }) => {
                   ]}
                   onPress={() => setColourModalVisible(true)}
                 >
-                  <Text style={styles.menuButtonText}>Změnit barvu</Text>
+                  <Text style={styles.menuButtonText}>Změnit ikonku</Text>
                 </Pressable>
               </View>
 
@@ -630,7 +668,7 @@ const UzivatelPin = ({ navigation }) => {
             <View style={styles.modalOverlay}>
               <View style={styles.modalWindow}>
                 <View style={styles.modalTitleBar}>
-                  <Text style={styles.modalTitleText}>Barva ikonky</Text>
+                  <Text style={styles.modalTitleText}>Výběr ikonky</Text>
 
                   <Pressable
                     style={styles.modalCloseButton}
@@ -641,25 +679,27 @@ const UzivatelPin = ({ navigation }) => {
                 </View>
 
                 <View style={styles.modalBody}>
-                  <Text style={styles.modalLabel}>Vyber barvu backgroundu ikonky:</Text>
+                  <Text style={styles.modalLabel}>Vyber ikonku uživatele:</Text>
 
                   <View style={styles.colourGrid}>
-                    {USER_ICON_COLOURS.map((colour) => (
+                    {USER_ICON_OPTIONS.map((iconItem) => (
                       <Pressable
-                        key={colour.value}
+                        key={iconItem.key}
                         style={({ pressed }) => [
                           styles.colourButton,
+                          normalizeAvatarIcon(userAvatarIcon) === normalizeAvatarIcon(iconItem.key)
+                            ? styles.iconButtonSelected
+                            : null,
                           pressed && styles.sendButtonPressed,
                         ]}
-                        onPress={() => changeUserIconColour(colour.value)}
+                        onPress={() => changeUserAvatarIcon(iconItem.key)}
                       >
-                        <View
-                          style={[
-                            styles.colourPreview,
-                            { backgroundColor: colour.value },
-                          ]}
+                        <Image
+                          source={getIconSource(iconItem.key)}
+                          style={styles.iconPreview}
+                          resizeMode="contain"
                         />
-                        <Text style={styles.colourButtonText}>{colour.label}</Text>
+                        <Text style={styles.colourButtonText}>{iconItem.label}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -1019,22 +1059,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
   },
 
-  silhouetteHead: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    marginBottom: 7,
-    backgroundColor: '#dceaff',
-  },
-
-  silhouetteBody: {
-    width: 52,
-    height: 30,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    borderBottomLeftRadius: 10,
-    borderBottomRightRadius: 10,
-    backgroundColor: '#dceaff',
+  menuUserIconImage: {
+    width: 58,
+    height: 58,
   },
 
   menuHeading: {
@@ -1500,12 +1527,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  colourPreview: {
-    width: 24,
-    height: 24,
-    borderWidth: 1,
-    borderColor: '#000000',
-    marginRight: 8,
+  iconButtonSelected: {
+    borderTopColor: '#1f7a1f',
+    borderLeftColor: '#1f7a1f',
+    borderRightColor: '#7df57d',
+    borderBottomColor: '#7df57d',
+    backgroundColor: '#e7ffe7',
+  },
+
+  iconPreview: {
+    width: 26,
+    height: 26,
+    marginBottom: 6,
   },
 
   colourButtonText: {

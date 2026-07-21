@@ -35,6 +35,24 @@ const state = {
   userProfilesById: {},
 };
 
+const SUPPORTED_AVATAR_ICONS = new Set([
+  'uzivatel',
+  'happy',
+  'sad',
+  'devil',
+  'klaun',
+]);
+
+const normalizeAvatarIcon = (icon) => {
+  const cleanIcon = String(icon || '').trim().toLowerCase();
+
+  if (cleanIcon === 'klan') {
+    return 'klaun';
+  }
+
+  return SUPPORTED_AVATAR_ICONS.has(cleanIcon) ? cleanIcon : 'uzivatel';
+};
+
 const RANDOM_USER_NAMES = [
   'Jiri', 'Jan', 'Petr', 'Josef', 'Pavel', 'Martin', 'Tomas', 'Jaroslav', 'Miroslav', 'Zdenek',
   'Vaclav', 'Michal', 'Frantisek', 'Jakub', 'Milan', 'Karel', 'Lukas', 'David', 'Vladimir', 'Ondrej',
@@ -128,6 +146,7 @@ const getPublicUsers = () => {
         name: normalizedUser.name,
         silhouetteColour: normalizedUser.silhouetteColour,
         bgColour: normalizedUser.bgColour,
+        avatarIcon: normalizeAvatarIcon(normalizedUser.avatarIcon),
         colour: normalizedUser.silhouetteColour,
         online: normalizedUser.online,
         lastSeenAt: normalizedUser.lastSeenAt,
@@ -157,6 +176,7 @@ const rememberUserProfile = (user) => {
     name: user.name,
     silhouetteColour: user.silhouetteColour,
     bgColour: user.bgColour,
+    avatarIcon: normalizeAvatarIcon(user.avatarIcon),
   };
 };
 
@@ -208,6 +228,7 @@ const createUserForSocket = (socket) => {
     name: userName,
     silhouetteColour: '#0b3d91',
     bgColour: '#ece9d8',
+    avatarIcon: 'uzivatel',
     online: true,
     lastSeenAt: Date.now(),
     socketId: socket.id,
@@ -244,6 +265,7 @@ const createUserWithKnownIdForSocket = (socket, userId) => {
     name: nextName,
     silhouetteColour: profile?.silhouetteColour || '#0b3d91',
     bgColour: profile?.bgColour || '#ece9d8',
+    avatarIcon: normalizeAvatarIcon(profile?.avatarIcon),
     online: true,
     lastSeenAt: Date.now(),
     socketId: socket.id,
@@ -425,6 +447,13 @@ io.on('connection', (socket) => {
       return;
     }
 
+    if (cleanLastId && specialPinForLastId && cleanPin !== specialPinForLastId) {
+      socket.emit('auth:error', {
+        message: `Pro tento účet musíš použít PIN ${specialPinForLastId}.`,
+      });
+      return;
+    }
+
     if (isRoomPinLogin || isSpecialPinLogin) {
       socket.leave('admins');
 
@@ -441,10 +470,6 @@ io.on('connection', (socket) => {
           markUserOnline(existing.id, socket);
           socket.data.lastUserId = existing.id;
           clearRoomKickReuseBlock(existing.id);
-
-          if (isSpecialPinLogin) {
-            delete state.userPinsById[existing.id];
-          }
 
           socket.emit('auth:success', {
             role: 'user',
@@ -467,7 +492,6 @@ io.on('connection', (socket) => {
           if (restoredUser) {
             socket.data.lastUserId = restoredUser.id;
             clearRoomKickReuseBlock(restoredUser.id);
-            delete state.userPinsById[restoredUser.id];
 
             socket.emit('auth:success', {
               role: 'user',
@@ -870,6 +894,33 @@ io.on('connection', (socket) => {
         ? {
             ...user,
             bgColour: cleanColour,
+          }
+        : user
+    );
+
+    const updatedUser = getUserById(cleanUserId);
+    rememberUserProfile(updatedUser);
+
+    emitState();
+  });
+
+  socket.on('user:setAvatarIcon', ({ userId, icon }) => {
+    const cleanUserId = String(userId || '').trim();
+    const normalizedIcon = normalizeAvatarIcon(icon);
+
+    if (!cleanUserId) {
+      return;
+    }
+
+    if (socket.data.role !== 'user' || socket.data.userId !== cleanUserId) {
+      return;
+    }
+
+    state.users = state.users.map((user) =>
+      user.id === cleanUserId
+        ? {
+            ...user,
+            avatarIcon: normalizedIcon,
           }
         : user
     );
