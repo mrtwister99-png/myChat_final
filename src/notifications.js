@@ -6,6 +6,16 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 
+const NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000;
+
+const getLastNotificationAt = () => {
+  return Number(globalThis.CUSIIK_LAST_NOTIFICATION_AT || 0);
+};
+
+const setLastNotificationAt = (timestamp) => {
+  globalThis.CUSIIK_LAST_NOTIFICATION_AT = Number(timestamp || 0);
+};
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldPlaySound: true,
@@ -52,6 +62,13 @@ export const registerForPushNotificationsAsync = async () => {
 };
 
 export const showLocalMessageNotification = async ({ title, body }) => {
+  const now = Date.now();
+  const lastNotificationAt = getLastNotificationAt();
+
+  if (lastNotificationAt > 0 && now - lastNotificationAt < NOTIFICATION_COOLDOWN_MS) {
+    return false;
+  }
+
   await Notifications.scheduleNotificationAsync({
     content: {
       title,
@@ -60,4 +77,7 @@ export const showLocalMessageNotification = async ({ title, body }) => {
     },
     trigger: null,
   });
+
+  setLastNotificationAt(now);
+  return true;
 };
