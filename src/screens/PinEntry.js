@@ -261,6 +261,7 @@ const PinEntry = ({ navigation }) => {
 
         socket.emit('auth:checkPin', {
           pin: cleanValue,
+          lastUserId: globalThis.CUSIIK_LAST_USER_ID || null,
         });
 
         return;

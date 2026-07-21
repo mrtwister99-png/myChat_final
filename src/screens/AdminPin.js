@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
-import { showLocalMessageNotification } from '../notifications';
 
 const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
 const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '8831';
@@ -165,8 +164,6 @@ const getUserMessageCount = (userId) => {
 };
 
 const AdminPin = ({ navigation }) => {
-  const isFirstChatSyncRef = useRef(true);
-  const usersRef = useRef([]);
   const [users, setUsers] = useState([
   ]);
 
@@ -202,10 +199,6 @@ const AdminPin = ({ navigation }) => {
   );
 
   const isAdminOnline = adminStatus === 'on';
-
-  useEffect(() => {
-    usersRef.current = users;
-  }, [users]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -261,29 +254,9 @@ const AdminPin = ({ navigation }) => {
 
     const handleChatMessages = ({ userId, messages }) => {
       const chats = getGlobalChats();
-      const previousMessages = chats[userId] || [];
-      const previousUserMessages = previousMessages.filter(
-        (item) => item.sender === 'user'
-      ).length;
       const safeMessages = messages || [];
-      const nextUserMessages = safeMessages.filter(
-        (item) => item.sender === 'user'
-      ).length;
 
       chats[userId] = safeMessages;
-
-      if (!isFirstChatSyncRef.current && nextUserMessages > previousUserMessages) {
-        const user = usersRef.current.find((item) => String(item.id) === String(userId));
-
-        showLocalMessageNotification({
-          title: user ? `Nová zpráva: ${user.name}` : 'Nová zpráva od uživatele',
-          body: 'Otevři chat v admin panelu.',
-        });
-      }
-
-      if (isFirstChatSyncRef.current) {
-        isFirstChatSyncRef.current = false;
-      }
 
       setReadCounts({ ...getGlobalReadCounts() });
       setNowTick(Date.now());
@@ -918,7 +891,7 @@ const AdminPin = ({ navigation }) => {
                     return (
                       <View
                         key={user.id}
-                        style={[styles.userRow, { backgroundColor: user.bgColour || '#ece9d8' }]}
+                        style={styles.userRow}
                       >
                         <Pressable
                           style={({ pressed }) => [

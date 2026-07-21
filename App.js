@@ -9,6 +9,7 @@ import UzivatelPin from './src/screens/UzivatelPin';
 import AdminPin from './src/screens/AdminPin';
 import AdminChat from './src/screens/AdminChat';
 import { registerForPushNotificationsAsync } from './src/notifications';
+import { showLocalMessageNotification } from './src/notifications';
 import { socket } from './src/socket';
 
 const Stack = createNativeStackNavigator();
@@ -38,6 +39,46 @@ const App = () => {
       }
     };
     init();
+  }, []);
+
+  useEffect(() => {
+    const lastUserMessageCounts = {};
+    let isFirstSync = true;
+
+    const handleChatMessages = ({ userId, messages }) => {
+      if (globalThis.CUSIIK_CURRENT_ROLE !== 'admin') {
+        return;
+      }
+
+      const cleanUserId = String(userId || '');
+      if (!cleanUserId) {
+        return;
+      }
+
+      const safeMessages = Array.isArray(messages) ? messages : [];
+      const nextUserCount = safeMessages.filter((item) => item?.sender === 'user').length;
+      const previousUserCount = lastUserMessageCounts[cleanUserId] || 0;
+
+      lastUserMessageCounts[cleanUserId] = nextUserCount;
+
+      if (isFirstSync) {
+        isFirstSync = false;
+        return;
+      }
+
+      if (nextUserCount > previousUserCount) {
+        showLocalMessageNotification({
+          title: 'Nová zpráva od uživatele',
+          body: 'Otevři admin chat.',
+        });
+      }
+    };
+
+    socket.on('chat:messages', handleChatMessages);
+
+    return () => {
+      socket.off('chat:messages', handleChatMessages);
+    };
   }, []);
 
   useEffect(() => {

@@ -484,6 +484,33 @@ io.on('connection', (socket) => {
             return;
           }
         }
+
+        if (isRoomPinLogin && !state.kickedRoomUserIds[cleanLastId]) {
+          const rememberedProfile = getStoredUserProfile(cleanLastId);
+
+          if (rememberedProfile) {
+            const restoredUser = createUserWithKnownIdForSocket(socket, cleanLastId);
+
+            if (restoredUser) {
+              socket.data.lastUserId = restoredUser.id;
+              clearRoomKickReuseBlock(restoredUser.id);
+
+              socket.emit('auth:success', {
+                role: 'user',
+                userId: restoredUser.id,
+                userName: restoredUser.name,
+              });
+
+              socket.emit('chat:messages', {
+                userId: restoredUser.id,
+                messages: state.chats[restoredUser.id] || [],
+              });
+
+              emitState();
+              return;
+            }
+          }
+        }
       }
 
       const user = createUserForSocket(socket);
