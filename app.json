@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "deepseek",
-    "slug": "deepseek",
+    "name": "BLBEchat",
+    "slug": "blbechat",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

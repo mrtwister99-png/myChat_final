@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -99,6 +100,7 @@ const USER_ICON_SOURCES = {
 };
 
 const USER_ICON_OPTIONS = [
+  { key: 'uzivatel', label: 'uživatel' },
   { key: 'cat', label: 'kočka' },
   { key: 'pes', label: 'pes' },
   { key: 'devil', label: 'devil' },
@@ -234,6 +236,7 @@ const UzivatelPin = ({ navigation, route }) => {
   const [blockedInfo, setBlockedInfo] = useState('');
   const [helperMessageIndex, setHelperMessageIndex] = useState(0);
   const [serverMutedUsers, setServerMutedUsers] = useState(getGlobalMutedUsers());
+  const [secretMutedUsers, setSecretMutedUsers] = useState(getGlobalSecretMutedUsers());
 
   const [userIconColour, setUserIconColour] = useState(
     globalThis.CUSIIK_USER_ICON_COLOUR || '#0b3d91'
@@ -265,7 +268,6 @@ const UzivatelPin = ({ navigation, route }) => {
     }
   }, [screenMode]);
 
-  const secretMutedUsers = getGlobalSecretMutedUsers();
   const isSecretMuted = Boolean(secretMutedUsers[currentUserId]);
 
   const effectiveAdminStatus = isSecretMuted ? 'off' : adminStatus;
@@ -296,6 +298,7 @@ const UzivatelPin = ({ navigation, route }) => {
     return 'offline';
   };
   const currentHelperMessage = HELPER_MESSAGES[helperMessageIndex];
+  const KeyboardWrapper = Platform.OS === 'ios' ? KeyboardAvoidingView : View;
 
   const adminMessageCount = getAdminMessageCount(messages);
   const unreadCount = Math.max(adminMessageCount - readAdminCount, 0);
@@ -398,6 +401,7 @@ const UzivatelPin = ({ navigation, route }) => {
       }
 
       if (serverState?.secretMutedUsers) {
+        setSecretMutedUsers(serverState.secretMutedUsers);
         globalThis.CUSIIK_SECRET_MUTED_USERS = serverState.secretMutedUsers;
       }
 
@@ -535,6 +539,18 @@ const UzivatelPin = ({ navigation, route }) => {
       }
     };
   }, [currentUserId]);
+
+  useEffect(() => {
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') {
+        Keyboard.dismiss();
+      }
+    });
+
+    return () => {
+      appStateSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (screenMode === 'chat') {
@@ -855,9 +871,9 @@ const UzivatelPin = ({ navigation, route }) => {
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
 
-      <KeyboardAvoidingView
+      <KeyboardWrapper
         style={styles.page}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.window}>
           {renderTitleBar('Chat s adminem')}
@@ -1028,7 +1044,7 @@ const UzivatelPin = ({ navigation, route }) => {
             </Text>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardWrapper>
     </SafeAreaView>
   );
 };

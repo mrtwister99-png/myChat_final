@@ -165,12 +165,18 @@ const getPublicUsers = () => {
 };
 
 const getPublicState = () => {
+  const normalizedSecretMutedUsers = Object.fromEntries(
+    Object.entries(state.secretMutedUsers || {}).filter(([, value]) => Boolean(value))
+  );
+
+  state.secretMutedUsers = normalizedSecretMutedUsers;
+
   return {
     userPin: state.userPin,
     adminStatus: state.adminStatus,
     users: getPublicUsers(),
     mutedUsers: state.mutedUsers,
-    secretMutedUsers: state.secretMutedUsers,
+    secretMutedUsers: normalizedSecretMutedUsers,
   };
 };
 
@@ -914,7 +920,11 @@ io.on('connection', (socket) => {
       return;
     }
 
-    state.secretMutedUsers[cleanUserId] = isEnabled;
+    if (isEnabled) {
+      state.secretMutedUsers[cleanUserId] = true;
+    } else {
+      delete state.secretMutedUsers[cleanUserId];
+    }
 
     if (isEnabled) {
       delete state.mutedUsers[cleanUserId];

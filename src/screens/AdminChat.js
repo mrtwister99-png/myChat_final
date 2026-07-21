@@ -459,8 +459,13 @@ useEffect(() => {
     const nextValue = !isSecretMuted;
     const nextSecretMutedUsers = {
       ...secretMutedUsers,
-      [userId]: nextValue,
     };
+
+    if (nextValue) {
+      nextSecretMutedUsers[userId] = true;
+    } else {
+      delete nextSecretMutedUsers[userId];
+    }
 
     setSecretMutedUsers(nextSecretMutedUsers);
     globalThis.CUSIIK_SECRET_MUTED_USERS = nextSecretMutedUsers;

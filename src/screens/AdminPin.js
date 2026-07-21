@@ -749,7 +749,11 @@ const AdminPin = ({ navigation }) => {
     const nextValue = !secretMutedUsers[user.id];
     const mutedUsers = getGlobalMutedUsers();
 
-    secretMutedUsers[user.id] = nextValue;
+    if (nextValue) {
+      secretMutedUsers[user.id] = true;
+    } else {
+      delete secretMutedUsers[user.id];
+    }
     globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsers;
 
     if (nextValue) {
