@@ -19,6 +19,11 @@ const state = {
   userPin: '1111',
   adminPin: '8831',
   adminStatus: 'off',
+  adminProfile: {
+    icon: 'admin',
+    silhouetteColour: '#0b3d91',
+    bgColour: '#ece9d8',
+  },
 
   nextUserNumber: 1,
 
@@ -49,6 +54,16 @@ const SUPPORTED_AVATAR_ICONS = new Set([
   'stop',
   'vykricnik',
   'fuckerr',
+  'zachod',
+]);
+
+const SUPPORTED_ADMIN_ICONS = new Set([
+  'admin',
+  'admin1',
+  'admin2',
+  'admin3',
+  'admin4',
+  'admin5',
 ]);
 
 const normalizeAvatarIcon = (icon) => {
@@ -63,6 +78,30 @@ const normalizeAvatarIcon = (icon) => {
   }
 
   return SUPPORTED_AVATAR_ICONS.has(cleanIcon) ? cleanIcon : 'uzivatel';
+};
+
+const normalizeAdminIcon = (icon) => {
+  const cleanIcon = String(icon || '').trim().toLowerCase();
+  return SUPPORTED_ADMIN_ICONS.has(cleanIcon) ? cleanIcon : 'admin';
+};
+
+const normalizeColour = (colour, fallback = '#0b3d91') => {
+  const cleanColour = String(colour || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(cleanColour) ? cleanColour : fallback;
+};
+
+const getPublicAdminProfile = () => {
+  const adminProfile = state.adminProfile || {};
+
+  state.adminProfile = {
+    icon: normalizeAdminIcon(adminProfile.icon),
+    silhouetteColour: normalizeColour(adminProfile.silhouetteColour, '#0b3d91'),
+    bgColour: normalizeColour(adminProfile.bgColour, '#ece9d8'),
+  };
+
+  return {
+    ...state.adminProfile,
+  };
 };
 
 const PUSH_COOLDOWN_MS = 5 * 60 * 1000;
@@ -220,6 +259,7 @@ const getPublicState = () => {
   return {
     userPin: state.userPin,
     adminStatus: state.adminStatus,
+    adminProfile: getPublicAdminProfile(),
     users: getPublicUsers(),
     mutedUsers: state.mutedUsers,
     secretMutedUsers: normalizedSecretMutedUsers,
@@ -853,6 +893,31 @@ io.on('connection', (socket) => {
     const nextStatus = String(status || '').toLowerCase();
     state.adminStatus = ['on', 'off', 'job'].includes(nextStatus) ? nextStatus : 'off';
 
+    emitState();
+  });
+
+  socket.on('admin:setProfile', ({ icon, silhouetteColour, bgColour }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const nextProfile = {
+      ...getPublicAdminProfile(),
+    };
+
+    if (icon !== undefined) {
+      nextProfile.icon = normalizeAdminIcon(icon);
+    }
+
+    if (silhouetteColour !== undefined) {
+      nextProfile.silhouetteColour = normalizeColour(silhouetteColour, nextProfile.silhouetteColour);
+    }
+
+    if (bgColour !== undefined) {
+      nextProfile.bgColour = normalizeColour(bgColour, nextProfile.bgColour);
+    }
+
+    state.adminProfile = nextProfile;
     emitState();
   });
 

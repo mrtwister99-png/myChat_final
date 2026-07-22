@@ -50,6 +50,20 @@ const USER_COLOURS = [
   { label: 'Tyrkysová', value: '#40e0d0' },
 ];
 
+const ADMIN_OUTLINE_COLOURS = [
+  ...USER_COLOURS,
+  { label: 'Ledová', value: '#7dd3fc' },
+  { label: 'Námořní', value: '#1d4ed8' },
+  { label: 'Limetka', value: '#84cc16' },
+  { label: 'Smaragdová', value: '#10b981' },
+  { label: 'Malinová', value: '#e11d48' },
+  { label: 'Rubínová', value: '#be123c' },
+  { label: 'Měděná', value: '#b45309' },
+  { label: 'Zlatá', value: '#ca8a04' },
+  { label: 'Stříbrná', value: '#94a3b8' },
+  { label: 'Indigo', value: '#4f46e5' },
+];
+
 const USER_ICON_SOURCES = {
   uzivatel: require('../assets/icons/uzivatel.png'),
   cat: require('../assets/icons/cat.png'),
@@ -62,20 +76,26 @@ const USER_ICON_SOURCES = {
   fuckerr: require('../assets/icons/fuckerr.png'),
   zachod: require('../assets/icons/zachod.png'),
   admin: require('../assets/icons/admin.png'),
+  admin1: require('../assets/icons/admin1.png'),
+  admin2: require('../assets/icons/admin2.png'),
+  admin3: require('../assets/icons/admin3.png'),
+  admin4: require('../assets/icons/admin4.png'),
+  admin5: require('../assets/icons/admin5.png'),
 };
 
 const ADMIN_ICON_OPTIONS = [
   { key: 'admin', label: 'admin' },
-  { key: 'uzivatel', label: 'uzivatel' },
-  { key: 'cat', label: 'kocka' },
-  { key: 'pes', label: 'pes' },
-  { key: 'devil', label: 'devil' },
-  { key: 'klaun', label: 'klaun' },
-  { key: 'happy', label: 'prsa' },
-  { key: 'stop', label: 'stop' },
-  { key: 'vykricnik', label: 'vystraha' },
-  { key: 'zachod', label: 'zachod' },
+  { key: 'admin1', label: 'admin1' },
+  { key: 'admin2', label: 'admin2' },
+  { key: 'admin3', label: 'admin3' },
+  { key: 'admin4', label: 'admin4' },
+  { key: 'admin5', label: 'admin5' },
 ];
+
+const normalizeAdminIcon = (iconKey) => {
+  const cleanIcon = String(iconKey || '').trim().toLowerCase();
+  return USER_ICON_SOURCES[cleanIcon] && cleanIcon.startsWith('admin') ? cleanIcon : 'admin';
+};
 
 const normalizeAvatarIcon = (iconKey) => {
   const cleanIcon = String(iconKey || '').trim().toLowerCase();
@@ -93,6 +113,10 @@ const normalizeAvatarIcon = (iconKey) => {
 
 const getUserIconSource = (iconKey) => {
   return USER_ICON_SOURCES[normalizeAvatarIcon(iconKey)] || USER_ICON_SOURCES.uzivatel;
+};
+
+const getAdminIconSource = (iconKey) => {
+  return USER_ICON_SOURCES[normalizeAdminIcon(iconKey)] || USER_ICON_SOURCES.admin;
 };
 
 const getGlobalMutedUsers = () => {
@@ -377,6 +401,17 @@ const AdminPin = ({ navigation }) => {
       if (serverState?.secretMutedUsers) {
         setSecretMutedUsers(serverState.secretMutedUsers);
         globalThis.CUSIIK_SECRET_MUTED_USERS = serverState.secretMutedUsers;
+      }
+
+      if (serverState?.adminProfile) {
+        const normalizedAdminProfile = {
+          icon: normalizeAdminIcon(serverState.adminProfile.icon || 'admin'),
+          silhouetteColour: serverState.adminProfile.silhouetteColour || '#0b3d91',
+          bgColour: serverState.adminProfile.bgColour || '#ece9d8',
+        };
+
+        setAdminProfile(normalizedAdminProfile);
+        globalThis.CUSIIK_ADMIN_PROFILE = normalizedAdminProfile;
       }
 
       if (Array.isArray(serverState?.users)) {
@@ -667,6 +702,9 @@ const AdminPin = ({ navigation }) => {
     setAdminPinError('');
     setKickPin('0008');
     setKickPinError('');
+    setAdminEditModalVisible(false);
+    setAdminIconModalVisible(false);
+    setAdminOutlineModalVisible(false);
     setSettingsModalVisible(true);
   };
 
@@ -677,6 +715,58 @@ const AdminPin = ({ navigation }) => {
     setAdminPinError('');
     setKickPin('0008');
     setKickPinError('');
+    setAdminEditModalVisible(false);
+    setAdminIconModalVisible(false);
+    setAdminOutlineModalVisible(false);
+  };
+
+  const openAdminProfileEditor = () => {
+    setAdminEditModalVisible(true);
+  };
+
+  const closeAdminProfileEditor = () => {
+    setAdminEditModalVisible(false);
+    setAdminIconModalVisible(false);
+    setAdminOutlineModalVisible(false);
+  };
+
+  const updateAdminIcon = (iconKey) => {
+    const normalizedIcon = normalizeAdminIcon(iconKey);
+    const nextProfile = {
+      ...adminProfile,
+      icon: normalizedIcon,
+    };
+
+    setAdminProfile(nextProfile);
+    globalThis.CUSIIK_ADMIN_PROFILE = nextProfile;
+
+    if (socket.connected) {
+      socket.emit('admin:setProfile', {
+        icon: normalizedIcon,
+      });
+    }
+
+    setLastActionText(`Admin ikonka byla změněna na ${normalizedIcon}.`);
+    setAdminIconModalVisible(false);
+  };
+
+  const updateAdminOutlineColour = (colour) => {
+    const nextProfile = {
+      ...adminProfile,
+      silhouetteColour: colour,
+    };
+
+    setAdminProfile(nextProfile);
+    globalThis.CUSIIK_ADMIN_PROFILE = nextProfile;
+
+    if (socket.connected) {
+      socket.emit('admin:setProfile', {
+        silhouetteColour: colour,
+      });
+    }
+
+    setLastActionText('Barva obrysu admina byla změněna.');
+    setAdminOutlineModalVisible(false);
   };
 
   const goBackToSettingsMenu = () => {
@@ -1045,6 +1135,80 @@ const AdminPin = ({ navigation }) => {
       );
     }
 
+    if (settingsScreen === 'editProfile') {
+      return (
+        <View style={styles.modalBody}>
+          <View style={styles.adminPreviewCard}>
+            <View
+              style={[
+                styles.adminPreviewIconBox,
+                {
+                  backgroundColor: adminProfile?.bgColour || '#ece9d8',
+                  borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
+                  borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
+                  borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
+                  borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
+                },
+              ]}
+            >
+              <Image
+                source={getAdminIconSource(adminProfile?.icon || 'admin')}
+                style={styles.adminPreviewIconImage}
+                resizeMode="contain"
+              />
+            </View>
+
+            <View style={styles.settingsUserTextBox}>
+              <Text style={styles.settingsUserName}>
+                Ikonka: {normalizeAdminIcon(adminProfile?.icon || 'admin')}
+              </Text>
+              <Text style={styles.settingsUserSubText}>
+                Obrys: {adminProfile?.silhouetteColour || '#0b3d91'}
+              </Text>
+            </View>
+          </View>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.settingsOption,
+              pressed && styles.xpButtonPressed,
+            ]}
+            onPress={() => setAdminIconModalVisible(true)}
+          >
+            <Text style={styles.settingsOptionTitle}>Nastavit ikonku</Text>
+            <Text style={styles.settingsOptionText}>
+              Ikonka admina se zobrazí uživateli aktivně v chatu.
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.settingsOption,
+              pressed && styles.xpButtonPressed,
+            ]}
+            onPress={() => setAdminOutlineModalVisible(true)}
+          >
+            <Text style={styles.settingsOptionTitle}>Nastavit barvu obrysu</Text>
+            <Text style={styles.settingsOptionText}>
+              Barva obrysu admina se zobrazí uživateli aktivně v chatu.
+            </Text>
+          </Pressable>
+
+          <View style={styles.modalButtons}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && styles.xpButtonPressed,
+              ]}
+              onPress={goBackToSettingsMenu}
+            >
+              <Text style={styles.modalButtonText}>Zpět</Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
+
     if (settingsScreen === 'adminPin') {
       return (
         <View style={styles.modalBody}>
@@ -1161,6 +1325,19 @@ const AdminPin = ({ navigation }) => {
           <Text style={styles.settingsOptionTitle}>Admin PIN</Text>
           <Text style={styles.settingsOptionText}>
             Nastavíš nový PIN pro vstup do admin panelu.
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.settingsOption,
+            pressed && styles.xpButtonPressed,
+          ]}
+          onPress={() => setSettingsScreen('editProfile')}
+        >
+          <Text style={styles.settingsOptionTitle}>Upravit profil</Text>
+          <Text style={styles.settingsOptionText}>
+            Nastavíš ikonku a barvu obrysu, které uvidí uživatel v chatu.
           </Text>
         </Pressable>
 
@@ -1658,6 +1835,182 @@ const AdminPin = ({ navigation }) => {
                   >
                     <Text style={styles.modalButtonText}>Zrušit</Text>
                   </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={adminEditModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeAdminProfileEditor}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Upravit profil admina</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closeAdminProfileEditor}>
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <View style={styles.adminPreviewCard}>
+                  <View
+                    style={[
+                      styles.adminPreviewIconBox,
+                      {
+                        backgroundColor: adminProfile?.bgColour || '#ece9d8',
+                        borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
+                        borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
+                        borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
+                        borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
+                      },
+                    ]}
+                  >
+                    <Image
+                      source={getAdminIconSource(adminProfile?.icon || 'admin')}
+                      style={styles.adminPreviewIconImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <View style={styles.settingsUserTextBox}>
+                    <Text style={styles.settingsUserName}>Aktuální ikonka: {normalizeAdminIcon(adminProfile?.icon || 'admin')}</Text>
+                    <Text style={styles.settingsUserSubText}>Obrys: {adminProfile?.silhouetteColour || '#0b3d91'}</Text>
+                  </View>
+                </View>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => setAdminIconModalVisible(true)}
+                >
+                  <Text style={styles.settingsOptionTitle}>Vybrat ikonku</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Možnosti: admin, admin1, admin2, admin3, admin4, admin5.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => setAdminOutlineModalVisible(true)}
+                >
+                  <Text style={styles.settingsOptionTitle}>Vybrat barvu obrysu</Text>
+                  <Text style={styles.settingsOptionText}>
+                    20 barev (o 10 více než uživatel).
+                  </Text>
+                </Pressable>
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={closeAdminProfileEditor}
+                  >
+                    <Text style={styles.modalButtonText}>Zavřít</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={adminIconModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAdminIconModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Výběr admin ikonky</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={() => setAdminIconModalVisible(false)}>
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <View style={styles.adminIconGrid}>
+                  {ADMIN_ICON_OPTIONS.map((iconOption) => {
+                    const isActive = normalizeAdminIcon(adminProfile?.icon || 'admin') === iconOption.key;
+
+                    return (
+                      <Pressable
+                        key={iconOption.key}
+                        style={({ pressed }) => [
+                          styles.adminIconButton,
+                          isActive && styles.adminIconButtonActive,
+                          pressed && styles.xpButtonPressed,
+                        ]}
+                        onPress={() => updateAdminIcon(iconOption.key)}
+                      >
+                        <View style={styles.adminIconThumb}>
+                          <Image
+                            source={getAdminIconSource(iconOption.key)}
+                            style={styles.adminIconThumbImage}
+                            resizeMode="contain"
+                          />
+                        </View>
+                        <Text style={styles.adminIconLabel}>{iconOption.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={adminOutlineModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAdminOutlineModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Výběr obrysu admina</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={() => setAdminOutlineModalVisible(false)}>
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <View style={styles.colourGrid}>
+                  {ADMIN_OUTLINE_COLOURS.map((colour) => (
+                    <Pressable
+                      key={colour.value}
+                      style={({ pressed }) => [
+                        styles.colourButton,
+                        (adminProfile?.silhouetteColour || '#0b3d91') === colour.value && styles.adminIconButtonActive,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => updateAdminOutlineColour(colour.value)}
+                    >
+                      <View
+                        style={[
+                          styles.colourPreview,
+                          { backgroundColor: colour.value },
+                        ]}
+                      />
+                      <Text style={styles.colourButtonText}>{colour.label}</Text>
+                    </Pressable>
+                  ))}
                 </View>
               </View>
             </View>
@@ -2775,6 +3128,90 @@ const styles = StyleSheet.create({
   },
 
   colourButtonText: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '900',
+    flexShrink: 1,
+  },
+
+  adminPreviewCard: {
+    minHeight: 70,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    padding: 8,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  adminPreviewIconBox: {
+    width: 46,
+    height: 46,
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#245aa8',
+    borderBottomColor: '#245aa8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+
+  adminPreviewIconImage: {
+    width: 28,
+    height: 28,
+  },
+
+  adminIconGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+
+  adminIconButton: {
+    width: '48%',
+    minHeight: 54,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    paddingHorizontal: 8,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  adminIconButtonActive: {
+    borderTopColor: '#9af5a8',
+    borderLeftColor: '#9af5a8',
+    borderRightColor: '#1d7f2c',
+    borderBottomColor: '#1d7f2c',
+    backgroundColor: '#d7ffd8',
+  },
+
+  adminIconThumb: {
+    width: 28,
+    height: 28,
+    backgroundColor: '#f6f5ed',
+    borderWidth: 1,
+    borderColor: '#8d8d8d',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+
+  adminIconThumbImage: {
+    width: 18,
+    height: 18,
+  },
+
+  adminIconLabel: {
     color: '#000000',
     fontSize: 12,
     fontWeight: '900',

@@ -1,9 +1,9 @@
 
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AppState,
   BackHandler,
-  Dimensions,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -24,8 +24,6 @@ import {
   showLocalMessageNotification,
 } from '../notifications';
 
-const EGG11_IMAGE = require('../assets/egg/egg11.png');
-
 const resolveCurrentUserId = (routeUserId) => {
   const cleanRouteUserId = String(routeUserId || '').trim();
 
@@ -40,27 +38,27 @@ const resolveCurrentUserId = (routeUserId) => {
 };
 
 const LOCAL_RANDOM_USER_NAMES = [
-  'JiĹ™Ă­', 'Jan', 'Petr', 'Josef', 'Pavel', 'Martin', 'TomĂˇĹˇ', 'Jaroslav', 'Miroslav', 'ZdenÄ›k',
-  'VĂˇclav', 'Michal', 'FrantiĹˇek', 'Jakub', 'Milan', 'Karel', 'LukĂˇĹˇ', 'David', 'VladimĂ­r', 'OndĹ™ej',
-  'Ladislav', 'Roman', 'Marek', 'Stanislav', 'Daniel', 'Radek', 'AntonĂ­n', 'VojtÄ›ch', 'Filip', 'Adam',
-  'MatÄ›j', 'Dominik', 'AleĹˇ', 'Miloslav', 'JaromĂ­r', 'Patrik', 'Libor', 'JindĹ™ich', 'Vlastimil', 'MiloĹˇ',
-  'LubomĂ­r', 'Ĺ tÄ›pĂˇn', 'OldĹ™ich', 'Rudolf', 'MatyĂˇĹˇ', 'Ivan', 'Robert', 'LuboĹˇ', 'Radim', 'Richard',
-  'VĂ­t', 'Bohumil', 'Ĺ imon', 'Rostislav', 'Ivo', 'LudÄ›k', 'DuĹˇan', 'Kamil', 'Michael', 'Vladislav',
-  'ZbynÄ›k', 'Viktor', 'Bohuslav', 'KryĹˇtof', 'Alois', 'RenĂ©', 'VĂ­tÄ›zslav', 'TadeĂˇĹˇ', 'Ĺ tefan', 'Eduard',
-  'Marcel', 'Jan', 'Jozef', 'Samuel', 'Dalibor', 'Emil', 'RadomĂ­r', 'LudvĂ­k', 'Denis', 'VilĂ©m',
-  'TobiĂˇĹˇ', 'Jana', 'Marie', 'Eva', 'Hana', 'Anna', 'Lenka', 'KateĹ™ina', 'Lucie', 'VÄ›ra',
+  'Jiří„˘Ä‚Â­', 'Jan', 'Petr', 'Josef', 'Pavel', 'Martin', 'TomÄ‚Ë‡ÄąË‡', 'Jaroslav', 'Miroslav', 'ZdenĂ„â€şk',
+  'VÄ‚Ë‡clav', 'Michal', 'FrantišË‡ek', 'Jakub', 'Milan', 'Karel', 'LukÄ‚Ë‡ÄąË‡', 'David', 'VladimÄ‚Â­r', 'OndÄąâ„˘ej',
+  'Ladislav', 'Roman', 'Marek', 'Stanislav', 'Daniel', 'Radek', 'AntonÄ‚Â­n', 'VojtĂ„â€şch', 'Filip', 'Adam',
+  'MatĂ„â€şj', 'Dominik', 'AleÄąË‡', 'Miloslav', 'JaromÄ‚Â­r', 'Patrik', 'Libor', 'JindÄąâ„˘ich', 'Vlastimil', 'MiloÄąË‡',
+  'LubomÄ‚Â­r', 'Äą tĂ„â€şpÄ‚Ë‡n', 'OldÄąâ„˘ich', 'Rudolf', 'MatyÄ‚Ë‡ÄąË‡', 'Ivan', 'Robert', 'LuboÄąË‡', 'Radim', 'Richard',
+  'VÄ‚Â­t', 'Bohumil', 'Äą imon', 'Rostislav', 'Ivo', 'LudĂ„â€şk', 'DuÄąË‡an', 'Kamil', 'Michael', 'Vladislav',
+  'ZbynĂ„â€şk', 'Viktor', 'Bohuslav', 'KryÄąË‡tof', 'Alois', 'RenÄ‚Â©', 'VÄ‚Â­tĂ„â€şzslav', 'TadeÄ‚Ë‡ÄąË‡', 'Äą tefan', 'Eduard',
+  'Marcel', 'Jan', 'Jozef', 'Samuel', 'Dalibor', 'Emil', 'Radomí‚Â­r', 'LudvÄ‚Â­k', 'Denis', 'VilÄ‚Â©m',
+  'TobiÄ‚Ë‡ÄąË‡', 'Jana', 'Marie', 'Eva', 'Hana', 'Anna', 'Lenka', 'KateÄąâ„˘ina', 'Lucie', 'VĂ„â€şra',
   'Alena', 'Petra', 'Veronika', 'Jaroslava', 'Tereza', 'Martina', 'Michaela', 'Jitka', 'Helena', 'Ludmila',
-  'ZdeĹka', 'Ivana', 'Monika', 'EliĹˇka', 'Zuzana', 'MarkĂ©ta', 'Jarmila', 'Barbora', 'JiĹ™ina', 'Marcela',
-  'KristĂ˝na', 'Dana', 'Dagmar', 'AdĂ©la', 'Pavla', 'Vlasta', 'Miroslava', 'Andrea', 'Irena', 'BoĹľena',
-  'KlĂˇra', 'LibuĹˇe', 'Marta', 'Ĺ Ăˇrka', 'Nikola', 'KarolĂ­na', 'Iveta', 'PavlĂ­na', 'NatĂˇlie', 'Olga',
-  'Blanka', 'Gabriela', 'Renata', 'Aneta', 'Simona', 'RĹŻĹľena', 'Radka', 'Daniela', 'Denisa', 'Iva',
-  'Milada', 'Milena', 'Romana', 'Miloslava', 'MiluĹˇe', 'Ilona', 'AneĹľka', 'SoĹa', 'Kamila', 'Stanislava',
-  'Nela', 'VladimĂ­ra', 'NadÄ›Ĺľda', 'KvÄ›toslava', 'Danuse', 'Vendula', 'DrahomĂ­ra', 'Julie', 'JindĹ™iĹˇka', 'Emilie',
+  'ZdeÄąÂka', 'Ivana', 'Monika', 'EliÄąË‡ka', 'Zuzana', 'MarkÄ‚Â©ta', 'Jarmila', 'Barbora', 'JiÄąâ„˘ina', 'Marcela',
+  'KristÄ‚Ëťna', 'Dana', 'Dagmar', 'AdÄ‚Â©la', 'Pavla', 'Vlasta', 'Miroslava', 'Andrea', 'Irena', 'BoÄąÄľena',
+  'KlÄ‚Ë‡ra', 'LibuÄąË‡e', 'Marta', 'Äą Ä‚Ë‡rka', 'Nikola', 'KarolÄ‚Â­na', 'Iveta', 'PavlÄ‚Â­na', 'NatÄ‚Ë‡lie', 'Olga',
+  'Blanka', 'Gabriela', 'Renata', 'Aneta', 'Simona', 'RÄąĹ»ÄąÄľena', 'Radka', 'Daniela', 'Denisa', 'Iva',
+  'Milada', 'Milena', 'Romana', 'Miloslava', 'MiluÄąË‡e', 'Ilona', 'AneÄąÄľka', 'SoÄąÂa', 'Kamila', 'Stanislava',
+  'Nela', 'VladimÄ‚Â­ra', 'NadĂ„â€şÄąÄľda', 'KvĂ„â€ştoslava', 'Danuse', 'Vendula', 'DrahomÄ‚Â­ra', 'Julie', 'JindÄąâ„˘iÄąË‡ka', 'Emilie',
   'Viktorie',
 ];
 
 const getRandomLocalUserName = () => {
-  return LOCAL_RANDOM_USER_NAMES[Math.floor(Math.random() * LOCAL_RANDOM_USER_NAMES.length)] || 'UĹľivatel';
+  return LOCAL_RANDOM_USER_NAMES[Math.floor(Math.random() * LOCAL_RANDOM_USER_NAMES.length)] || 'UÄąÄľivatel';
 };
 
 const isPlaceholderUserName = (name) => {
@@ -69,9 +67,9 @@ const isPlaceholderUserName = (name) => {
   return (
     !normalized ||
     normalized === 'uzivatel' ||
-    normalized === 'uĹľivatel' ||
+    normalized === 'uživatel' ||
     /^uzivatel\s*\d+$/.test(normalized) ||
-    /^uĹľivatel\s*\d+$/.test(normalized)
+    /^uÄąÄľivatel\s*\d+$/.test(normalized)
   );
 };
 
@@ -86,9 +84,9 @@ const getCurrentUserName = () => {
 };
 
 const HELPER_MESSAGES = [
-  'Server laguje, mÄąĹ»ÄąÄľeÄąË‡ zkusit zvĂ˝Ĺˇit rate na 0,5?',
-  'MĂˇm teÄŹ 1200 ms, dĂˇ se s tĂ­m nÄ›co dÄ›lat?',
-  'MĹŻĹľeĹˇ mĂ„â€ş teleportovat na souĹ™adnice [2,0]?',
+  'Server laguje, můžeš zkusit zvýšit rate na 0,5?',
+  'Mám teď 1200 ms, dá se s tím něco dělat?',
+  'Může mě teleportovat na souřadnice [2,0]?',
 ];
 
 const USER_ICON_SOURCES = {
@@ -102,19 +100,29 @@ const USER_ICON_SOURCES = {
   vykricnik: require('../assets/icons/vykricnik.png'),
   fuckerr: require('../assets/icons/fuckerr.png'),
   zachod: require('../assets/icons/zachod.png'),
-  admin: require('../assets/icons/uzivatel.png'),
+  admin: require('../assets/icons/admin.png'),
+  admin1: require('../assets/icons/admin1.png'),
+  admin2: require('../assets/icons/admin2.png'),
+  admin3: require('../assets/icons/admin3.png'),
+  admin4: require('../assets/icons/admin4.png'),
+  admin5: require('../assets/icons/admin5.png'),
+};
+
+const normalizeAdminIcon = (iconKey) => {
+  const cleanIcon = String(iconKey || '').trim().toLowerCase();
+  return USER_ICON_SOURCES[cleanIcon] && cleanIcon.startsWith('admin') ? cleanIcon : 'admin';
 };
 
 const USER_ICON_OPTIONS = [
-  { key: 'uzivatel', label: 'uživatel' },
-  { key: 'cat', label: 'kočka' },
+  { key: 'uzivatel', label: 'uÄąÄľivatel' },
+  { key: 'cat', label: 'kočĹ¤ka' },
   { key: 'pes', label: 'pes' },
   { key: 'devil', label: 'devil' },
   { key: 'klaun', label: 'klaun' },
   { key: 'happy', label: 'prsa' },
   { key: 'stop', label: 'stop' },
-  { key: 'vykricnik', label: 'výstraha' },
-  { key: 'zachod', label: 'záchod' },
+  { key: 'vykricnik', label: 'vÄ ‚Ëťstraha' },
+  { key: 'zachod', label: 'zachod' },
 ];
 
 const normalizeAvatarIcon = (iconKey) => {
@@ -198,7 +206,7 @@ const formatMuteTimeLeft = (muteUntil) => {
   }
 
   const totalDays = Math.ceil(totalHours / 24);
-  return `${totalDays} dnÄ‚Â­`;
+  return `${totalDays} dnĂ„â€šĂ‚Â­`;
 };
 
 const formatMessageTime = (timestamp) => {
@@ -243,6 +251,9 @@ const UzivatelPin = ({ navigation, route }) => {
   const [helperMessageIndex, setHelperMessageIndex] = useState(0);
   const [serverMutedUsers, setServerMutedUsers] = useState(getGlobalMutedUsers());
   const [secretMutedUsers, setSecretMutedUsers] = useState(getGlobalSecretMutedUsers());
+  const [adminProfile, setAdminProfile] = useState(
+    globalThis.CUSIIK_ADMIN_PROFILE || { icon: 'admin', silhouetteColour: '#0b3d91', bgColour: '#ece9d8' }
+  );
 
   const [userIconColour, setUserIconColour] = useState(
     globalThis.CUSIIK_USER_ICON_COLOUR || '#0b3d91'
@@ -260,9 +271,6 @@ const UzivatelPin = ({ navigation, route }) => {
   const [readAdminCount, setReadAdminCount] = useState(
     getGlobalUserReadCounts()[currentUserId] || 0
   );
-  const [eggFlashVisible, setEggFlashVisible] = useState(false);
-  const [eggFlashPos, setEggFlashPos] = useState({ top: 120, left: 60 });
-  const [eggFlashScale, setEggFlashScale] = useState(1);
 
   useEffect(() => {
     globalThis.CUSIIK_CURRENT_USER_ID = currentUserId;
@@ -403,10 +411,10 @@ const UzivatelPin = ({ navigation, route }) => {
     if (prevIsMutedRef.current && !isMuted) {
       const stillMutedUntil = getMuteUntil();
       if (stillMutedUntil <= Date.now()) {
-        setBlockedInfo(`Už nejsi umlčený, můžeš znovu psát. (${formatMessageTime(Date.now())})`);
+        setBlockedInfo(`UĹľ nejsi umlÄŤenĂ˝, mĹŻĹľeĹˇ znovu psĂˇt. (${formatMessageTime(Date.now())})`);
         setTimeout(() => {
           setBlockedInfo((current) => {
-            if (current && current.includes('Už nejsi umlčený')) {
+            if (current && current.includes('UĹľ nejsi umlÄŤenĂ˝')) {
               return '';
             }
             return current;
@@ -414,7 +422,7 @@ const UzivatelPin = ({ navigation, route }) => {
         }, 5000);
       }
     }
-    if (!isMuted && blockedInfo && blockedInfo.includes('Jsi umlčený')) {
+    if (!isMuted && blockedInfo && blockedInfo.includes('Jsi umlÄŤenĂ˝')) {
       const stillMutedUntil = getMuteUntil();
       if (stillMutedUntil <= Date.now()) {
         setBlockedInfo('');
@@ -456,20 +464,23 @@ const UzivatelPin = ({ navigation, route }) => {
       socket.emit('chat:get', {
         userId: currentUserId,
       });
-      const pushToken = globalThis.CUSIIK_EXPO_PUSH_TOKEN;
-      if (pushToken) {
-        socket.emit('notifications:registerToken', {
-          token: pushToken,
-          role: 'user',
-          userId: currentUserId,
-        });
-      }
     };
 
     const handleServerState = (serverState) => {
       if (serverState?.adminStatus) {
         setAdminStatus(serverState.adminStatus);
         globalThis.CUSIIK_ADMIN_STATUS = serverState.adminStatus;
+      }
+
+      if (serverState?.adminProfile) {
+        const normalizedAdminProfile = {
+          icon: normalizeAdminIcon(serverState.adminProfile.icon || 'admin'),
+          silhouetteColour: serverState.adminProfile.silhouetteColour || '#0b3d91',
+          bgColour: serverState.adminProfile.bgColour || '#ece9d8',
+        };
+
+        setAdminProfile(normalizedAdminProfile);
+        globalThis.CUSIIK_ADMIN_PROFILE = normalizedAdminProfile;
       }
 
       if (Array.isArray(serverState?.users)) {
@@ -560,10 +571,8 @@ const UzivatelPin = ({ navigation, route }) => {
           markMessagesAsRead(safeMessages);
         } else if (nextUnread > previousUnread) {
           showLocalMessageNotification({
-            title: 'Nová zpráva od admina',
-            body: 'Máš novou zprávu v chatu.',
-            data: { userId: currentUserId, action: 'openChat' },
-            cooldownKey: `user-admin-${currentUserId}`,
+            title: 'NovÄ‚Ë‡ zprÄ‚Ë‡va od admina',
+            body: 'MÄ‚Ë‡ÄąË‡ novou zprÄ‚Ë‡vu v chatu.',
           });
         }
         return;
@@ -580,10 +589,8 @@ const UzivatelPin = ({ navigation, route }) => {
 
       if (shouldNotify) {
         showLocalMessageNotification({
-          title: 'Nová zpráva od admina',
-          body: 'Máš novou zprávu v chatu.',
-          data: { userId: currentUserId, action: 'openChat' },
-          cooldownKey: `user-admin-${currentUserId}`,
+          title: 'NovÄ‚Ë‡ zprÄ‚Ë‡va od admina',
+          body: 'MÄ‚Ë‡ÄąË‡ novou zprÄ‚Ë‡vu v chatu.',
         });
       }
 
@@ -608,13 +615,13 @@ const UzivatelPin = ({ navigation, route }) => {
 
       if (nextMuteUntil && nextMuteUntil > Date.now()) {
         setBlockedInfo(
-        `NemĹŻĹľeĹˇ psĂˇt. Jsi umlÄŤenĂ˝ jeĹˇtÄ› na ${formatMuteTimeLeft(nextMuteUntil)}.`
+        `NemÄąĹ»ÄąÄľeÄąË‡ psÄ‚Ë‡t. Jsi umlĂ„Ĺ¤enÄ‚Ëť jeÄąË‡tĂ„â€ş na ${formatMuteTimeLeft(nextMuteUntil)}.`
         );
       } else {
-        setBlockedInfo(`Už nejsi umlčený, můžeš znovu psát. (${formatMessageTime(Date.now())})`);
+        setBlockedInfo(`UĹľ nejsi umlÄŤenĂ˝, mĹŻĹľeĹˇ znovu psĂˇt. (${formatMessageTime(Date.now())})`);
         setTimeout(() => {
           setBlockedInfo((current) => {
-            if (current && current.includes('Už nejsi umlčený')) {
+            if (current && current.includes('UĹľ nejsi umlÄŤenĂ˝')) {
               return '';
             }
             return current;
@@ -732,7 +739,7 @@ const UzivatelPin = ({ navigation, route }) => {
 
   const useHelperMessage = () => {
     if (isMuted) {
-      setBlockedInfo(`NemĹŻĹľeĹˇ psĂˇt. Jsi umlÄŤenĂ˝ jeĹˇtÄ› na ${muteTimeLeft}.`);
+      setBlockedInfo(`NemÄąĹ»ÄąÄľeÄąË‡ psÄ‚Ë‡t. Jsi umlĂ„Ĺ¤enÄ‚Ëť jeÄąË‡tĂ„â€ş na ${muteTimeLeft}.`);
       return;
     }
 
@@ -742,7 +749,7 @@ const UzivatelPin = ({ navigation, route }) => {
 
   const changeUserAvatarIcon = (iconKey) => {
     if (isAvatarLocked) {
-      setBlockedInfo('Ikonka je uzamÄŤenĂˇ adminem a nelze ji zmĂ„â€şnit.');
+      setBlockedInfo('Ikonka je uzamĂ„Ĺ¤enÄ‚Ë‡ adminem a nelze ji zmÄ‚â€žĂ˘â‚¬Ĺźnit.');
       setIconModalVisible(false);
       return;
     }
@@ -767,7 +774,7 @@ const UzivatelPin = ({ navigation, route }) => {
     const trimmedMessage = message.trim();
 
     if (isMuted) {
-      setBlockedInfo(`NemĹŻĹľeĹˇ psĂˇt. Jsi umlÄŤenĂ˝ jeĹˇtÄ› na ${muteTimeLeft}.`);
+      setBlockedInfo(`NemÄąĹ»ÄąÄľeÄąË‡ psÄ‚Ë‡t. Jsi umlĂ„Ĺ¤enÄ‚Ëť jeÄąË‡tĂ„â€ş na ${muteTimeLeft}.`);
       return;
     }
 
@@ -812,32 +819,16 @@ const UzivatelPin = ({ navigation, route }) => {
     };
 
     const handleMinimize = () => {
-      try {
-        if (Platform.OS === 'android') {
+      if (screenMode === 'chat') {
+        setScreenMode('menu');
+        return;
+      }
+
+      if (Platform.OS === 'android') {
+        try {
           BackHandler.moveTaskToBack();
-        }
-      } catch {}
-    };
-
-    const handleCloseApp = () => {
-      try {
-        BackHandler.exitApp();
-      } catch {}
-    };
-
-    const handleMaximizeEggFlash = () => {
-      try {
-        const win = Dimensions.get('window');
-        const maxTop = win.height - 220;
-        const maxLeft = win.width - 180;
-        const top = Math.floor(Math.random() * Math.max(10, maxTop - 80)) + 40;
-        const left = Math.floor(Math.random() * Math.max(10, maxLeft - 20)) + 10;
-        const scale = Math.random() * 0.7 + 0.6;
-        setEggFlashPos({ top, left });
-        setEggFlashScale(scale);
-        setEggFlashVisible(true);
-        setTimeout(() => setEggFlashVisible(false), 250);
-      } catch {}
+        } catch {}
+      }
     };
 
     return (
@@ -874,7 +865,7 @@ const UzivatelPin = ({ navigation, route }) => {
               style={styles.closePressable}
               onPress={handleTopBack}
             >
-              <Text style={styles.windowButtonText}>←</Text>
+              <Text style={styles.windowButtonText}>Ă˘â€ Â</Text>
             </Pressable>
           </View>
 
@@ -887,19 +878,10 @@ const UzivatelPin = ({ navigation, route }) => {
             </Pressable>
           </View>
 
-          <View style={styles.windowButton}>
-            <Pressable
-              style={styles.closePressable}
-              onPress={handleMaximizeEggFlash}
-            >
-              <Text style={styles.windowButtonText}>□</Text>
-            </Pressable>
-          </View>
-
           <View style={[styles.windowButton, styles.closeButton]}>
-            <Pressable style={styles.closePressable} onPress={handleCloseApp}>
+            <Pressable style={styles.closePressable} onPress={goToLogin}>
               <Text style={[styles.windowButtonText, styles.closeButtonText]}>
-                ×
+                X
               </Text>
             </Pressable>
           </View>
@@ -915,7 +897,7 @@ const UzivatelPin = ({ navigation, route }) => {
 
         <View style={styles.page}>
           <View style={styles.window}>
-            {renderTitleBar('Uživatel - menu')}
+            {renderTitleBar('UÄąÄľivatel - menu')}
 
             <View style={styles.menuBody}>
               <View style={styles.menuTopSection}>
@@ -948,7 +930,7 @@ const UzivatelPin = ({ navigation, route }) => {
                   ]}
                   onPress={() => {
                     if (isAvatarLocked) {
-                      setBlockedInfo('Ikonka je uzamčená adminem a nelze ji změnit.');
+                      setBlockedInfo('Ikonka je uzamĂ„Ĺ¤enÄ‚Ë‡ adminem a nelze ji zmÄ‚â€žĂ˘â‚¬Ĺźnit.');
                       return;
                     }
 
@@ -956,18 +938,18 @@ const UzivatelPin = ({ navigation, route }) => {
                   }}
                 >
                   <Text style={[styles.menuButtonText, isAvatarLocked && styles.menuButtonTextDisabled]}>
-                    {isAvatarLocked ? 'Ikonka je uzamčená' : 'Změnit ikonku'}
+                    {isAvatarLocked ? 'Ikonka je uzamĂ„Ĺ¤enÄ‚Ë‡' : 'ZmĂ„â€şnit ikonku'}
                   </Text>
                 </Pressable>
 
                 <View style={styles.adminMainMessageBox}>
                   <Text style={styles.adminMainMessageText}>
-                    Sleduj status - tím zjistíš jestli ti aktuálně mohu pomoct (status je vidět nahoře v liště)
+                    Sleduj status - tÄ‚Â­m zjistÄ‚Â­ÄąË‡ jestli ti aktuÄ‚Ë‡lnĂ„â€ş mohu pomoct (status je vidĂ„â€şt nahoÄąâ„˘e v liÄąË‡tĂ„â€ş)
                   </Text>
                   <Text style={styles.adminMainMessageText}>
-                    Když zádrhel nevyřešíme online lepší bude se sejít a problém vyřešit třeba u piva :D
+                    KdyÄąÄľ zÄ‚Ë‡drhel nevyÄąâ„˘eÄąË‡Ä‚Â­me online lepÄąË‡Ä‚Â­ bude se sejÄ‚Â­t a problÄ‚Â©m vyÄąâ„˘eÄąË‡it tÄąâ„˘eba u piva :D
                   </Text>
-                  <Text style={styles.adminMainMessageText}>Žijem pouze jednou! Tak si hru hlavně užívej!!!</Text>
+                  <Text style={styles.adminMainMessageText}>ÄąËťijem pouze jednou! Tak si hru hlavnĂ„â€ş uÄąÄľÄ‚Â­vej!!!</Text>
                 </View>
               </View>
 
@@ -979,10 +961,10 @@ const UzivatelPin = ({ navigation, route }) => {
 
                   {unreadCount > 0 ? (
                     <Text style={styles.menuUnreadText}>
-                      {unreadCount} {unreadCount === 1 ? 'nová zpráva' : 'nových zpráv'}
+                      {unreadCount} {unreadCount === 1 ? 'novÄ‚Ë‡ zprÄ‚Ë‡va' : 'novÄ‚Ëťch zprÄ‚Ë‡v'}
                     </Text>
                   ) : (
-                    <Text style={styles.menuInfoText}>Žádné nové zprávy</Text>
+                    <Text style={styles.menuInfoText}>ÄąËťÄ‚Ë‡dnÄ‚Â© novÄ‚Â© zprÄ‚Ë‡vy</Text>
                   )}
                 </View>
 
@@ -996,16 +978,16 @@ const UzivatelPin = ({ navigation, route }) => {
                   onPress={openChat}
                 >
                   <Text style={styles.chatButtonText}>
-                    Chat{unreadCount > 0 ? ` (${unreadCount} nové)` : ''}
+                    Chat{unreadCount > 0 ? ` (${unreadCount} novÄ‚Â©)` : ''}
                   </Text>
                 </Pressable>
               </View>
             </View>
 
             <View style={styles.statusBar}>
-              <Text style={styles.statusText}>Připojeno jako uživatel</Text>
+              <Text style={styles.statusText}>PÄąâ„˘ipojeno jako uÄąÄľivatel</Text>
               <Text style={styles.statusText}>
-                {unreadCount > 0 ? `${unreadCount} nových zpráv` : 'Menu'}
+                {unreadCount > 0 ? `${unreadCount} novÄ‚Ëťch zprÄ‚Ë‡v` : 'Menu'}
               </Text>
             </View>
           </View>
@@ -1019,7 +1001,7 @@ const UzivatelPin = ({ navigation, route }) => {
             <View style={styles.modalOverlay}>
               <View style={styles.modalWindow}>
                 <View style={styles.modalTitleBar}>
-                  <Text style={styles.modalTitleText}>Výběr ikonky</Text>
+                  <Text style={styles.modalTitleText}>VÄ‚ËťbĂ„â€şr ikonky</Text>
 
                   <Pressable
                     style={styles.modalCloseButton}
@@ -1077,7 +1059,7 @@ const UzivatelPin = ({ navigation, route }) => {
           {isMuted ? (
             <View style={styles.muteBanner}>
               <Text style={styles.muteBannerText}>
-                Jsi umlčený. Psát můžeš znovu za {muteTimeLeft}.
+                Jsi umlčen. Psát můžeš znovu za {muteTimeLeft}.
               </Text>
             </View>
           ) : null}
@@ -1115,7 +1097,7 @@ const UzivatelPin = ({ navigation, route }) => {
                   >
                     <View style={styles.miniIconWrapper}>
                       <Image
-                        source={getIconSource(isUser ? (userAvatarIcon || 'uzivatel') : 'admin')}
+                        source={getIconSource(isUser ? (userAvatarIcon || 'uzivatel') : (adminProfile?.icon || 'admin'))}
                         style={styles.miniIconImage}
                         resizeMode="contain"
                       />
@@ -1128,7 +1110,7 @@ const UzivatelPin = ({ navigation, route }) => {
                     >
                       <View style={styles.messageAuthorRow}>
                         <Text style={styles.messageAuthor}>
-                          {isUser ? 'JĂˇ' : 'Admin'}
+                          {isUser ? 'JÄ‚Ë‡' : 'Admin'}
                         </Text>
 
                         {!isUser ? (
@@ -1181,7 +1163,7 @@ const UzivatelPin = ({ navigation, route }) => {
                 isMuted && styles.helperBubbleTextDisabled,
               ]}
             >
-              PomocnĂˇ vÄ›ta:
+              PomocnÄ‚Ë‡ vĂ„â€şta:
             </Text>
 
             <Text
@@ -1203,8 +1185,8 @@ const UzivatelPin = ({ navigation, route }) => {
               }}
               placeholder={
                 isMuted
-                  ? `Umlčeno ještě na ${muteTimeLeft}`
-                  : 'Napiš zprávu adminovi...'
+                  ? `UmlĂ„Ĺ¤eno jeÄąË‡tĂ„â€ş na ${muteTimeLeft}`
+                  : 'NapiÄąË‡ zprá‚Ë‡vu adminovi...'
               }
               placeholderTextColor="#666666"
               style={[styles.input, isMuted && styles.inputDisabled]}
@@ -1237,12 +1219,12 @@ const UzivatelPin = ({ navigation, route }) => {
 
           <View style={styles.statusBar}>
             <Pressable onPress={() => setScreenMode('menu')}>
-              <Text style={styles.statusText}>ZpÄ›t do menu</Text>
+              <Text style={styles.statusText}>ZpĂ„â€şt do menu</Text>
             </Pressable>
 
             <Text style={styles.statusText}>
               {isMuted
-                ? `UmlÄŤen: ${muteTimeLeft}`
+                ? `UmlĂ„Ĺ¤en: ${muteTimeLeft}`
                 : `Admin: ${getAdminStatusText()}`}
             </Text>
           </View>

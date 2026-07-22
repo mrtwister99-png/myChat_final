@@ -34,6 +34,11 @@ const USER_ICON_SOURCES = {
   fuckerr: require('../assets/icons/fuckerr.png'),
   zachod: require('../assets/icons/zachod.png'),
   admin: require('../assets/icons/admin.png'),
+  admin1: require('../assets/icons/admin1.png'),
+  admin2: require('../assets/icons/admin2.png'),
+  admin3: require('../assets/icons/admin3.png'),
+  admin4: require('../assets/icons/admin4.png'),
+  admin5: require('../assets/icons/admin5.png'),
 };
 
 const normalizeAvatarIcon = (iconKey) => {
@@ -87,7 +92,7 @@ const formatMuteTimeLeft = (muteUntil) => {
   const diff = muteUntil - now;
 
   if (diff <= 0) {
-    return 'nenĂ­ umlÄŤen';
+    return 'není umlčen';
   }
 
   const totalMinutes = Math.ceil(diff / 1000 / 60);
@@ -103,7 +108,7 @@ const formatMuteTimeLeft = (muteUntil) => {
   }
 
   const totalDays = Math.ceil(totalHours / 24);
-  return `${totalDays} dnĂ­`;
+  return `${totalDays} dní`;
 };
 
 const formatMessageTime = (timestamp) => {
@@ -117,7 +122,7 @@ const formatMessageTime = (timestamp) => {
 
 const AdminChat = ({ navigation, route }) => {
   const userId = route?.params?.userId || 'unknown-user';
-  const userName = route?.params?.userName || 'UĹľivatel';
+  const userName = route?.params?.userName || 'Uživatel';
 
   const scrollViewRef = useRef(null);
 
@@ -140,7 +145,7 @@ const AdminChat = ({ navigation, route }) => {
   const [adminAvatarIcon, setAdminAvatarIcon] = useState('admin');
   const [adminProfile, setAdminProfile] = useState(globalThis.CUSIIK_ADMIN_PROFILE || { icon: 'admin', silhouetteColour: '#0b3d91', bgColour: '#ece9d8' });
   const [connectionText, setConnectionText] = useState(
-    socket.connected ? 'Server online' : 'PĹ™ipojuji server...'
+    socket.connected ? 'Server online' : 'Připojuji server...'
   );
 
   const getInitialMessages = () => {
@@ -206,17 +211,19 @@ useEffect(() => {
     const handleConnect = () => {
       setConnectionText('Server online');
 
+      socket.emit('state:get');
+
       socket.emit('chat:get', {
         userId,
       });
     };
 
     const handleDisconnect = () => {
-      setConnectionText('Server offline - lokĂˇlnĂ­ reĹľim');
+      setConnectionText('Server offline - lokální režim');
     };
 
     const handleConnectError = () => {
-      setConnectionText('Server nedostupnĂ˝ - lokĂˇlnĂ­ reĹľim');
+      setConnectionText('Server nedostupný - lokální režim');
     };
 
     const handleServerState = (serverState) => {
@@ -305,7 +312,7 @@ useEffect(() => {
 
   const muteUntil = getMuteUntil();
   const isMuted = muteUntil > nowTick;
-  const muteTimeLeft = isMuted ? formatMuteTimeLeft(muteUntil) : 'nenĂ­ umlÄŤen';
+  const muteTimeLeft = isMuted ? formatMuteTimeLeft(muteUntil) : 'není umlčen';
   const isSecretMuted = Boolean(secretMutedUsers[userId]);
   const isServerOnline = socket.connected;
 
@@ -347,8 +354,8 @@ useEffect(() => {
       }
 
       Alert.alert(
-        'Smazat zprĂˇvy',
-        `Opravdu smazat ${selectedCount} zprĂˇv?`,
+        'Smazat zprávy',
+        `Opravdu smazat ${selectedCount} zpráv?`,
         [
           {
             text: 'Ne',
@@ -451,7 +458,7 @@ useEffect(() => {
       });
     }
 
-    sendSystemMessage(`UĹľivatel ${userName} byl umlÄŤen na ${option.label}.`);
+    sendSystemMessage(`Uživatel ${userName} byl umlčen na ${option.label}.`);
 
     setNowTick(Date.now());
     closeMuteModal();
@@ -476,7 +483,7 @@ useEffect(() => {
       });
     }
 
-    sendSystemMessage(`UĹľivatel ${userName} uĹľ nenĂ­ umlÄŤen.`);
+    sendSystemMessage(`Uživatel ${userName} už není umlčen.`);
 
     setNowTick(Date.now());
     closeMuteModal();
@@ -585,7 +592,7 @@ useEffect(() => {
                 <View style={[styles.winSquare, { backgroundColor: '#ffba08' }]} />
               </View>
 
-              <Text style={styles.titleText}>Chat s uĹľivatelem</Text>
+              <Text style={styles.titleText}>Chat s uživatelem</Text>
 
               <View
                 style={[
@@ -610,7 +617,7 @@ useEffect(() => {
 
               <View style={[styles.windowButton, styles.closeButton]}>
                 <Pressable style={styles.closePressable} onPress={goBack}>
-                  <Text style={[styles.windowButtonText, styles.closeButtonText]}>Ă—</Text>
+                  <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
                 </Pressable>
               </View>
             </View>
@@ -621,7 +628,7 @@ useEffect(() => {
               <View style={styles.userNameRow}>
                 <Text style={styles.userName}>{userName}</Text>
 
-                {isSecretMuted ? <Text style={styles.userNameSecretText}> (potajĂ­)</Text> : null}
+                {isSecretMuted ? <Text style={styles.userNameSecretText}> (potají­)</Text> : null}
 
                 {isMuted ? <Text style={styles.userNameMuteText}> ({muteTimeLeft})</Text> : null}
               </View>
@@ -635,7 +642,7 @@ useEffect(() => {
                 />
 
                 <Text style={styles.muteStatusText}>
-                  {isMuted ? `UmlÄŤen: ${muteTimeLeft}` : 'MĹŻĹľe psĂˇt'}
+                  {isMuted ? `Umlčen: ${muteTimeLeft}` : 'Může psát'}
                 </Text>
               </View>
             </View>
@@ -729,7 +736,7 @@ useEffect(() => {
             <TextInput
               value={message}
               onChangeText={setMessage}
-              placeholder={`NapiĹˇ zprĂˇvu pro ${userName}...`}
+              placeholder={`Napiš zprávu pro ${userName}...`}
               placeholderTextColor="#666666"
               style={styles.input}
               multiline
@@ -756,7 +763,7 @@ useEffect(() => {
             <Text style={styles.statusText}>Admin chat</Text>
             <Text style={styles.statusText}>
               {selectionMode
-                ? `VybrĂˇno: ${selectedMessageIds.length}`
+                ? `Vybráno: ${selectedMessageIds.length}`
                 : isMuted
                   ? `Mute: ${muteTimeLeft}`
                   : connectionText}
@@ -773,7 +780,7 @@ useEffect(() => {
           <View style={styles.modalOverlay}>
             <View style={styles.modalWindow}>
               <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>UmlÄŤet uĹľivatele</Text>
+                <Text style={styles.modalTitleText}>Umlčet uživatele</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeMuteModal}>
                   <Text style={styles.modalCloseButtonText}>Ă—</Text>
@@ -782,7 +789,7 @@ useEffect(() => {
 
               <View style={styles.modalBody}>
                 <Text style={styles.modalLabel}>
-                  Vyber dĂ©lku umlÄŤenĂ­ pro uĹľivatele:
+                  Vyber délku umlčení pro uživatele:
                 </Text>
 
                 <Text style={styles.selectedUserText}>{userName}</Text>
@@ -790,7 +797,7 @@ useEffect(() => {
                 {isMuted ? (
                   <View style={styles.warningBox}>
                     <Text style={styles.warningText}>
-                      UĹľivatel je aktuĂˇlnÄ› umlÄŤen jeĹˇtÄ› na {muteTimeLeft}.
+                      Uživatel je aktuálně umlčen ještě na {muteTimeLeft}.
                     </Text>
                   </View>
                 ) : null}
@@ -819,7 +826,7 @@ useEffect(() => {
                       ]}
                       onPress={unmuteUser}
                     >
-                      <Text style={styles.modalButtonText}>ZruĹˇit mlÄŤenĂ­</Text>
+                      <Text style={styles.modalButtonText}>Zrušit mlčení</Text>
                     </Pressable>
                   ) : null}
 
@@ -830,7 +837,7 @@ useEffect(() => {
                     ]}
                     onPress={closeMuteModal}
                   >
-                    <Text style={styles.modalButtonText}>ZavĹ™Ă­t</Text>
+                    <Text style={styles.modalButtonText}>Zavřít</Text>
                   </Pressable>
                 </View>
               </View>
