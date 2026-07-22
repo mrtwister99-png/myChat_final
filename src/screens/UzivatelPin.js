@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   AppState,
   BackHandler,
+  Dimensions,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -22,6 +23,8 @@ import { socket } from '../socket';
 import {
   showLocalMessageNotification,
 } from '../notifications';
+
+const EGG11_IMAGE = require('../assets/egg/egg11.png');
 
 const resolveCurrentUserId = (routeUserId) => {
   const cleanRouteUserId = String(routeUserId || '').trim();
@@ -102,15 +105,15 @@ const USER_ICON_SOURCES = {
 };
 
 const USER_ICON_OPTIONS = [
-  { key: 'uzivatel', label: 'uĹľivatel' },
-  { key: 'cat', label: 'koÄŤka' },
+  { key: 'uzivatel', label: 'uživatel' },
+  { key: 'cat', label: 'kočka' },
   { key: 'pes', label: 'pes' },
   { key: 'devil', label: 'devil' },
   { key: 'klaun', label: 'klaun' },
   { key: 'happy', label: 'prsa' },
   { key: 'stop', label: 'stop' },
-  { key: 'vykricnik', label: 'vĂ˝straha' },
-  { key: 'zachod', label: 'zachod' },
+  { key: 'vykricnik', label: 'výstraha' },
+  { key: 'zachod', label: 'záchod' },
 ];
 
 const normalizeAvatarIcon = (iconKey) => {
@@ -256,6 +259,9 @@ const UzivatelPin = ({ navigation, route }) => {
   const [readAdminCount, setReadAdminCount] = useState(
     getGlobalUserReadCounts()[currentUserId] || 0
   );
+  const [eggFlashVisible, setEggFlashVisible] = useState(false);
+  const [eggFlashPos, setEggFlashPos] = useState({ top: 120, left: 60 });
+  const [eggFlashScale, setEggFlashScale] = useState(1);
 
   useEffect(() => {
     globalThis.CUSIIK_CURRENT_USER_ID = currentUserId;
@@ -553,8 +559,8 @@ const UzivatelPin = ({ navigation, route }) => {
           markMessagesAsRead(safeMessages);
         } else if (nextUnread > previousUnread) {
           showLocalMessageNotification({
-            title: 'Nova zprava od admina',
-            body: 'Mas novou zpravu v chatu.',
+            title: 'Nová zpráva od admina',
+            body: 'Máš novou zprávu v chatu.',
             data: { userId: currentUserId, action: 'openChat' },
             cooldownKey: `user-admin-${currentUserId}`,
           });
@@ -573,8 +579,8 @@ const UzivatelPin = ({ navigation, route }) => {
 
       if (shouldNotify) {
         showLocalMessageNotification({
-          title: 'Nova zprava od admina',
-          body: 'Mas novou zpravu v chatu.',
+          title: 'Nová zpráva od admina',
+          body: 'Máš novou zprávu v chatu.',
           data: { userId: currentUserId, action: 'openChat' },
           cooldownKey: `user-admin-${currentUserId}`,
         });
@@ -805,16 +811,32 @@ const UzivatelPin = ({ navigation, route }) => {
     };
 
     const handleMinimize = () => {
-      if (screenMode === 'chat') {
-        setScreenMode('menu');
-        return;
-      }
-
-      if (Platform.OS === 'android') {
-        try {
+      try {
+        if (Platform.OS === 'android') {
           BackHandler.moveTaskToBack();
-        } catch {}
-      }
+        }
+      } catch {}
+    };
+
+    const handleCloseApp = () => {
+      try {
+        BackHandler.exitApp();
+      } catch {}
+    };
+
+    const handleMaximizeEggFlash = () => {
+      try {
+        const win = Dimensions.get('window');
+        const maxTop = win.height - 220;
+        const maxLeft = win.width - 180;
+        const top = Math.floor(Math.random() * Math.max(10, maxTop - 80)) + 40;
+        const left = Math.floor(Math.random() * Math.max(10, maxLeft - 20)) + 10;
+        const scale = Math.random() * 0.7 + 0.6;
+        setEggFlashPos({ top, left });
+        setEggFlashScale(scale);
+        setEggFlashVisible(true);
+        setTimeout(() => setEggFlashVisible(false), 250);
+      } catch {}
     };
 
     return (
@@ -851,7 +873,7 @@ const UzivatelPin = ({ navigation, route }) => {
               style={styles.closePressable}
               onPress={handleTopBack}
             >
-              <Text style={styles.windowButtonText}>â†</Text>
+              <Text style={styles.windowButtonText}>←</Text>
             </Pressable>
           </View>
 
@@ -864,10 +886,19 @@ const UzivatelPin = ({ navigation, route }) => {
             </Pressable>
           </View>
 
+          <View style={styles.windowButton}>
+            <Pressable
+              style={styles.closePressable}
+              onPress={handleMaximizeEggFlash}
+            >
+              <Text style={styles.windowButtonText}>□</Text>
+            </Pressable>
+          </View>
+
           <View style={[styles.windowButton, styles.closeButton]}>
-            <Pressable style={styles.closePressable} onPress={goToLogin}>
+            <Pressable style={styles.closePressable} onPress={handleCloseApp}>
               <Text style={[styles.windowButtonText, styles.closeButtonText]}>
-                X
+                ×
               </Text>
             </Pressable>
           </View>
@@ -883,7 +914,7 @@ const UzivatelPin = ({ navigation, route }) => {
 
         <View style={styles.page}>
           <View style={styles.window}>
-            {renderTitleBar('UĹľivatel - menu')}
+            {renderTitleBar('Uživatel - menu')}
 
             <View style={styles.menuBody}>
               <View style={styles.menuTopSection}>
@@ -916,7 +947,7 @@ const UzivatelPin = ({ navigation, route }) => {
                   ]}
                   onPress={() => {
                     if (isAvatarLocked) {
-                      setBlockedInfo('Ikonka je uzamÄŤenĂˇ adminem a nelze ji zmĂ„â€şnit.');
+                      setBlockedInfo('Ikonka je uzamčená adminem a nelze ji změnit.');
                       return;
                     }
 
@@ -924,18 +955,18 @@ const UzivatelPin = ({ navigation, route }) => {
                   }}
                 >
                   <Text style={[styles.menuButtonText, isAvatarLocked && styles.menuButtonTextDisabled]}>
-                    {isAvatarLocked ? 'Ikonka je uzamÄŤenĂˇ' : 'ZmÄ›nit ikonku'}
+                    {isAvatarLocked ? 'Ikonka je uzamčená' : 'Změnit ikonku'}
                   </Text>
                 </Pressable>
 
                 <View style={styles.adminMainMessageBox}>
                   <Text style={styles.adminMainMessageText}>
-                    Sleduj status - tĂ­m zjistĂ­Ĺˇ jestli ti aktuĂˇlnÄ› mohu pomoct (status je vidÄ›t nahoĹ™e v liĹˇtÄ›)
+                    Sleduj status - tím zjistíš jestli ti aktuálně mohu pomoct (status je vidět nahoře v liště)
                   </Text>
                   <Text style={styles.adminMainMessageText}>
-                    KdyĹľ zĂˇdrhel nevyĹ™eĹˇĂ­me online lepĹˇĂ­ bude se sejĂ­t a problĂ©m vyĹ™eĹˇit tĹ™eba u piva :D
+                    Když zádrhel nevyřešíme online lepší bude se sejít a problém vyřešit třeba u piva :D
                   </Text>
-                  <Text style={styles.adminMainMessageText}>Ĺ˝ijem pouze jednou! Tak si hru hlavnÄ› uĹľĂ­vej!!!</Text>
+                  <Text style={styles.adminMainMessageText}>Žijem pouze jednou! Tak si hru hlavně užívej!!!</Text>
                 </View>
               </View>
 
@@ -947,10 +978,10 @@ const UzivatelPin = ({ navigation, route }) => {
 
                   {unreadCount > 0 ? (
                     <Text style={styles.menuUnreadText}>
-                      {unreadCount} {unreadCount === 1 ? 'novĂˇ zprĂˇva' : 'novĂ˝ch zprĂˇv'}
+                      {unreadCount} {unreadCount === 1 ? 'nová zpráva' : 'nových zpráv'}
                     </Text>
                   ) : (
-                    <Text style={styles.menuInfoText}>Ĺ˝ĂˇdnĂ© novĂ© zprĂˇvy</Text>
+                    <Text style={styles.menuInfoText}>Žádné nové zprávy</Text>
                   )}
                 </View>
 
@@ -964,16 +995,16 @@ const UzivatelPin = ({ navigation, route }) => {
                   onPress={openChat}
                 >
                   <Text style={styles.chatButtonText}>
-                    Chat{unreadCount > 0 ? ` (${unreadCount} novĂ©)` : ''}
+                    Chat{unreadCount > 0 ? ` (${unreadCount} nové)` : ''}
                   </Text>
                 </Pressable>
               </View>
             </View>
 
             <View style={styles.statusBar}>
-              <Text style={styles.statusText}>PĹ™ipojeno jako uĹľivatel</Text>
+              <Text style={styles.statusText}>Připojeno jako uživatel</Text>
               <Text style={styles.statusText}>
-                {unreadCount > 0 ? `${unreadCount} novĂ˝ch zprĂˇv` : 'Menu'}
+                {unreadCount > 0 ? `${unreadCount} nových zpráv` : 'Menu'}
               </Text>
             </View>
           </View>
@@ -987,7 +1018,7 @@ const UzivatelPin = ({ navigation, route }) => {
             <View style={styles.modalOverlay}>
               <View style={styles.modalWindow}>
                 <View style={styles.modalTitleBar}>
-                  <Text style={styles.modalTitleText}>VĂ˝bÄ›r ikonky</Text>
+                  <Text style={styles.modalTitleText}>Výběr ikonky</Text>
 
                   <Pressable
                     style={styles.modalCloseButton}
@@ -998,7 +1029,7 @@ const UzivatelPin = ({ navigation, route }) => {
                 </View>
 
                 <View style={styles.modalBody}>
-                  <Text style={styles.modalLabel}>Vyber ikonku uĹľivatele:</Text>
+                  <Text style={styles.modalLabel}>Vyber ikonku uživatele:</Text>
 
                   <View style={styles.colourGrid}>
                     {USER_ICON_OPTIONS.map((iconItem) => (
@@ -1045,7 +1076,7 @@ const UzivatelPin = ({ navigation, route }) => {
           {isMuted ? (
             <View style={styles.muteBanner}>
               <Text style={styles.muteBannerText}>
-                Jsi umlÄŤenĂ˝. PsĂˇt mĹŻĹľeĹˇ znovu za {muteTimeLeft}.
+                Jsi umlčený. Psát můžeš znovu za {muteTimeLeft}.
               </Text>
             </View>
           ) : null}
@@ -1164,8 +1195,8 @@ const UzivatelPin = ({ navigation, route }) => {
               }}
               placeholder={
                 isMuted
-                  ? `UmlÄŤeno jeĹˇtÄ› na ${muteTimeLeft}`
-                  : 'NapiĹˇ zprĂˇvu adminovi...'
+                  ? `Umlčeno ještě na ${muteTimeLeft}`
+                  : 'Napiš zprávu adminovi...'
               }
               placeholderTextColor="#666666"
               style={[styles.input, isMuted && styles.inputDisabled]}

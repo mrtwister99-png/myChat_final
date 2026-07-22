@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import {
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -492,7 +493,22 @@ const AdminPin = ({ navigation }) => {
   };
 
   const goToPinEntry = () => {
+    try {
+      socket.emit('auth:logout');
+      globalThis.CUSIIK_CURRENT_ROLE = null;
+      globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID = null;
+    } catch {}
     navigation.replace('PinEntry');
+  };
+
+  const closeApp = () => {
+    try {
+      if (Platform.OS === 'android') {
+        BackHandler.exitApp();
+      } else {
+        BackHandler.exitApp();
+      }
+    } catch {}
   };
 
   const closeUserMenu = () => {
@@ -1166,11 +1182,19 @@ const AdminPin = ({ navigation }) => {
               </View>
 
               <View style={styles.windowButton}>
-                <Text style={styles.windowButtonText}>_</Text>
+                <Pressable style={styles.closePressable} onPress={() => {
+                  try {
+                    if (Platform.OS === 'android') {
+                      BackHandler.moveTaskToBack();
+                    }
+                  } catch {}
+                }}>
+                  <Text style={styles.windowButtonText}>_</Text>
+                </Pressable>
               </View>
 
               <View style={[styles.windowButton, styles.closeButton]}>
-                <Pressable style={styles.closePressable} onPress={goToPinEntry}>
+                <Pressable style={styles.closePressable} onPress={closeApp}>
                   <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
                 </Pressable>
               </View>
@@ -2195,11 +2219,19 @@ const styles = StyleSheet.create({
   },
 
   eyeToggleButtonActive: {
-    borderColor: '#7a00cc',
+    backgroundColor: '#e8c6ff',
+    borderTopColor: '#b67ae8',
+    borderLeftColor: '#b67ae8',
+    borderRightColor: '#5d1f85',
+    borderBottomColor: '#5d1f85',
   },
 
   eyeToggleButtonMuted: {
-    borderColor: '#c46a00',
+    backgroundColor: '#ffd7d7',
+    borderTopColor: '#e49b38',
+    borderLeftColor: '#e49b38',
+    borderRightColor: '#8b4700',
+    borderBottomColor: '#8b4700',
   },
 
   eyeToggleIcon: {

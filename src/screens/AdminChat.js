@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -449,6 +450,16 @@ useEffect(() => {
     navigation.replace('AdminPin');
   };
 
+  const closeApp = () => {
+    try {
+      if (Platform.OS === 'android') {
+        BackHandler.exitApp();
+      } else {
+        BackHandler.exitApp();
+      }
+    } catch {}
+  };
+
   const toggleMessageSelection = (messageId) => {
     setSelectedMessageIds((current) => {
       const nextId = String(messageId);
@@ -563,11 +574,19 @@ useEffect(() => {
               </View>
 
               <View style={styles.windowButton}>
-                <Text style={styles.windowButtonText}>_</Text>
+                <Pressable style={styles.closePressable} onPress={() => {
+                  try {
+                    if (Platform.OS === 'android') {
+                      BackHandler.moveTaskToBack();
+                    }
+                  } catch {}
+                }}>
+                  <Text style={styles.windowButtonText}>_</Text>
+                </Pressable>
               </View>
 
               <View style={[styles.windowButton, styles.closeButton]}>
-                <Pressable style={styles.closePressable} onPress={goBack}>
+                <Pressable style={styles.closePressable} onPress={closeApp}>
                   <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
                 </Pressable>
               </View>

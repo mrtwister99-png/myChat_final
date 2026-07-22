@@ -1,0 +1,20 @@
+--- a/src/screens/AdminPin.js
++++ b/src/screens/AdminPin.js
+@@ -1,7 +1,15 @@
+   eyeToggleButtonActive: {
+-    borderColor: '#7a00cc',
++    backgroundColor: '#e8c6ff',
++    borderTopColor: '#b67ae8',
++    borderLeftColor: '#b67ae8',
++    borderRightColor: '#5d1f85',
++    borderBottomColor: '#5d1f85',
+   },
+ 
+   eyeToggleButtonMuted: {
+-    borderColor: '#c46a00',
++    backgroundColor: '#ffd7d7',
++    borderTopColor: '#e49b38',
++    borderLeftColor: '#e49b38',
++    borderRightColor: '#8b4700',
++    borderBottomColor: '#8b4700',
+   },
