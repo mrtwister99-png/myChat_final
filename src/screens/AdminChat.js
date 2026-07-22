@@ -1,7 +1,7 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
-  BackHandler,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -21,6 +21,31 @@ const KeyboardWrapper = Platform.OS === 'ios' ? KeyboardAvoidingView : View;
 
 const EYE_ICON = require('../assets/icons/oko.png');
 const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
+
+const USER_ICON_SOURCES = {
+  uzivatel: require('../assets/icons/uzivatel.png'),
+  cat: require('../assets/icons/cat.png'),
+  pes: require('../assets/icons/pes.png'),
+  happy: require('../assets/icons/happy.png'),
+  devil: require('../assets/icons/devil.png'),
+  klaun: require('../assets/icons/klaun.png'),
+  stop: require('../assets/icons/stop.png'),
+  vykricnik: require('../assets/icons/vykricnik.png'),
+  fuckerr: require('../assets/icons/fuckerr.png'),
+  zachod: require('../assets/icons/zachod.png'),
+  admin: require('../assets/icons/admin.png'),
+};
+
+const normalizeAvatarIcon = (iconKey) => {
+  const cleanIcon = String(iconKey || '').trim().toLowerCase();
+  if (cleanIcon === 'klan') return 'klaun';
+  if (cleanIcon === 'fucker') return 'fuckerr';
+  return USER_ICON_SOURCES[cleanIcon] ? cleanIcon : 'uzivatel';
+};
+
+const getIconSource = (iconKey) => {
+  return USER_ICON_SOURCES[normalizeAvatarIcon(iconKey)] || USER_ICON_SOURCES.uzivatel;
+};
 
 const MUTE_OPTIONS = [
   { label: '5 min', milliseconds: 5 * 60 * 1000 },
@@ -62,7 +87,7 @@ const formatMuteTimeLeft = (muteUntil) => {
   const diff = muteUntil - now;
 
   if (diff <= 0) {
-    return 'není umlčen';
+    return 'nenĂ­ umlÄŤen';
   }
 
   const totalMinutes = Math.ceil(diff / 1000 / 60);
@@ -78,7 +103,7 @@ const formatMuteTimeLeft = (muteUntil) => {
   }
 
   const totalDays = Math.ceil(totalHours / 24);
-  return `${totalDays} dní`;
+  return `${totalDays} dnĂ­`;
 };
 
 const formatMessageTime = (timestamp) => {
@@ -92,7 +117,7 @@ const formatMessageTime = (timestamp) => {
 
 const AdminChat = ({ navigation, route }) => {
   const userId = route?.params?.userId || 'unknown-user';
-  const userName = route?.params?.userName || 'Uživatel';
+  const userName = route?.params?.userName || 'UĹľivatel';
 
   const scrollViewRef = useRef(null);
 
@@ -111,8 +136,11 @@ const AdminChat = ({ navigation, route }) => {
   const [secretMutedUsers, setSecretMutedUsers] = useState(
     globalThis.CUSIIK_SECRET_MUTED_USERS || {}
   );
+  const [currentUserData, setCurrentUserData] = useState(null);
+  const [adminAvatarIcon, setAdminAvatarIcon] = useState('admin');
+  const [adminProfile, setAdminProfile] = useState(globalThis.CUSIIK_ADMIN_PROFILE || { icon: 'admin', silhouetteColour: '#0b3d91', bgColour: '#ece9d8' });
   const [connectionText, setConnectionText] = useState(
-    socket.connected ? 'Server online' : 'Připojuji server...'
+    socket.connected ? 'Server online' : 'PĹ™ipojuji server...'
   );
 
   const getInitialMessages = () => {
@@ -184,11 +212,11 @@ useEffect(() => {
     };
 
     const handleDisconnect = () => {
-      setConnectionText('Server offline - lokální režim');
+      setConnectionText('Server offline - lokĂˇlnĂ­ reĹľim');
     };
 
     const handleConnectError = () => {
-      setConnectionText('Server nedostupný - lokální režim');
+      setConnectionText('Server nedostupnĂ˝ - lokĂˇlnĂ­ reĹľim');
     };
 
     const handleServerState = (serverState) => {
@@ -200,6 +228,19 @@ useEffect(() => {
       if (serverState?.secretMutedUsers) {
         setSecretMutedUsers(serverState.secretMutedUsers);
         globalThis.CUSIIK_SECRET_MUTED_USERS = serverState.secretMutedUsers;
+      }
+
+      if (serverState?.adminProfile) {
+        setAdminProfile(serverState.adminProfile);
+        setAdminAvatarIcon(normalizeAvatarIcon(serverState.adminProfile.icon || 'admin'));
+        globalThis.CUSIIK_ADMIN_PROFILE = serverState.adminProfile;
+      }
+
+      if (Array.isArray(serverState?.users)) {
+        const found = serverState.users.find((u) => String(u.id) === String(userId));
+        if (found) {
+          setCurrentUserData(found);
+        }
       }
 
       setNowTick(Date.now());
@@ -264,7 +305,7 @@ useEffect(() => {
 
   const muteUntil = getMuteUntil();
   const isMuted = muteUntil > nowTick;
-  const muteTimeLeft = isMuted ? formatMuteTimeLeft(muteUntil) : 'není umlčen';
+  const muteTimeLeft = isMuted ? formatMuteTimeLeft(muteUntil) : 'nenĂ­ umlÄŤen';
   const isSecretMuted = Boolean(secretMutedUsers[userId]);
   const isServerOnline = socket.connected;
 
@@ -306,8 +347,8 @@ useEffect(() => {
       }
 
       Alert.alert(
-        'Smazat zprávy',
-        `Opravdu smazat ${selectedCount} zpráv?`,
+        'Smazat zprĂˇvy',
+        `Opravdu smazat ${selectedCount} zprĂˇv?`,
         [
           {
             text: 'Ne',
@@ -410,7 +451,7 @@ useEffect(() => {
       });
     }
 
-    sendSystemMessage(`Uživatel ${userName} byl umlčen na ${option.label}.`);
+    sendSystemMessage(`UĹľivatel ${userName} byl umlÄŤen na ${option.label}.`);
 
     setNowTick(Date.now());
     closeMuteModal();
@@ -435,7 +476,7 @@ useEffect(() => {
       });
     }
 
-    sendSystemMessage(`Uživatel ${userName} už není umlčen.`);
+    sendSystemMessage(`UĹľivatel ${userName} uĹľ nenĂ­ umlÄŤen.`);
 
     setNowTick(Date.now());
     closeMuteModal();
@@ -448,16 +489,6 @@ useEffect(() => {
     }
 
     navigation.replace('AdminPin');
-  };
-
-  const closeApp = () => {
-    try {
-      if (Platform.OS === 'android') {
-        BackHandler.exitApp();
-      } else {
-        BackHandler.exitApp();
-      }
-    } catch {}
   };
 
   const toggleMessageSelection = (messageId) => {
@@ -554,7 +585,7 @@ useEffect(() => {
                 <View style={[styles.winSquare, { backgroundColor: '#ffba08' }]} />
               </View>
 
-              <Text style={styles.titleText}>Chat s uživatelem</Text>
+              <Text style={styles.titleText}>Chat s uĹľivatelem</Text>
 
               <View
                 style={[
@@ -569,46 +600,28 @@ useEffect(() => {
             <View style={styles.windowButtons}>
               <View style={styles.windowButton}>
                 <Pressable style={styles.closePressable} onPress={goBack}>
-                  <Text style={styles.windowButtonText}>←</Text>
+                  <Text style={styles.windowButtonText}>â†</Text>
                 </Pressable>
               </View>
 
               <View style={styles.windowButton}>
-                <Pressable style={styles.closePressable} onPress={() => {
-                  try {
-                    if (Platform.OS === 'android') {
-                      BackHandler.moveTaskToBack();
-                    }
-                  } catch {}
-                }}>
-                  <Text style={styles.windowButtonText}>_</Text>
-                </Pressable>
+                <Text style={styles.windowButtonText}>_</Text>
               </View>
 
               <View style={[styles.windowButton, styles.closeButton]}>
-                <Pressable style={styles.closePressable} onPress={closeApp}>
-                  <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
+                <Pressable style={styles.closePressable} onPress={goBack}>
+                  <Text style={[styles.windowButtonText, styles.closeButtonText]}>Ă—</Text>
                 </Pressable>
               </View>
             </View>
           </View>
 
           <View style={styles.topPanel}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.backButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={goBack}
-            >
-              <Text style={styles.backButtonText}>Zpět</Text>
-            </Pressable>
-
             <View style={styles.userInfoBox}>
               <View style={styles.userNameRow}>
                 <Text style={styles.userName}>{userName}</Text>
 
-                {isSecretMuted ? <Text style={styles.userNameSecretText}> (potají)</Text> : null}
+                {isSecretMuted ? <Text style={styles.userNameSecretText}> (potajĂ­)</Text> : null}
 
                 {isMuted ? <Text style={styles.userNameMuteText}> ({muteTimeLeft})</Text> : null}
               </View>
@@ -622,7 +635,7 @@ useEffect(() => {
                 />
 
                 <Text style={styles.muteStatusText}>
-                  {isMuted ? `Umlčen: ${muteTimeLeft}` : 'Může psát'}
+                  {isMuted ? `UmlÄŤen: ${muteTimeLeft}` : 'MĹŻĹľe psĂˇt'}
                 </Text>
               </View>
             </View>
@@ -680,6 +693,13 @@ useEffect(() => {
                       isAdmin ? styles.messageRowUser : styles.messageRowAdmin,
                     ]}
                   >
+                    <View style={styles.miniIconWrapper}>
+                      <Image
+                        source={getIconSource(isAdmin ? (adminProfile?.icon || adminAvatarIcon || 'admin') : (currentUserData?.avatarIcon || 'uzivatel'))}
+                        style={styles.miniIconImage}
+                        resizeMode="contain"
+                      />
+                    </View>
                     <Pressable
                       onLongPress={() => onMessageLongPress(item.id)}
                       onPress={() => onMessagePress(item.id)}
@@ -709,7 +729,7 @@ useEffect(() => {
             <TextInput
               value={message}
               onChangeText={setMessage}
-              placeholder={`Napiš zprávu pro ${userName}...`}
+              placeholder={`NapiĹˇ zprĂˇvu pro ${userName}...`}
               placeholderTextColor="#666666"
               style={styles.input}
               multiline
@@ -736,7 +756,7 @@ useEffect(() => {
             <Text style={styles.statusText}>Admin chat</Text>
             <Text style={styles.statusText}>
               {selectionMode
-                ? `Vybráno: ${selectedMessageIds.length}`
+                ? `VybrĂˇno: ${selectedMessageIds.length}`
                 : isMuted
                   ? `Mute: ${muteTimeLeft}`
                   : connectionText}
@@ -753,16 +773,16 @@ useEffect(() => {
           <View style={styles.modalOverlay}>
             <View style={styles.modalWindow}>
               <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>Umlčet uživatele</Text>
+                <Text style={styles.modalTitleText}>UmlÄŤet uĹľivatele</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeMuteModal}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Text style={styles.modalCloseButtonText}>Ă—</Text>
                 </Pressable>
               </View>
 
               <View style={styles.modalBody}>
                 <Text style={styles.modalLabel}>
-                  Vyber délku umlčení pro uživatele:
+                  Vyber dĂ©lku umlÄŤenĂ­ pro uĹľivatele:
                 </Text>
 
                 <Text style={styles.selectedUserText}>{userName}</Text>
@@ -770,7 +790,7 @@ useEffect(() => {
                 {isMuted ? (
                   <View style={styles.warningBox}>
                     <Text style={styles.warningText}>
-                      Uživatel je aktuálně umlčen ještě na {muteTimeLeft}.
+                      UĹľivatel je aktuĂˇlnÄ› umlÄŤen jeĹˇtÄ› na {muteTimeLeft}.
                     </Text>
                   </View>
                 ) : null}
@@ -799,7 +819,7 @@ useEffect(() => {
                       ]}
                       onPress={unmuteUser}
                     >
-                      <Text style={styles.modalButtonText}>Zrušit mlčení</Text>
+                      <Text style={styles.modalButtonText}>ZruĹˇit mlÄŤenĂ­</Text>
                     </Pressable>
                   ) : null}
 
@@ -810,7 +830,7 @@ useEffect(() => {
                     ]}
                     onPress={closeMuteModal}
                   >
-                    <Text style={styles.modalButtonText}>Zavřít</Text>
+                    <Text style={styles.modalButtonText}>ZavĹ™Ă­t</Text>
                   </Pressable>
                 </View>
               </View>
@@ -1109,6 +1129,26 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 10,
     flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+
+  miniIconWrapper: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ece9d8',
+    borderWidth: 1,
+    borderColor: '#aaa793',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    marginLeft: 2,
+    marginBottom: 2,
+  },
+
+  miniIconImage: {
+    width: 20,
+    height: 20,
   },
 
   messageRowUser: {
@@ -1438,5 +1478,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#d8d5c6',
   },
 });
+
+
 
 

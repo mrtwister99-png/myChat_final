@@ -102,6 +102,7 @@ const USER_ICON_SOURCES = {
   vykricnik: require('../assets/icons/vykricnik.png'),
   fuckerr: require('../assets/icons/fuckerr.png'),
   zachod: require('../assets/icons/zachod.png'),
+  admin: require('../assets/icons/uzivatel.png'),
 };
 
 const USER_ICON_OPTIONS = [
@@ -1112,6 +1113,13 @@ const UzivatelPin = ({ navigation, route }) => {
                       isUser ? styles.messageRowUser : styles.messageRowAdmin,
                     ]}
                   >
+                    <View style={styles.miniIconWrapper}>
+                      <Image
+                        source={getIconSource(isUser ? (userAvatarIcon || 'uzivatel') : 'admin')}
+                        style={styles.miniIconImage}
+                        resizeMode="contain"
+                      />
+                    </View>
                     <View
                       style={[
                         styles.messageBubble,
@@ -1566,6 +1574,26 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 10,
     flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+
+  miniIconWrapper: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ece9d8',
+    borderWidth: 1,
+    borderColor: '#aaa793',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    marginLeft: 2,
+    marginBottom: 2,
+  },
+
+  miniIconImage: {
+    width: 20,
+    height: 20,
   },
 
   messageRowAdmin: {

@@ -61,7 +61,21 @@ const USER_ICON_SOURCES = {
   vykricnik: require('../assets/icons/vykricnik.png'),
   fuckerr: require('../assets/icons/fuckerr.png'),
   zachod: require('../assets/icons/zachod.png'),
+  admin: require('../assets/icons/admin.png'),
 };
+
+const ADMIN_ICON_OPTIONS = [
+  { key: 'admin', label: 'admin' },
+  { key: 'uzivatel', label: 'uzivatel' },
+  { key: 'cat', label: 'kocka' },
+  { key: 'pes', label: 'pes' },
+  { key: 'devil', label: 'devil' },
+  { key: 'klaun', label: 'klaun' },
+  { key: 'happy', label: 'prsa' },
+  { key: 'stop', label: 'stop' },
+  { key: 'vykricnik', label: 'vystraha' },
+  { key: 'zachod', label: 'zachod' },
+];
 
 const normalizeAvatarIcon = (iconKey) => {
   const cleanIcon = String(iconKey || '').trim().toLowerCase();
@@ -279,6 +293,11 @@ const AdminPin = ({ navigation }) => {
 
   const [readCounts, setReadCounts] = useState(getGlobalReadCounts());
   const [secretMutedUsers, setSecretMutedUsers] = useState(getGlobalSecretMutedUsers());
+  const [adminProfile, setAdminProfile] = useState(globalThis.CUSIIK_ADMIN_PROFILE || { icon: 'admin', silhouetteColour: '#0b3d91', bgColour: '#ece9d8' });
+  const [adminEditModalVisible, setAdminEditModalVisible] = useState(false);
+  const [adminIconModalVisible, setAdminIconModalVisible] = useState(false);
+  const [adminOutlineModalVisible, setAdminOutlineModalVisible] = useState(false);
+  const [adminBgModalVisible, setAdminBgModalVisible] = useState(false);
   const [lastActionText, setLastActionText] = useState('');
   const [connectionText, setConnectionText] = useState(
     socket.connected ? 'Server online' : 'Připojuji server...'
@@ -378,6 +397,13 @@ const AdminPin = ({ navigation }) => {
 
           return normalizedUsers;
         });
+
+        // FIX: po reconnectu admina načíst chaty všech uživatelů pro správné unread
+        if (socket.connected) {
+          normalizedUsers.forEach((user) => {
+            socket.emit('chat:get', { userId: user.id });
+          });
+        }
       }
 
     };
@@ -399,7 +425,7 @@ const AdminPin = ({ navigation }) => {
       const nextReadCounts = { ...getGlobalReadCounts() };
 
       if (!Object.prototype.hasOwnProperty.call(nextReadCounts, cleanUserId)) {
-        nextReadCounts[cleanUserId] = userMessagesCount;
+        nextReadCounts[cleanUserId] = 0;
       }
 
       if (activeAdminChatUserId && activeAdminChatUserId === cleanUserId) {
@@ -1332,9 +1358,9 @@ const AdminPin = ({ navigation }) => {
                         <Pressable
                           style={({ pressed }) => [
                             styles.eyeToggleButton,
+                            pressed && styles.xpButtonPressed,
                             isUserSecretMuted && styles.eyeToggleButtonActive,
                             !isUserSecretMuted && isUserMuted && styles.eyeToggleButtonMuted,
-                            pressed && styles.xpButtonPressed,
                           ]}
                           onPress={() => toggleSecretMute(user)}
                           onLongPress={() => openMuteModalForUser(user)}
@@ -1481,44 +1507,7 @@ const AdminPin = ({ navigation }) => {
                   </Text>
                 </Pressable>
 
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.settingsOption,
-                    styles.settingsOptionMute,
-                    pressed && styles.xpButtonPressed,
-                  ]}
-                  onPress={() => {
-                    if (isUserMutedNow(actionUser?.id, nowTick)) {
-                      unmuteUser(actionUser);
-                      return;
-                    }
 
-                    openMuteModalForUser(actionUser);
-                  }}
-                >
-                  <Text style={styles.settingsOptionTitle}>
-                    {isUserMutedNow(actionUser?.id, nowTick) ? 'Zrušit mlčení' : 'Umlčet'}
-                  </Text>
-                  <Text style={styles.settingsOptionText}>
-                    {isUserMutedNow(actionUser?.id, nowTick)
-                      ? 'Okamžitě zruší aktivní umlčení uživatele.'
-                      : 'Uživatel nebude moct psát po zvolenou dobu.'}
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.settingsOption,
-                    styles.settingsOptionSecretMute,
-                    pressed && styles.xpButtonPressed,
-                  ]}
-                  onPress={() => toggleSecretMute(actionUser)}
-                >
-                  <Text style={styles.settingsOptionTitle}>Umlčet potají</Text>
-                  <Text style={styles.settingsOptionText}>
-                    Uživatel uvidí admin status OFF, i když bude pro ostatní ON.
-                  </Text>
-                </Pressable>
               </View>
             </View>
           </View>
