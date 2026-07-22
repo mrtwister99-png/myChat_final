@@ -1,5 +1,3 @@
-// src/screens/AdminChat.js
-
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -17,6 +15,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
+
+const KeyboardWrapper = Platform.OS === 'ios' ? KeyboardAvoidingView : View;
 
 const EYE_ICON = require('../assets/icons/oko.png');
 const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
@@ -88,10 +88,10 @@ const AdminChat = ({ navigation, route }) => {
   const scrollViewRef = useRef(null);
 
   const scrollToBottom = (animated = true) => {
-  setTimeout(() => {
-    scrollViewRef.current?.scrollToEnd({ animated });
-  }, 120);
-};
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated });
+    }, 120);
+  };
 
   const [message, setMessage] = useState('');
   const [muteModalVisible, setMuteModalVisible] = useState(false);
@@ -514,9 +514,9 @@ useEffect(() => {
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
 
-      <KeyboardAvoidingView
+      <KeyboardWrapper
         style={styles.page}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.window}>
           <View style={styles.titleBar}>
@@ -640,24 +640,20 @@ useEffect(() => {
                       onLongPress={() => onMessageLongPress(item.id)}
                       onPress={() => onMessagePress(item.id)}
                       delayLongPress={250}
-                    >
-                    <View
-                      style={[
+                      style={({ pressed }) => [
                         styles.messageBubble,
                         isAdmin ? styles.userBubble : styles.adminBubble,
                         isSelected && styles.selectedMessageBubble,
+                        pressed && { opacity: 0.85 },
                       ]}
                     >
                       <View style={styles.messageHeaderRow}>
                         <Text style={styles.messageAuthor}>
                           {isAdmin ? 'Admin' : userName}
                         </Text>
-
                         <Text style={styles.messageTime}>{messageTime}</Text>
                       </View>
-
                       <Text style={styles.messageText}>{item.text}</Text>
-                    </View>
                     </Pressable>
                   </View>
                 );
@@ -777,7 +773,7 @@ useEffect(() => {
             </View>
           </View>
         </Modal>
-      </KeyboardAvoidingView>
+      </KeyboardWrapper>
     </SafeAreaView>
   );
 };
@@ -1061,6 +1057,8 @@ const styles = StyleSheet.create({
   messagesContent: {
     padding: 12,
     paddingBottom: 18,
+    flexGrow: 1,
+    justifyContent: 'flex-end',
   },
 
   messageRow: {
@@ -1082,7 +1080,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderWidth: 2,
-    overflow: 'hidden',
   },
 
   userBubble: {
@@ -1397,3 +1394,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#d8d5c6',
   },
 });
+
+
