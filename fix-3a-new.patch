@@ -1,0 +1,18 @@
+--- a/src/screens/UzivatelPin.js
++++ b/src/screens/UzivatelPin.js
+@@ -517,6 +517,15 @@
+       if (userId !== currentUserId) {
+         return;
+       }
++
++      const nextMutedUsers = {
++        ...getGlobalMutedUsers(),
++        ...serverMutedUsers,
++        [currentUserId]: nextMuteUntil,
++      };
++
++      globalThis.CUSIIK_MUTED_USERS = nextMutedUsers;
++      setServerMutedUsers(nextMutedUsers);
+ 
+       setBlockedInfo(
+         `NemĹŻĹľeĹˇ psĂˇt. Jsi umlÄŤenĂ˝ jeĹˇtÄ› na ${formatMuteTimeLeft(nextMuteUntil)}.`

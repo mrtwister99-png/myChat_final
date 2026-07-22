@@ -1,0 +1,27 @@
+--- a/src/screens/UzivatelPin.js
++++ b/src/screens/UzivatelPin.js
+@@ -362,6 +362,15 @@
+   const isMuted = muteUntil > nowTick;
+   const muteTimeLeft = isMuted ? formatMuteTimeLeft(muteUntil) : '';
+ 
++  useEffect(() => {
++    if (!isMuted && blockedInfo) {
++      const stillMutedUntil = getMuteUntil();
++      if (stillMutedUntil <= Date.now()) {
++        setBlockedInfo('');
++      }
++    }
++  }, [nowTick, isMuted]);
++
+   const refreshScreenData = () => {
+     const chats = getGlobalChats();
+ 
+@@ -369,6 +378,8 @@
+ 
+     if (!socket.connected) {
+       setAdminStatus(getAdminStatus());
++      setServerMutedUsers({ ...getGlobalMutedUsers() });
++      setSecretMutedUsers({ ...getGlobalSecretMutedUsers() });
+       setMessages(chats[currentUserId] || getInitialMessages());
+     }
+   };

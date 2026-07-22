@@ -1,0 +1,73 @@
+--- a/src/screens/UzivatelPin.js
++++ b/src/screens/UzivatelPin.js
+@@ -168,6 +168,9 @@
+ };
+ 
+ const USER_READ_COUNTS_STORAGE_KEY = 'CUSIIK_USER_READ_COUNTS_PERSISTED';
++const USER_AVATAR_STORAGE_KEY = 'CUSIIK_USER_AVATAR_PERSISTED';
++const USER_ICON_COLOUR_STORAGE_KEY = 'CUSIIK_USER_ICON_COLOUR_PERSISTED';
++const USER_BG_COLOUR_STORAGE_KEY = 'CUSIIK_USER_BG_COLOUR_PERSISTED';
+ 
+ 
+ const formatMuteTimeLeft = (muteUntil) => {
+@@ -281,6 +284,31 @@
+   }, [currentUserId]);
+ 
+   useEffect(() => {
++    (async () => {
++      try {
++        const [storedIcon, storedIconColour, storedBgColour] = await Promise.all([
++          AsyncStorage.getItem(USER_AVATAR_STORAGE_KEY),
++          AsyncStorage.getItem(USER_ICON_COLOUR_STORAGE_KEY),
++          AsyncStorage.getItem(USER_BG_COLOUR_STORAGE_KEY),
++        ]);
++        if (storedIcon) {
++          const normalized = normalizeAvatarIcon(storedIcon);
++          setUserAvatarIcon(normalized);
++          globalThis.CUSIIK_USER_AVATAR_ICON = normalized;
++        }
++        if (storedIconColour) {
++          setUserIconColour(storedIconColour);
++          globalThis.CUSIIK_USER_ICON_COLOUR = storedIconColour;
++        }
++        if (storedBgColour) {
++          setUserBgColour(storedBgColour);
++          globalThis.CUSIIK_USER_BG_COLOUR = storedBgColour;
++        }
++      } catch {}
++    })();
++  }, []);
++
++  useEffect(() => {
+     screenModeRef.current = screenMode;
+     if (screenMode === 'chat') {
+       globalThis.CUSIIK_ACTIVE_USER_CHAT_ID = String(currentUserId);
+@@ -425,17 +453,20 @@
+         if (nextSilhouette) {
+           setUserIconColour(nextSilhouette);
+           globalThis.CUSIIK_USER_ICON_COLOUR = nextSilhouette;
++          AsyncStorage.setItem(USER_ICON_COLOUR_STORAGE_KEY, nextSilhouette).catch(() => {});
+         }
+ 
+         if (currentUser?.bgColour) {
+           setUserBgColour(currentUser.bgColour);
+           globalThis.CUSIIK_USER_BG_COLOUR = currentUser.bgColour;
++          AsyncStorage.setItem(USER_BG_COLOUR_STORAGE_KEY, currentUser.bgColour).catch(() => {});
+         }
+ 
+         if (currentUser?.avatarIcon) {
+           const normalizedIcon = normalizeAvatarIcon(currentUser.avatarIcon);
+           setUserAvatarIcon(normalizedIcon);
+           globalThis.CUSIIK_USER_AVATAR_ICON = normalizedIcon;
++          AsyncStorage.setItem(USER_AVATAR_STORAGE_KEY, normalizedIcon).catch(() => {});
+         }
+ 
+         const nextAvatarLocked = Boolean(currentUser?.avatarLocked);
+@@ -671,6 +702,7 @@
+ 
+     setUserAvatarIcon(normalizedIcon);
+     globalThis.CUSIIK_USER_AVATAR_ICON = normalizedIcon;
++    AsyncStorage.setItem(USER_AVATAR_STORAGE_KEY, normalizedIcon).catch(() => {});
+ 
+     if (socket.connected) {
+       socket.emit('user:setAvatarIcon', {

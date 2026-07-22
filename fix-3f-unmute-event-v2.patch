@@ -1,0 +1,26 @@
+--- a/src/screens/UzivatelPin.js
++++ b/src/screens/UzivatelPin.js
+@@ -587,9 +587,21 @@
+       globalThis.CUSIIK_MUTED_USERS = nextMutedUsers;
+       setServerMutedUsers(nextMutedUsers);
+ 
+-      setBlockedInfo(
++      if (nextMuteUntil && nextMuteUntil > Date.now()) {
++        setBlockedInfo(
+         `NemĹŻĹľeĹˇ psĂˇt. Jsi umlÄŤenĂ˝ jeĹˇtÄ› na ${formatMuteTimeLeft(nextMuteUntil)}.`
+-      );
++        );
++      } else {
++        setBlockedInfo(`Už nejsi umlčený, můžeš znovu psát. (${formatMessageTime(Date.now())})`);
++        setTimeout(() => {
++          setBlockedInfo((current) => {
++            if (current && current.includes('Už nejsi umlčený')) {
++              return '';
++            }
++            return current;
++          });
++        }, 5000);
++      }
+       setNowTick(Date.now());
+     };
+ 

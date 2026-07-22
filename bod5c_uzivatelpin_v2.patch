@@ -1,0 +1,43 @@
+--- a/src/screens/UzivatelPin.js
++++ b/src/screens/UzivatelPin.js
+@@ -448,6 +448,14 @@
+       socket.emit('chat:get', {
+         userId: currentUserId,
+       });
++      const pushToken = globalThis.CUSIIK_EXPO_PUSH_TOKEN;
++      if (pushToken) {
++        socket.emit('notifications:registerToken', {
++          token: pushToken,
++          role: 'user',
++          userId: currentUserId,
++        });
++      }
+     };
+ 
+     const handleServerState = (serverState) => {
+@@ -544,8 +552,10 @@
+           markMessagesAsRead(safeMessages);
+         } else if (nextUnread > previousUnread) {
+           showLocalMessageNotification({
+-            title: 'NovĂˇ zprĂˇva od admina',
+-            body: 'MĂˇĹˇ novou zprĂˇvu v chatu.',
++            title: 'Nova zprava od admina',
++            body: 'Mas novou zpravu v chatu.',
++            data: { userId: currentUserId, action: 'openChat' },
++            cooldownKey: `user-admin-${currentUserId}`,
+           });
+         }
+         return;
+@@ -562,8 +572,10 @@
+ 
+       if (shouldNotify) {
+         showLocalMessageNotification({
+-          title: 'NovĂˇ zprĂˇva od admina',
+-          body: 'MĂˇĹˇ novou zprĂˇvu v chatu.',
++          title: 'Nova zprava od admina',
++          body: 'Mas novou zpravu v chatu.',
++          data: { userId: currentUserId, action: 'openChat' },
++          cooldownKey: `user-admin-${currentUserId}`,
+         });
+       }
+ 

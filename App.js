@@ -8,8 +8,8 @@ import PinEntry from './src/screens/PinEntry';
 import UzivatelPin from './src/screens/UzivatelPin';
 import AdminPin from './src/screens/AdminPin';
 import AdminChat from './src/screens/AdminChat';
-import { registerForPushNotificationsAsync } from './src/notifications';
-import { showLocalMessageNotification } from './src/notifications';
+import { registerForPushNotificationsAsync, showLocalMessageNotification, addNotificationResponseListener } from './src/notifications';
+import * as Notifications from 'expo-notifications';
 import { socket } from './src/socket';
 
 const Stack = createNativeStackNavigator();
@@ -37,8 +37,30 @@ const App = () => {
       if (token) {
         globalThis.CUSIIK_EXPO_PUSH_TOKEN = token;
       }
+
+      // killed state - check if app opened from notification
+      try {
+        const lastResponse = await Notifications.getLastNotificationResponseAsync();
+        const lastData = lastResponse?.notification?.request?.content?.data;
+        if (lastData?.userId && lastData?.action === 'openChat') {
+          setTimeout(() => {
+            if (navigationRef.isReady()) {
+              navigationRef.navigate('UzivatelPin', { userId: String(lastData.userId) });
+            }
+          }, 1200);
+        }
+      } catch {}
     };
     init();
+  }, []);
+
+  useEffect(() => {
+    const sub = addNotificationResponseListener((data) => {
+      if (data?.userId && data?.action === 'openChat' && navigationRef.isReady()) {
+        navigationRef.navigate('UzivatelPin', { userId: String(data.userId) });
+      }
+    });
+    return () => sub?.remove?.();
   }, []);
 
   useEffect(() => {

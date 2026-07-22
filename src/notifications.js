@@ -1,6 +1,3 @@
-// Push notifikace - základní ukázka přes Expo Notifications
-// instalace:
-// npx expo install expo-notifications expo-device
 
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
@@ -71,7 +68,7 @@ export const registerForPushNotificationsAsync = async () => {
   return tokenData.data;
 };
 
-export const showLocalMessageNotification = async ({ title, body, cooldownKey = 'global-message' }) => {
+export const showLocalMessageNotification = async ({ title, body, data = {}, cooldownKey = 'global-message' }) => {
   const safeCooldownKey = String(cooldownKey || 'global-message');
   const now = Date.now();
   const lastNotificationAt = getLastNotificationAt(safeCooldownKey);
@@ -85,6 +82,7 @@ export const showLocalMessageNotification = async ({ title, body, cooldownKey = 
       title,
       body,
       sound: true,
+      data: data || {},
     },
     trigger: null,
   });
@@ -92,3 +90,24 @@ export const showLocalMessageNotification = async ({ title, body, cooldownKey = 
   setLastNotificationAt(safeCooldownKey, now);
   return true;
 };
+
+export const addNotificationResponseListener = (callback) => {
+  const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+    const responseData = response?.notification?.request?.content?.data || {};
+    if (typeof callback === 'function') {
+      callback(responseData, response);
+    }
+  });
+  return subscription;
+};
+
+export const getLastNotificationResponseAsync = async () => {
+  try {
+    const response = await Notifications.getLastNotificationResponseAsync();
+    return response?.notification?.request?.content?.data || null;
+  } catch {
+    return null;
+  }
+};
+
+export { NOTIFICATION_COOLDOWN_MS };

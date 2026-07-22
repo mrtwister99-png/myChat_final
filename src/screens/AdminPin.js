@@ -59,6 +59,7 @@ const USER_ICON_SOURCES = {
   stop: require('../assets/icons/stop.png'),
   vykricnik: require('../assets/icons/vykricnik.png'),
   fuckerr: require('../assets/icons/fuckerr.png'),
+  zachod: require('../assets/icons/zachod.png'),
 };
 
 const normalizeAvatarIcon = (iconKey) => {
@@ -321,6 +322,13 @@ const AdminPin = ({ navigation }) => {
     const handleConnect = () => {
       setConnectionText('Server online');
       socket.emit('state:get');
+      const pushToken = globalThis.CUSIIK_EXPO_PUSH_TOKEN;
+      if (pushToken) {
+        socket.emit('notifications:registerToken', {
+          token: pushToken,
+          role: 'admin',
+        });
+      }
     };
 
     const handleDisconnect = () => {
@@ -420,6 +428,13 @@ const AdminPin = ({ navigation }) => {
       socket.connect();
     } else {
       socket.emit('state:get');
+      const pushToken = globalThis.CUSIIK_EXPO_PUSH_TOKEN;
+      if (pushToken) {
+        socket.emit('notifications:registerToken', {
+          token: pushToken,
+          role: 'admin',
+        });
+      }
     }
 
     return () => {

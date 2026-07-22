@@ -33,6 +33,10 @@ const state = {
   userPinsById: {},
   kickedRoomUserIds: {},
   userProfilesById: {},
+
+  pushTokensByUserId: {},
+  adminPushTokens: new Set(),
+  pushCooldowns: {},
 };
 
 const SUPPORTED_AVATAR_ICONS = new Set([
@@ -59,6 +63,48 @@ const normalizeAvatarIcon = (icon) => {
   }
 
   return SUPPORTED_AVATAR_ICONS.has(cleanIcon) ? cleanIcon : 'uzivatel';
+};
+
+const PUSH_COOLDOWN_MS = 5 * 60 * 1000;
+
+const sendExpoPushAsync = async ({ to, title, body, data = {} }) => {
+  if (!to) return;
+  const tokens = Array.isArray(to) ? to : [to];
+  if (tokens.length === 0) return;
+
+  try {
+    const messages = tokens.map((token) => ({
+      to: token,
+      sound: 'default',
+      title: String(title || 'Nova zprava').slice(0, 120),
+      body: String(body || '').slice(0, 240),
+      data: data || {},
+      channelId: 'default',
+    }));
+
+    const res = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(messages),
+    });
+
+    const result = await res.json().catch(() => null);
+    console.log('Expo push result:', result);
+  } catch (e) {
+    console.log('Expo push error:', e?.message || e);
+  }
+};
+
+const shouldSendPushWithCooldown = (key) => {
+  const now = Date.now();
+  const last = state.pushCooldowns[key] || 0;
+  if (now - last < PUSH_COOLDOWN_MS) return false;
+  state.pushCooldowns[key] = now;
+  return true;
 };
 
 const RANDOM_USER_NAMES = [
@@ -735,6 +781,36 @@ io.on('connection', (socket) => {
   });
 
   emitState();
+
+  // REAL PUSH for killed app
+  (async () => {
+    try {
+      if (cleanSender === 'admin') {
+        // admin -> user
+        const userToken = state.pushTokensByUserId[cleanUserId];
+        if (userToken && shouldSendPushWithCooldown(`push-user-${cleanUserId}`)) {
+          await sendExpoPushAsync({
+            to: userToken,
+            title: 'Nova zprava od admina',
+            body: trimmedText.slice(0, 120),
+            data: { userId: cleanUserId, action: 'openChat' },
+          });
+        }
+      } else if (cleanSender === 'user') {
+        // user -> admin
+        const adminTokens = Array.from(state.adminPushTokens);
+        if (adminTokens.length > 0 && shouldSendPushWithCooldown(`push-admin-${cleanUserId}`)) {
+          const senderName = user?.name || `Uzivatel ${cleanUserId}`;
+          await sendExpoPushAsync({
+            to: adminTokens,
+            title: `Nova zprava od ${senderName}`,
+            body: trimmedText.slice(0, 120),
+            data: { userId: cleanUserId, action: 'openChat' },
+          });
+        }
+      }
+    } catch {}
+  })();
 });
 
   socket.on('chat:deleteMessages', ({ userId, messageIds }) => {
@@ -1065,13 +1141,16 @@ io.on('connection', (socket) => {
     if (role === 'admin') {
       socket.data.role = 'admin';
       socket.join('admins');
+      state.adminPushTokens.add(cleanToken);
     }
 
     if (role === 'user' && userId) {
+      const cleanUserId = String(userId);
       socket.data.role = 'user';
-      socket.data.userId = String(userId);
+      socket.data.userId = cleanUserId;
       socket.join('users');
-      socket.join(`user:${String(userId)}`);
+      socket.join(`user:${cleanUserId}`);
+      state.pushTokensByUserId[cleanUserId] = cleanToken;
     }
 
     console.log('Push token registered:', {
