@@ -1,0 +1,5445 @@
+﻿// src/screens/AdminPin.js
+
+import React, { useEffect, useState } from 'react';
+import {
+  BackHandler,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { socket } from '../socket';
+
+const EYE_ICON = require('../assets/icons/oko.png');
+const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
+const FUCKER_ICON = require('../assets/icons/fuckerr.png');
+
+const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
+const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '8831';
+const DEFAULT_ADMIN_STATUS = globalThis.CUSIIK_ADMIN_STATUS || 'off';
+
+const MUTE_OPTIONS = [
+  { label: '5 min', milliseconds: 5 * 60 * 1000 },
+  { label: '10 min', milliseconds: 10 * 60 * 1000 },
+  { label: '30 min', milliseconds: 30 * 60 * 1000 },
+  { label: '1 hod', milliseconds: 60 * 60 * 1000 },
+  { label: '5 hod', milliseconds: 5 * 60 * 60 * 1000 },
+  { label: '12 hod', milliseconds: 12 * 60 * 60 * 1000 },
+  { label: '1 den', milliseconds: 24 * 60 * 60 * 1000 },
+  { label: '2 dny', milliseconds: 2 * 24 * 60 * 60 * 1000 },
+];
+
+const USER_COLOURS = [
+  { label: 'ZelenĂˇ', value: '#35c759' },
+  { label: 'ÄŚervenĂˇ', value: '#ff3b30' },
+  { label: 'Ĺ˝lutĂˇ', value: '#ffcc00' },
+  { label: 'OranĹľovĂˇ', value: '#ff9500' },
+  { label: 'FialovĂˇ', value: '#af52de' },
+  { label: 'BĂ­lĂˇ', value: '#ffffff' },
+  { label: 'RĹŻĹľovĂˇ', value: '#ff6fb7' },
+  { label: 'ÄŚernĂˇ', value: '#111111' },
+  { label: 'HnÄ›dĂˇ', value: '#8b5a2b' },
+  { label: 'TyrkysovĂˇ', value: '#40e0d0' },
+];
+
+const USER_ICON_SOURCES = {
+  uzivatel: require('../assets/icons/uzivatel.png'),
+  cat: require('../assets/icons/cat.png'),
+  pes: require('../assets/icons/pes.png'),
+  happy: require('../assets/icons/happy.png'),
+  devil: require('../assets/icons/devil.png'),
+  klaun: require('../assets/icons/klaun.png'),
+  stop: require('../assets/icons/stop.png'),
+  vykricnik: require('../assets/icons/vykricnik.png'),
+  fuckerr: require('../assets/icons/fuckerr.png'),
+  zachod: require('../assets/icons/zachod.png'),
+  admin: require('../assets/icons/admin.png'),
+};
+
+const ADMIN_ICON_OPTIONS = [
+  { key: 'admin', label: 'admin' },
+  { key: 'uzivatel', label: 'uzivatel' },
+  { key: 'cat', label: 'kocka' },
+  { key: 'pes', label: 'pes' },
+  { key: 'devil', label: 'devil' },
+  { key: 'klaun', label: 'klaun' },
+  { key: 'happy', label: 'prsa' },
+  { key: 'stop', label: 'stop' },
+  { key: 'vykricnik', label: 'vystraha' },
+  { key: 'zachod', label: 'zachod' },
+];
+
+const normalizeAvatarIcon = (iconKey) => {
+  const cleanIcon = String(iconKey || '').trim().toLowerCase();
+
+  if (cleanIcon === 'klan') {
+    return 'klaun';
+  }
+
+  if (cleanIcon === 'fucker') {
+    return 'fuckerr';
+  }
+
+  return USER_ICON_SOURCES[cleanIcon] ? cleanIcon : 'uzivatel';
+};
+
+const getUserIconSource = (iconKey) => {
+  return USER_ICON_SOURCES[normalizeAvatarIcon(iconKey)] || USER_ICON_SOURCES.uzivatel;
+};
+
+const getGlobalMutedUsers = () => {
+  if (!globalThis.CUSIIK_MUTED_USERS) {
+    globalThis.CUSIIK_MUTED_USERS = {};
+  }
+
+  return globalThis.CUSIIK_MUTED_USERS;
+};
+
+const getGlobalSecretMutedUsers = () => {
+  if (!globalThis.CUSIIK_SECRET_MUTED_USERS) {
+    globalThis.CUSIIK_SECRET_MUTED_USERS = {};
+  }
+
+  return globalThis.CUSIIK_SECRET_MUTED_USERS;
+};
+
+const getGlobalChats = () => {
+  if (!globalThis.CUSIIK_CHATS) {
+    globalThis.CUSIIK_CHATS = {};
+  }
+
+  return globalThis.CUSIIK_CHATS;
+};
+
+const getGlobalReadCounts = () => {
+  if (!globalThis.CUSIIK_ADMIN_READ_COUNTS) {
+    globalThis.CUSIIK_ADMIN_READ_COUNTS = {};
+  }
+
+  return globalThis.CUSIIK_ADMIN_READ_COUNTS;
+};
+
+const getMuteMsLeft = (userId, nowTick) => {
+  const mutedUsers = getGlobalMutedUsers();
+  const muteUntil = mutedUsers[userId] || 0;
+  const diff = muteUntil - nowTick;
+
+  return diff > 0 ? diff : 0;
+};
+
+const isUserMutedNow = (userId, nowTick) => {
+  return getMuteMsLeft(userId, nowTick) > 0;
+};
+
+const formatMuteLeft = (userId, nowTick) => {
+  const diff = getMuteMsLeft(userId, nowTick);
+
+  if (diff <= 0) {
+    return '';
+  }
+
+  const minutes = Math.ceil(diff / 1000 / 60);
+
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const hours = Math.ceil(minutes / 60);
+
+  if (hours < 24) {
+    return `${hours} hod`;
+  }
+
+  const days = Math.ceil(hours / 24);
+
+  if (days === 1) {
+    return '1 den';
+  }
+
+  if (days >= 2 && days <= 4) {
+    return `${days} dny`;
+  }
+
+  return `${days} dnĂ­`;
+};
+
+const formatLastSeen = (user, nowTick) => {
+  if (user.online) {
+    return 'Online';
+  }
+
+  const lastSeenAt = user.lastSeenAt || user.lastSeen || 0;
+
+  if (!lastSeenAt) {
+    return 'Offline';
+  }
+
+  const diff = nowTick - lastSeenAt;
+
+  if (diff <= 0) {
+    return 'Byl online prĂˇvÄ› teÄŹ';
+  }
+
+  const minutes = Math.floor(diff / 1000 / 60);
+
+  if (minutes < 1) {
+    return 'Byl online pĹ™ed chvĂ­lĂ­';
+  }
+
+  if (minutes < 60) {
+    return `Byl online pĹ™ed ${minutes} min`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 24) {
+    return `Byl online pĹ™ed ${hours} hod`;
+  }
+
+  const days = Math.floor(hours / 24);
+
+  if (days === 1) {
+    return 'Byl online pĹ™ed 1 dnem';
+  }
+
+  return `Byl online pĹ™ed ${days} dny`;
+};
+
+const getUserMessageCount = (userId) => {
+  const chats = getGlobalChats();
+  const messages = chats[userId] || [];
+
+  return messages.filter((message) => message.sender === 'user').length;
+};
+
+const areReadCountsEqual = (a, b) => {
+  const aKeys = Object.keys(a || {});
+  const bKeys = Object.keys(b || {});
+
+  if (aKeys.length !== bKeys.length) {
+    return false;
+  }
+
+  return aKeys.every((key) => (a?.[key] || 0) === (b?.[key] || 0));
+};
+
+const areUsersEqual = (a, b) => {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  for (let index = 0; index < a.length; index += 1) {
+    const current = a[index];
+    const next = b[index];
+
+    if (
+      current.id !== next.id ||
+      current.name !== next.name ||
+      current.online !== next.online ||
+      current.lastSeenAt !== next.lastSeenAt ||
+      current.silhouetteColour !== next.silhouetteColour ||
+      current.bgColour !== next.bgColour ||
+      current.avatarIcon !== next.avatarIcon
+      || Boolean(current.avatarLocked) !== Boolean(next.avatarLocked)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const AdminPin = ({ navigation }) => {
+  const [users, setUsers] = useState([
+  ]);
+
+  const [nowTick, setNowTick] = useState(Date.now());
+
+  const [currentUserPin, setCurrentUserPin] = useState(DEFAULT_USER_PIN);
+  const [currentAdminPin, setCurrentAdminPin] = useState(DEFAULT_ADMIN_PIN);
+  const [adminStatus, setAdminStatus] = useState(DEFAULT_ADMIN_STATUS);
+
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [newUserName, setNewUserName] = useState('');
+
+  const [changeModalVisible, setChangeModalVisible] = useState(false);
+  const [newPin, setNewPin] = useState('');
+  const [changeError, setChangeError] = useState('');
+  const [hardResetConfirmStep1Visible, setHardResetConfirmStep1Visible] = useState(false);
+  const [hardResetConfirmStep2Visible, setHardResetConfirmStep2Visible] = useState(false);
+  const [pendingHardResetPin, setPendingHardResetPin] = useState('');
+
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [settingsScreen, setSettingsScreen] = useState('menu');
+  const [kickPin, setKickPin] = useState('0008');
+  const [kickPinError, setKickPinError] = useState('');
+
+  const [newAdminPin, setNewAdminPin] = useState('');
+  const [adminPinError, setAdminPinError] = useState('');
+
+  const [userMenuVisible, setUserMenuVisible] = useState(false);
+  const [actionUser, setActionUser] = useState(null);
+  const [muteModalVisible, setMuteModalVisible] = useState(false);
+  const [colourModalVisible, setColourModalVisible] = useState(false);
+
+  const [readCounts, setReadCounts] = useState(getGlobalReadCounts());
+  const [secretMutedUsers, setSecretMutedUsers] = useState(getGlobalSecretMutedUsers());
+  const [adminProfile, setAdminProfile] = useState(globalThis.CUSIIK_ADMIN_PROFILE || { icon: 'admin', silhouetteColour: '#0b3d91', bgColour: '#ece9d8' });
+  const [adminEditModalVisible, setAdminEditModalVisible] = useState(false);
+  const [adminIconModalVisible, setAdminIconModalVisible] = useState(false);
+  const [adminOutlineModalVisible, setAdminOutlineModalVisible] = useState(false);
+  const [adminBgModalVisible, setAdminBgModalVisible] = useState(false);
+  const [lastActionText, setLastActionText] = useState('');
+  const [connectionText, setConnectionText] = useState(
+    socket.connected ? 'Server online' : 'PĹ™ipojuji server...'
+  );
+
+  const isAdminOnline = adminStatus === 'on';
+  const isAdminJob = adminStatus === 'job';
+
+  const getAdminStatusLabel = () => {
+    if (adminStatus === 'on') {
+      return 'ON';
+    }
+
+    if (adminStatus === 'job') {
+      return 'JOB';
+    }
+
+    return 'OFF';
+  };
+
+  const getNextAdminStatus = () => {
+    if (adminStatus === 'off') {
+      return 'on';
+    }
+
+    if (adminStatus === 'on') {
+      return 'job';
+    }
+
+    return 'off';
+  };
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowTick(Date.now());
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handleConnect = () => {
+      setConnectionText('Server online');
+      socket.emit('state:get');
+      const pushToken = globalThis.CUSIIK_EXPO_PUSH_TOKEN;
+      if (pushToken) {
+        socket.emit('notifications:registerToken', {
+          token: pushToken,
+          role: 'admin',
+        });
+      }
+    };
+
+    const handleDisconnect = () => {
+      setConnectionText('Server offline - lokĂˇlnĂ­ reĹľim');
+    };
+
+    const handleConnectError = () => {
+      setConnectionText('Server nedostupnĂ˝ - lokĂˇlnĂ­ reĹľim');
+    };
+
+    const handleServerState = (serverState) => {
+      if (serverState?.adminStatus) {
+        setAdminStatus(serverState.adminStatus);
+        globalThis.CUSIIK_ADMIN_STATUS = serverState.adminStatus;
+      }
+
+      if (serverState?.userPin) {
+        setCurrentUserPin(serverState.userPin);
+        globalThis.CUSIIK_USER_PIN = serverState.userPin;
+      }
+
+      if (serverState?.mutedUsers) {
+        globalThis.CUSIIK_MUTED_USERS = serverState.mutedUsers;
+      }
+
+      if (serverState?.secretMutedUsers) {
+        setSecretMutedUsers(serverState.secretMutedUsers);
+        globalThis.CUSIIK_SECRET_MUTED_USERS = serverState.secretMutedUsers;
+      }
+
+      if (Array.isArray(serverState?.users)) {
+        const normalizedUsers = serverState.users.map((user) => ({
+          ...user,
+          online: Boolean(user.online),
+          lastSeenAt: user.lastSeenAt || user.lastSeen || 0,
+          silhouetteColour: user.silhouetteColour || user.colour || '#0b3d91',
+          bgColour: user.bgColour || '#ece9d8',
+          avatarIcon: normalizeAvatarIcon(user.avatarIcon),
+          avatarLocked: Boolean(user.avatarLocked),
+        }));
+
+        setUsers((currentUsers) => {
+          if (areUsersEqual(currentUsers, normalizedUsers)) {
+            return currentUsers;
+          }
+
+          return normalizedUsers;
+        });
+
+        // FIX: po reconnectu admina naÄŤĂ­st chaty vĹˇech uĹľivatelĹŻ pro sprĂˇvnĂ© unread
+        if (socket.connected) {
+          normalizedUsers.forEach((user) => {
+            socket.emit('chat:get', { userId: user.id });
+          });
+        }
+      }
+
+    };
+
+    const handleChatMessages = ({ userId, messages }) => {
+      const cleanUserId = String(userId || '').trim();
+
+      if (!cleanUserId) {
+        return;
+      }
+
+      const chats = getGlobalChats();
+      const safeMessages = messages || [];
+      const userMessagesCount = safeMessages.filter((item) => item?.sender === 'user').length;
+      const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
+
+      chats[cleanUserId] = safeMessages;
+
+      const nextReadCounts = { ...getGlobalReadCounts() };
+
+      if (!Object.prototype.hasOwnProperty.call(nextReadCounts, cleanUserId)) {
+        nextReadCounts[cleanUserId] = 0;
+      }
+
+      if (activeAdminChatUserId && activeAdminChatUserId === cleanUserId) {
+        nextReadCounts[cleanUserId] = userMessagesCount;
+      }
+
+      globalThis.CUSIIK_ADMIN_READ_COUNTS = nextReadCounts;
+
+      setNowTick(Date.now());
+
+      setReadCounts((currentReadCounts) => {
+        if (areReadCountsEqual(currentReadCounts, nextReadCounts)) {
+          return currentReadCounts;
+        }
+
+        return nextReadCounts;
+      });
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+    socket.on('server:state', handleServerState);
+    socket.on('chat:messages', handleChatMessages);
+
+    if (!socket.connected) {
+      socket.connect();
+    } else {
+      socket.emit('state:get');
+      const pushToken = globalThis.CUSIIK_EXPO_PUSH_TOKEN;
+      if (pushToken) {
+        socket.emit('notifications:registerToken', {
+          token: pushToken,
+          role: 'admin',
+        });
+      }
+    }
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+      socket.off('server:state', handleServerState);
+      socket.off('chat:messages', handleChatMessages);
+    };
+  }, []);
+
+  const renderUserNameWithMute = (user, textStyle) => {
+    const muteText = formatMuteLeft(user.id, nowTick);
+    const isSecretMuted = Boolean(secretMutedUsers[user.id]);
+
+    return (
+      <Text style={textStyle}>
+        {user.name}
+        {muteText ? <Text style={styles.mutedMinutesText}> ({muteText})</Text> : null}
+        {isSecretMuted ? <Text style={styles.secretMutedText}> (potajĂ­)</Text> : null}
+      </Text>
+    );
+  };
+
+  const getUnreadCount = (userId) => {
+    const userMessageCount = getUserMessageCount(userId);
+    const readCount = readCounts[userId] || 0;
+    const unread = userMessageCount - readCount;
+
+    return unread > 0 ? unread : 0;
+  };
+
+  const markUserAsRead = (userId) => {
+    const nextReadCounts = {
+      ...getGlobalReadCounts(),
+      [userId]: getUserMessageCount(userId),
+    };
+
+    globalThis.CUSIIK_ADMIN_READ_COUNTS = nextReadCounts;
+    setReadCounts(nextReadCounts);
+  };
+
+  const openAdminChat = (user) => {
+    markUserAsRead(user.id);
+
+    navigation.navigate('AdminChat', {
+      userId: user.id,
+      userName: user.name,
+    });
+  };
+
+  const openUserMenu = (user) => {
+    setActionUser(user);
+    setUserMenuVisible(true);
+  };
+
+  const goToPinEntry = () => {
+    try {
+      socket.emit('auth:logout');
+      globalThis.CUSIIK_CURRENT_ROLE = null;
+      globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID = null;
+    } catch {}
+    navigation.replace('PinEntry');
+  };
+
+  const closeApp = () => {
+    try {
+      if (Platform.OS === 'android') {
+        BackHandler.exitApp();
+      } else {
+        BackHandler.exitApp();
+      }
+    } catch {}
+  };
+
+  const closeUserMenu = () => {
+    setUserMenuVisible(false);
+    setActionUser(null);
+  };
+
+  const toggleAdminStatus = () => {
+    const nextStatus = getNextAdminStatus();
+
+    globalThis.CUSIIK_ADMIN_STATUS = nextStatus;
+    setAdminStatus(nextStatus);
+
+    if (socket.connected) {
+      socket.emit('admin:setStatus', {
+        status: nextStatus,
+      });
+    }
+
+    setLastActionText(
+      nextStatus === 'on'
+        ? 'Status admina byl pĹ™epnut na ON.'
+        : nextStatus === 'job'
+          ? 'Status admina byl pĹ™epnut na JOB.'
+          : 'Status admina byl pĹ™epnut na OFF.'
+    );
+  };
+
+  const openRenameModal = (user) => {
+    setSelectedUser(user);
+    setNewUserName(user.name);
+    setRenameModalVisible(true);
+    setUserMenuVisible(false);
+  };
+
+  const closeRenameModal = () => {
+    setRenameModalVisible(false);
+    setSelectedUser(null);
+    setNewUserName('');
+  };
+
+  const saveRename = () => {
+    const trimmedName = newUserName.trim();
+
+    if (!selectedUser || !trimmedName) {
+      return;
+    }
+
+    setUsers((currentUsers) =>
+      currentUsers.map((user) =>
+        user.id === selectedUser.id
+          ? {
+              ...user,
+              name: trimmedName,
+            }
+          : user
+      )
+    );
+
+    if (socket.connected) {
+      socket.emit('admin:renameUser', {
+        userId: selectedUser.id,
+        name: trimmedName,
+      });
+    }
+
+    setLastActionText(`UĹľivatel byl pĹ™ejmenovĂˇn na ${trimmedName}.`);
+    closeRenameModal();
+  };
+
+  const openChangeModal = () => {
+    setNewPin('');
+    setChangeError('');
+    setChangeModalVisible(true);
+  };
+
+  const closeChangeModal = () => {
+    setChangeModalVisible(false);
+    setNewPin('');
+    setChangeError('');
+    setPendingHardResetPin('');
+    setHardResetConfirmStep1Visible(false);
+    setHardResetConfirmStep2Visible(false);
+  };
+
+  const saveChangeAndKickUsers = () => {
+    const cleanedPin = newPin.replace(/[^0-9]/g, '').slice(0, 4);
+
+    if (cleanedPin.length !== 4) {
+      setChangeError('PIN musĂ­ mĂ­t pĹ™esnÄ› 4 ÄŤĂ­slice.');
+      return;
+    }
+
+    setPendingHardResetPin(cleanedPin);
+    setHardResetConfirmStep1Visible(true);
+  };
+
+  const confirmHardResetStep1 = () => {
+    setHardResetConfirmStep1Visible(false);
+    setHardResetConfirmStep2Visible(true);
+  };
+
+  const confirmHardResetFinal = () => {
+    const cleanPin = String(pendingHardResetPin || '').replace(/[^0-9]/g, '').slice(0, 4);
+
+    if (cleanPin.length !== 4) {
+      setHardResetConfirmStep2Visible(false);
+      setChangeError('PIN musĂ­ mĂ­t pĹ™esnÄ› 4 ÄŤĂ­slice.');
+      return;
+    }
+
+    globalThis.CUSIIK_USER_PIN = cleanPin;
+    setCurrentUserPin(cleanPin);
+
+    if (socket.connected) {
+      socket.emit('admin:setUserPin', {
+        pin: cleanPin,
+      });
+    }
+
+    setLastActionText(`HARD ROOM RESET proveden. NovĂ˝ PIN je ${cleanPin}.`);
+
+    setHardResetConfirmStep2Visible(false);
+    closeChangeModal();
+  };
+
+  const openSettings = () => {
+    setSettingsScreen('menu');
+    setNewAdminPin('');
+    setAdminPinError('');
+    setKickPin('0008');
+    setKickPinError('');
+    setSettingsModalVisible(true);
+  };
+
+  const closeSettings = () => {
+    setSettingsModalVisible(false);
+    setSettingsScreen('menu');
+    setNewAdminPin('');
+    setAdminPinError('');
+    setKickPin('0008');
+    setKickPinError('');
+  };
+
+  const goBackToSettingsMenu = () => {
+    setSettingsScreen('menu');
+    setNewAdminPin('');
+    setAdminPinError('');
+    setKickPinError('');
+  };
+
+  const chooseUserToKick = (user) => {
+    const cleanedPin = String(kickPin || '').replace(/[^0-9]/g, '').slice(0, 4);
+
+    if (cleanedPin.length !== 4) {
+      setKickPinError('PIN pro kick musĂ­ mĂ­t pĹ™esnÄ› 4 ÄŤĂ­slice.');
+      return;
+    }
+
+    kickUserById(user, { newPin: cleanedPin });
+    closeSettings();
+  };
+
+  const kickUserById = (user, options = {}) => {
+    if (!user) {
+      return;
+    }
+
+    const targetPin = String(options.newPin || '').replace(/[^0-9]/g, '').slice(0, 4);
+
+    if (socket.connected) {
+      socket.emit('admin:kickUser', {
+        userId: user.id,
+        newPin: targetPin || undefined,
+      });
+    }
+
+    if (targetPin.length === 4) {
+      setLastActionText(
+        `UĹľivatel ${user.name} byl kicknut. Jeho speciĂˇlnĂ­ PIN je ${targetPin}.`
+      );
+      return;
+    }
+
+    setLastActionText(`UĹľivatel ${user.name} byl kicknut z roomky.`);
+  };
+
+  const saveNewAdminPin = () => {
+    const cleanedPin = newAdminPin.replace(/[^0-9]/g, '').slice(0, 4);
+
+    if (cleanedPin.length !== 4) {
+      setAdminPinError('Admin PIN musĂ­ mĂ­t pĹ™esnÄ› 4 ÄŤĂ­slice.');
+      return;
+    }
+
+    globalThis.CUSIIK_ADMIN_PIN = cleanedPin;
+
+    setCurrentAdminPin(cleanedPin);
+
+    if (socket.connected) {
+      socket.emit('admin:setAdminPin', {
+        pin: cleanedPin,
+      });
+    }
+
+    setLastActionText(`Admin PIN byl zmÄ›nÄ›n na ${cleanedPin}.`);
+
+    goBackToSettingsMenu();
+  };
+
+  const muteUser = (user, option) => {
+    if (!user) {
+      return;
+    }
+
+    const mutedUsers = getGlobalMutedUsers();
+    const secretMutedUsersMap = getGlobalSecretMutedUsers();
+    const muteUntilTime = Date.now() + option.milliseconds;
+
+    delete secretMutedUsersMap[user.id];
+    globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsersMap;
+
+    mutedUsers[user.id] = muteUntilTime;
+    globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+
+    setSecretMutedUsers({ ...secretMutedUsersMap });
+
+    if (socket.connected) {
+      socket.emit('admin:secretMuteUser', {
+        userId: user.id,
+        enabled: false,
+      });
+
+      socket.emit('admin:muteUser', {
+        userId: user.id,
+        milliseconds: option.milliseconds,
+      });
+
+      socket.emit('chat:send', {
+        userId: user.id,
+        sender: 'system',
+        text: `UĹľivatel ${user.name} byl umlÄŤen na ${option.label}.`,
+      });
+    }
+
+    setNowTick(Date.now());
+    setLastActionText(`UĹľivatel ${user.name} byl umlÄŤen na ${option.label}.`);
+    setMuteModalVisible(false);
+    closeUserMenu();
+  };
+
+  const unmuteUser = (user) => {
+    if (!user) {
+      return;
+    }
+
+    const mutedUsers = getGlobalMutedUsers();
+    delete mutedUsers[user.id];
+    globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+
+    if (socket.connected) {
+      socket.emit('admin:unmuteUser', {
+        userId: user.id,
+      });
+
+      socket.emit('chat:send', {
+        userId: user.id,
+        sender: 'system',
+        text: `UĹľivatel ${user.name} uĹľ nenĂ­ umlÄŤen.`,
+      });
+    }
+
+    setNowTick(Date.now());
+    setLastActionText(`UmlÄŤenĂ­ uĹľivatele ${user.name} bylo zruĹˇeno.`);
+    setMuteModalVisible(false);
+    closeUserMenu();
+  };
+
+  const openMuteModalForUser = (user) => {
+    if (!user) {
+      return;
+    }
+
+    setActionUser(user);
+    setMuteModalVisible(true);
+    setUserMenuVisible(false);
+  };
+
+  const toggleSecretMute = (user) => {
+    if (!user) {
+      return;
+    }
+
+    const secretMutedUsers = getGlobalSecretMutedUsers();
+    const nextValue = !secretMutedUsers[user.id];
+    const mutedUsers = getGlobalMutedUsers();
+
+    if (nextValue) {
+      secretMutedUsers[user.id] = true;
+    } else {
+      delete secretMutedUsers[user.id];
+    }
+    globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsers;
+
+    if (nextValue) {
+      delete mutedUsers[user.id];
+      globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+    }
+
+    if (socket.connected) {
+      socket.emit('admin:secretMuteUser', {
+        userId: user.id,
+        enabled: nextValue,
+      });
+
+      if (nextValue) {
+        socket.emit('admin:unmuteUser', {
+          userId: user.id,
+        });
+      }
+    }
+
+    setNowTick(Date.now());
+    setSecretMutedUsers({ ...secretMutedUsers });
+    setLastActionText(
+      nextValue
+        ? `UĹľivatel ${user.name} byl umlÄŤen potajĂ­.`
+        : `TajnĂ© umlÄŤenĂ­ uĹľivatele ${user.name} bylo zruĹˇeno.`
+    );
+
+    closeUserMenu();
+  };
+
+  const changeUserColour = (user, colour) => {
+    if (!user) {
+      return;
+    }
+
+    setUsers((currentUsers) =>
+      currentUsers.map((currentUser) =>
+        currentUser.id === user.id
+          ? {
+              ...currentUser,
+              silhouetteColour: colour,
+            }
+          : currentUser
+      )
+    );
+
+    if (socket.connected) {
+      socket.emit('admin:setUserColour', {
+        userId: user.id,
+        colour,
+      });
+    }
+
+    setLastActionText(`Obrys uĹľivatele ${user.name} byl zmÄ›nÄ›n.`);
+    setColourModalVisible(false);
+    closeUserMenu();
+  };
+
+  const setUserToFuckerAvatar = (user) => {
+    if (!user) {
+      return;
+    }
+
+    const nextEnabled = !Boolean(user.avatarLocked);
+
+    setUsers((currentUsers) =>
+      currentUsers.map((currentUser) =>
+        currentUser.id === user.id
+          ? {
+              ...currentUser,
+              avatarIcon: nextEnabled ? 'fuckerr' : 'uzivatel',
+              avatarLocked: nextEnabled,
+            }
+          : currentUser
+      )
+    );
+
+    if (socket.connected) {
+      socket.emit('admin:setUserFuckerAvatar', {
+        userId: user.id,
+        enabled: nextEnabled,
+      });
+    }
+
+    setLastActionText(
+      nextEnabled
+        ? `UĹľivatel ${user.name} mĂˇ uzamÄŤenou ikonku na fuckera.`
+        : `UĹľivatel ${user.name} uĹľ nemĂˇ uzamÄŤenou ikonku na fuckera.`
+    );
+  };
+
+  const totalUnreadMessages = users.reduce((sum, user) => {
+    return sum + getUnreadCount(user.id);
+  }, 0);
+
+  const getUnreadSummaryText = () => {
+    if (totalUnreadMessages <= 0) {
+      return 'NemĂˇte novĂ© zprĂˇvy';
+    }
+
+    if (totalUnreadMessages === 1) {
+      return 'MĂˇte 1 novou zprĂˇvu';
+    }
+
+    if (totalUnreadMessages >= 2 && totalUnreadMessages <= 4) {
+      return `MĂˇte ${totalUnreadMessages} novĂ© zprĂˇvy`;
+    }
+
+    return `MĂˇte ${totalUnreadMessages} novĂ˝ch zprĂˇv`;
+  };
+
+  const renderSettingsContent = () => {
+    if (settingsScreen === 'kick') {
+      return (
+        <View style={styles.modalBody}>
+          <Text style={styles.modalLabel}>PIN pro kicknutĂ©ho uĹľivatele:</Text>
+
+          <TextInput
+            value={kickPin}
+            onChangeText={(value) => {
+              setKickPinError('');
+              setKickPin(value.replace(/[^0-9]/g, '').slice(0, 4));
+            }}
+            style={styles.modalInput}
+            placeholder="NapĹ™. 0008"
+            placeholderTextColor="#666666"
+            maxLength={4}
+            keyboardType="number-pad"
+            inputMode="numeric"
+          />
+
+          {kickPinError ? (
+            <Text style={styles.errorText}>{kickPinError}</Text>
+          ) : null}
+
+          <Text style={styles.modalLabel}>Vyber uĹľivatele ke kicku:</Text>
+
+          {users.length === 0 ? (
+            <View style={styles.smallEmptyBox}>
+              <Text style={styles.smallEmptyText}>
+                V roomce teÄŹ nenĂ­ ĹľĂˇdnĂ˝ uĹľivatel.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView style={styles.settingsList}>
+              {[...users]
+                .sort((a, b) => {
+                  if (a.online !== b.online) {
+                    return a.online ? -1 : 1;
+                  }
+
+                  return (b.lastSeenAt || 0) - (a.lastSeenAt || 0);
+                })
+                .map((user) => (
+                <Pressable
+                  key={user.id}
+                  style={({ pressed }) => [
+                    styles.settingsUserRow,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => chooseUserToKick(user)}
+                >
+                  <View
+                    style={[
+                      styles.smallUserIconBox,
+                      {
+                        backgroundColor: user.bgColour || '#dceaff',
+                        borderTopColor: user.silhouetteColour || '#0b3d91',
+                        borderLeftColor: user.silhouetteColour || '#0b3d91',
+                        borderRightColor: user.silhouetteColour || '#0b3d91',
+                        borderBottomColor: user.silhouetteColour || '#0b3d91',
+                      },
+                    ]}
+                  >
+                    <Image
+                      source={getUserIconSource(user.avatarIcon)}
+                      style={styles.smallUserIconImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <View style={styles.settingsUserTextBox}>
+                    {renderUserNameWithMute(user, styles.settingsUserName)}
+                    <Text style={styles.settingsUserSubText}>
+                      KliknutĂ­m vybereĹˇ ke kicku
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+
+          <View style={styles.modalButtons}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && styles.xpButtonPressed,
+              ]}
+              onPress={goBackToSettingsMenu}
+            >
+              <Text style={styles.modalButtonText}>ZpÄ›t</Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
+
+    if (settingsScreen === 'adminPin') {
+      return (
+        <View style={styles.modalBody}>
+          <Text style={styles.modalLabel}>Nastavit novĂ˝ admin PIN:</Text>
+
+          <TextInput
+            value={newAdminPin}
+            onChangeText={(value) => {
+              setAdminPinError('');
+              setNewAdminPin(value.replace(/[^0-9]/g, '').slice(0, 4));
+            }}
+            style={styles.modalInput}
+            placeholder="NapĹ™. 9876"
+            placeholderTextColor="#666666"
+            autoFocus
+            maxLength={4}
+            keyboardType="number-pad"
+            inputMode="numeric"
+          />
+
+          <View style={styles.warningBox}>
+            <Text style={styles.warningText}>
+              AktuĂˇlnĂ­ admin PIN: {currentAdminPin}
+            </Text>
+          </View>
+
+          {adminPinError ? (
+            <Text style={styles.errorText}>{adminPinError}</Text>
+          ) : null}
+
+          <View style={styles.modalButtons}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && styles.xpButtonPressed,
+              ]}
+              onPress={saveNewAdminPin}
+            >
+              <Text style={styles.modalButtonText}>UloĹľit</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && styles.xpButtonPressed,
+              ]}
+              onPress={goBackToSettingsMenu}
+            >
+              <Text style={styles.modalButtonText}>ZpÄ›t</Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.modalBody}>
+        <Text style={styles.modalLabel}>Vyber akci v nastavenĂ­:</Text>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.statusOption,
+            isAdminOnline
+              ? styles.statusOptionOn
+              : isAdminJob
+                ? styles.statusOptionJob
+                : styles.statusOptionOff,
+            pressed && styles.xpButtonPressed,
+          ]}
+          onPress={toggleAdminStatus}
+        >
+          <View style={styles.statusOptionTop}>
+            <View
+              style={[
+                styles.statusDot,
+                isAdminOnline
+                  ? styles.statusDotOn
+                  : isAdminJob
+                    ? styles.statusDotJob
+                    : styles.statusDotOff,
+              ]}
+            />
+
+            <Text style={styles.statusOptionTitle}>
+              Status admina: {getAdminStatusLabel()}
+            </Text>
+          </View>
+
+          <Text style={styles.statusOptionText}>
+            KliknutĂ­m pĹ™epneĹˇ stav, kterĂ˝ uvidĂ­ uĹľivatel v chatu.
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.settingsOption,
+            pressed && styles.xpButtonPressed,
+          ]}
+          onPress={() => setSettingsScreen('kick')}
+        >
+          <Text style={styles.settingsOptionTitle}>Kick uĹľivatele</Text>
+          <Text style={styles.settingsOptionText}>
+            NastavĂ­Ĺˇ PIN pro vybranĂ©ho uĹľivatele a pak ho kickneĹˇ.
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.settingsOption,
+            pressed && styles.xpButtonPressed,
+          ]}
+          onPress={() => setSettingsScreen('adminPin')}
+        >
+          <Text style={styles.settingsOptionTitle}>Admin PIN</Text>
+          <Text style={styles.settingsOptionText}>
+            NastavĂ­Ĺˇ novĂ˝ PIN pro vstup do admin panelu.
+          </Text>
+        </Pressable>
+
+        <View style={styles.modalButtons}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.modalButton,
+              pressed && styles.xpButtonPressed,
+            ]}
+            onPress={closeSettings}
+          >
+            <Text style={styles.modalButtonText}>ZavĹ™Ă­t</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
+
+      <KeyboardAvoidingView
+        style={styles.page}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={styles.window}>
+          <View style={styles.titleBar}>
+            <View style={styles.titleLeft}>
+              <View style={styles.windowsIcon}>
+                <View style={[styles.winSquare, { backgroundColor: '#f35325' }]} />
+                <View style={[styles.winSquare, { backgroundColor: '#81bc06' }]} />
+                <View style={[styles.winSquare, { backgroundColor: '#05a6f0' }]} />
+                <View style={[styles.winSquare, { backgroundColor: '#ffba08' }]} />
+              </View>
+
+              <Text style={styles.titleText}>Admin panel</Text>
+            </View>
+
+            <View style={styles.windowButtons}>
+              <View style={styles.windowButton}>
+                <Pressable style={styles.closePressable} onPress={goToPinEntry}>
+                  <Text style={styles.windowButtonText}>â†</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.windowButton}>
+                <Pressable style={styles.closePressable} onPress={() => {
+                  try {
+                    if (Platform.OS === 'android') {
+                      BackHandler.moveTaskToBack();
+                    }
+                  } catch {}
+                }}>
+                  <Text style={styles.windowButtonText}>_</Text>
+                </Pressable>
+              </View>
+
+              <View style={[styles.windowButton, styles.closeButton]}>
+                <Pressable style={styles.closePressable} onPress={closeApp}>
+                  <Text style={[styles.windowButtonText, styles.closeButtonText]}>Ă—</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.body}>
+            <View style={styles.topInfoPanel}>
+              <View style={styles.topInfoLeftColumn}>
+                <Text style={styles.topInfoText}>
+                  UĹľivatelskĂ˝ PIN: <Text style={styles.pinText}>{currentUserPin}</Text>
+                </Text>
+
+                <View style={styles.adminStatusRow}>
+                  <View
+                    style={[
+                      styles.adminStatusDot,
+                      isAdminOnline
+                        ? styles.statusDotOn
+                        : isAdminJob
+                          ? styles.statusDotJob
+                          : styles.statusDotOff,
+                    ]}
+                  />
+                  <Text style={styles.topInfoText}>
+                    Admin status:{' '}
+                    <Text style={styles.pinText}>{getAdminStatusLabel()}</Text>
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.topInfoUnreadText}>{getUnreadSummaryText()}</Text>
+
+            </View>
+
+            <View style={styles.usersPanel}>
+              <View style={styles.panelTitleBar}>
+                <Text style={styles.panelTitleText}>UĹľivatelĂ© v roomce</Text>
+                <Text style={styles.panelCountText}>
+                  {users.filter((user) => user.online).length} online
+                </Text>
+              </View>
+
+              <ScrollView
+                style={styles.usersScroll}
+                contentContainerStyle={styles.usersContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {users.length === 0 ? (
+                  <View style={styles.emptyBox}>
+                    <Text style={styles.emptyIcon}>đźšŞ</Text>
+                    <Text style={styles.emptyTitle}>Roomka je prĂˇzdnĂˇ</Text>
+                    <Text style={styles.emptyText}>
+                      VĹˇichni uĹľivatelĂ© byli vykopnuti nebo se zatĂ­m nikdo nepĹ™ipojil.
+                    </Text>
+                  </View>
+                ) : (
+                  [...users]
+                    .sort((a, b) => {
+                      if (a.online !== b.online) {
+                        return a.online ? -1 : 1;
+                      }
+
+                      return (b.lastSeenAt || 0) - (a.lastSeenAt || 0);
+                    })
+                    .map((user) => {
+                    const unreadCount = getUnreadCount(user.id);
+                    const isUserMuted = getMuteMsLeft(user.id, nowTick) > 0;
+                    const isUserSecretMuted = Boolean(secretMutedUsers[user.id]);
+                    const isUserFuckerLocked = Boolean(user.avatarLocked);
+
+                    return (
+                      <View
+                        key={user.id}
+                        style={[
+                          styles.userRow,
+                          isUserSecretMuted
+                            ? styles.userRowSecretMuted
+                            : isUserMuted
+                              ? styles.userRowMuted
+                              : null,
+                        ]}
+                      >
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.userInfo,
+                            pressed && styles.userInfoPressed,
+                          ]}
+                          onPress={() => openAdminChat(user)}
+                        >
+                          <View
+                            style={[
+                              styles.userIconBox,
+                              {
+                                backgroundColor: user.bgColour || '#dceaff',
+                                borderTopColor: user.silhouetteColour || '#0b3d91',
+                                borderLeftColor: user.silhouetteColour || '#0b3d91',
+                                borderRightColor: user.silhouetteColour || '#0b3d91',
+                                borderBottomColor: user.silhouetteColour || '#0b3d91',
+                              },
+                            ]}
+                          >
+                            <Image
+                              source={getUserIconSource(user.avatarIcon)}
+                              style={styles.userIconImage}
+                              resizeMode="contain"
+                            />
+                          </View>
+
+                          <View style={styles.userTextBox}>
+                            <View style={styles.userNameRow}>
+                              {renderUserNameWithMute(user, styles.userName)}
+
+                              {unreadCount > 0 ? (
+                                <View style={styles.unreadBadge}>
+                                  <Text style={styles.unreadBadgeText}>
+                                    {unreadCount}{' '}
+                                    {unreadCount === 1 ? 'novĂˇ zprĂˇva' : 'novĂ˝ch zprĂˇv'}
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+
+                            <Text
+                              style={[
+                                styles.userStatus,
+                                user.online ? styles.userStatusOnline : null,
+                              ]}
+                            >
+                              {formatLastSeen(user, nowTick)}
+                            </Text>
+                          </View>
+                        </Pressable>
+
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.eyeToggleButton,
+                            pressed && styles.xpButtonPressed,
+                            isUserSecretMuted && styles.eyeToggleButtonActive,
+                            !isUserSecretMuted && isUserMuted && styles.eyeToggleButtonMuted,
+                          ]}
+                          onPress={() => toggleSecretMute(user)}
+                          onLongPress={() => openMuteModalForUser(user)}
+                          delayLongPress={260}
+                        >
+                          <Image
+                            source={isUserSecretMuted ? EYE_SLASH_ICON : EYE_ICON}
+                            style={styles.eyeToggleIcon}
+                            resizeMode="contain"
+                          />
+                        </Pressable>
+
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.fuckerButton,
+                            isUserFuckerLocked && styles.fuckerButtonActive,
+                            pressed && styles.xpButtonPressed,
+                          ]}
+                          onPress={() => setUserToFuckerAvatar(user)}
+                        >
+                          <Image
+                            source={FUCKER_ICON}
+                            style={styles.fuckerButtonIcon}
+                            resizeMode="contain"
+                          />
+                        </Pressable>
+
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.gearButton,
+                            pressed && styles.xpButtonPressed,
+                          ]}
+                          onPress={() => openUserMenu(user)}
+                        >
+                          <Text style={styles.gearButtonText}>âš™</Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
+
+            {lastActionText ? (
+              <View style={styles.actionBox}>
+                <Text style={styles.actionText}>{lastActionText}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.bottomButtons}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.bottomButton,
+                  pressed && styles.xpButtonPressed,
+                ]}
+                onPress={openChangeModal}
+              >
+                <Text style={styles.bottomButtonText}>HARD ROOM RESET</Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.bottomButton,
+                  pressed && styles.xpButtonPressed,
+                ]}
+                onPress={openSettings}
+              >
+                <Text style={styles.bottomButtonText}>NastavenĂ­</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.statusBar}>
+            <Text style={styles.statusText}>PĹ™ipojeno jako admin</Text>
+            <Text style={styles.statusText}>{connectionText}</Text>
+          </View>
+        </View>
+
+        <Modal
+          visible={userMenuVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeUserMenu}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>
+                  NastavenĂ­ uĹľivatele
+                </Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closeUserMenu}>
+                  <Text style={styles.modalCloseButtonText}>Ă—</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.selectedUserText}>
+                  {actionUser ? actionUser.name : ''}
+                </Text>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => openRenameModal(actionUser)}
+                >
+                  <Text style={styles.settingsOptionTitle}>PĹ™ejmenovat</Text>
+                  <Text style={styles.settingsOptionText}>
+                    ZmÄ›nĂ­ jmĂ©no vybranĂ©ho uĹľivatele.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => {
+                    setColourModalVisible(true);
+                    setUserMenuVisible(false);
+                  }}
+                >
+                  <Text style={styles.settingsOptionTitle}>ZmÄ›na obrysu</Text>
+                  <Text style={styles.settingsOptionText}>
+                    ZmÄ›nĂ­ obrys uĹľivatele, kterĂ˝ uvidĂ­ admin i uĹľivatel.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => {
+                    kickUserById(actionUser, { newPin: '0008' });
+                    closeUserMenu();
+                  }}
+                >
+                  <Text style={styles.settingsOptionTitle}>Kick</Text>
+                  <Text style={styles.settingsOptionText}>
+                    VyhodĂ­ uĹľivatele z roomky a nastavĂ­ PIN 0008.
+                  </Text>
+                </Pressable>
+
+
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={muteModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setMuteModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>UmlÄŤet uĹľivatele</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setMuteModalVisible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>Ă—</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Vyber dĂ©lku umlÄŤenĂ­:</Text>
+                <Text style={styles.selectedUserText}>
+                  {actionUser ? actionUser.name : ''}
+                </Text>
+
+                <View style={styles.muteGrid}>
+                  {MUTE_OPTIONS.map((option) => (
+                    <Pressable
+                      key={option.label}
+                      style={({ pressed }) => [
+                        styles.muteOptionButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => muteUser(actionUser, option)}
+                    >
+                      <Text style={styles.muteOptionText}>{option.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={colourModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setColourModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>ZmÄ›na obrysu</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setColourModalVisible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>Ă—</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Vyber barvu obrysu pro uĹľivatele:</Text>
+                <Text style={styles.selectedUserText}>
+                  {actionUser ? actionUser.name : ''}
+                </Text>
+
+                <View style={styles.colourGrid}>
+                  {USER_COLOURS.map((colour) => (
+                    <Pressable
+                      key={colour.value}
+                      style={({ pressed }) => [
+                        styles.colourButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => changeUserColour(actionUser, colour.value)}
+                    >
+                      <View
+                        style={[
+                          styles.colourPreview,
+                          { backgroundColor: colour.value },
+                        ]}
+                      />
+                      <Text style={styles.colourButtonText}>{colour.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={renameModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeRenameModal}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>PĹ™ejmenovat uĹľivatele</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closeRenameModal}>
+                  <Text style={styles.modalCloseButtonText}>Ă—</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>NovĂ© jmĂ©no uĹľivatele:</Text>
+
+                <TextInput
+                  value={newUserName}
+                  onChangeText={setNewUserName}
+                  style={styles.modalInput}
+                  placeholder="Zadej novĂ© jmĂ©no"
+                  placeholderTextColor="#666666"
+                  autoFocus
+                  maxLength={30}
+                  returnKeyType="done"
+                  onSubmitEditing={saveRename}
+                />
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={saveRename}
+                  >
+                    <Text style={styles.modalButtonText}>UloĹľit</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={closeRenameModal}
+                  >
+                    <Text style={styles.modalButtonText}>ZruĹˇit</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={changeModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeChangeModal}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalWindow, styles.modalWindowDangerDouble]}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>HARD ROOM RESET</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closeChangeModal}>
+                  <Text style={styles.modalCloseButtonText}>Ă—</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>NovĂ˝ 4mĂ­stnĂ˝ PIN pro uĹľivatele:</Text>
+
+                <TextInput
+                  value={newPin}
+                  onChangeText={(value) => {
+                    setChangeError('');
+                    setNewPin(value.replace(/[^0-9]/g, '').slice(0, 4));
+                  }}
+                  style={styles.modalInput}
+                  placeholder="NapĹ™. 4582"
+                  placeholderTextColor="#666666"
+                  autoFocus
+                  maxLength={4}
+                  keyboardType="number-pad"
+                  inputMode="numeric"
+                />
+
+                <View style={styles.warningBox}>
+                  <Text style={styles.warningText}>
+                    Po potvrzenĂ­ se nastavĂ­ novĂ˝ PIN pro vĹˇechny uĹľivatele, vĹˇichni uĹľivatelĂ© budou kicknuti z roomky a smazĂˇni!
+                  </Text>
+                  <Text style={styles.warningText}>Opravdu chceĹˇ toto udÄ›lat?</Text>
+                  <Text style={styles.warningText}>
+                    Informoval jsi vĹˇechny dĹŻleĹľitĂ© o novĂ©m PINu?
+                  </Text>
+                </View>
+
+                {changeError ? (
+                  <Text style={styles.errorText}>{changeError}</Text>
+                ) : null}
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={saveChangeAndKickUsers}
+                  >
+                    <Text style={styles.modalButtonText}>Potvrdit HARD ROOM RESET</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={closeChangeModal}
+                  >
+                    <Text style={styles.modalButtonText}>ZruĹˇit</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={hardResetConfirmStep1Visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setHardResetConfirmStep1Visible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalWindow, styles.modalWindowDangerSingle]}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>HARD ROOM RESET - potvrzenĂ­ 1/2</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setHardResetConfirmStep1Visible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>Ă—</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <View style={styles.warningBox}>
+                  <Text style={styles.warningText}>
+                    Po potvrzenĂ­ se nastavĂ­ novĂ˝ PIN: {pendingHardResetPin || '----'}
+                  </Text>
+                  <Text style={styles.warningText}>
+                    VĹˇichni uĹľivatelĂ© budou kicknuti a roomka se resetuje.
+                  </Text>
+                </View>
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={confirmHardResetStep1}
+                  >
+                    <Text style={styles.modalButtonText}>PokraÄŤovat</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => setHardResetConfirmStep1Visible(false)}
+                  >
+                    <Text style={styles.modalButtonText}>ZruĹˇit</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={hardResetConfirmStep2Visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setHardResetConfirmStep2Visible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalWindow, styles.modalWindowDangerSingle]}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>HARD ROOM RESET - finĂˇlnĂ­ potvrzenĂ­</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setHardResetConfirmStep2Visible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>Ă—</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <View style={styles.warningBox}>
+                  <Text style={styles.warningText}>Tento krok je nevratnĂ˝.</Text>
+                  <Text style={styles.warningText}>Opravdu potvrdit HARD ROOM RESET?</Text>
+                </View>
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={confirmHardResetFinal}
+                  >
+                    <Text style={styles.modalButtonText}>ANO, potvrdit</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => setHardResetConfirmStep2Visible(false)}
+                  >
+                    <Text style={styles.modalButtonText}>NE</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={settingsModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeSettings}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>NastavenĂ­</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closeSettings}>
+                  <Text style={styles.modalCloseButtonText}>Ă—</Text>
+                </Pressable>
+              </View>
+
+              {renderSettingsContent()}
+            </View>
+          </View>
+        </Modal>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+};
+
+export default AdminPin;
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0058d8',
+  },
+
+  page: {
+    flex: 1,
+    backgroundColor: '#1f7a7a',
+  },
+
+  window: {
+    flex: 1,
+    backgroundColor: '#ece9d8',
+    borderWidth: 3,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#003c9e',
+    borderBottomColor: '#003c9e',
+  },
+
+  titleBar: {
+    height: 38,
+    backgroundColor: '#0058d8',
+    borderBottomWidth: 2,
+    borderBottomColor: '#003f9e',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 8,
+    paddingRight: 5,
+  },
+
+  titleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+
+  windowsIcon: {
+    width: 18,
+    height: 18,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginRight: 7,
+  },
+
+  winSquare: {
+    width: 8,
+    height: 8,
+    margin: 0.5,
+  },
+
+  titleText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '900',
+    flexShrink: 1,
+    textShadowColor: '#00245c',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 1,
+  },
+
+  windowButtons: {
+    flexDirection: 'row',
+    marginLeft: 8,
+  },
+
+  windowButton: {
+    width: 22,
+    height: 22,
+    marginLeft: 4,
+    backgroundColor: '#d7e8ff',
+    borderWidth: 1,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#174a9c',
+    borderBottomColor: '#174a9c',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  closeButton: {
+    backgroundColor: '#e04b31',
+  },
+
+  windowButtonText: {
+    color: '#003c8f',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 15,
+  },
+
+  closeButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    lineHeight: 19,
+  },
+
+  closePressable: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  body: {
+    flex: 1,
+    padding: 10,
+  },
+
+  topInfoPanel: {
+    backgroundColor: '#d6d3c3',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  topInfoText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+
+  pinText: {
+    color: '#003c9e',
+    fontWeight: '900',
+  },
+
+  adminStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  adminStatusDot: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    marginRight: 6,
+  },
+
+  usersPanel: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderTopColor: '#808080',
+    borderLeftColor: '#808080',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+  },
+
+  panelTitleBar: {
+    minHeight: 34,
+    backgroundColor: '#d6d3c3',
+    borderBottomWidth: 1,
+    borderBottomColor: '#aaa793',
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  panelTitleText: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  panelCountText: {
+    color: '#003c9e',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  usersScroll: {
+    flex: 1,
+  },
+
+  usersContent: {
+    padding: 10,
+    paddingBottom: 14,
+    flexGrow: 1,
+  },
+
+  userRow: {
+    width: '100%',
+    minHeight: 66,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    marginBottom: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  userInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 8,
+  },
+
+  userInfoPressed: {
+    opacity: 0.7,
+  },
+
+  userIconBox: {
+    width: 42,
+    height: 42,
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#245aa8',
+    borderBottomColor: '#245aa8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+
+  userIconImage: {
+    width: 26,
+    height: 26,
+  },
+
+  userTextBox: {
+    flex: 1,
+  },
+
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+
+  userName: {
+    color: '#000000',
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+
+  mutedMinutesText: {
+    color: '#c46a00',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  secretMutedText: {
+    color: '#7a00cc',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  topInfoLeftColumn: {
+    flex: 1,
+    paddingRight: 10,
+  },
+
+  topInfoUnreadText: {
+    color: '#8a4d00',
+    fontSize: 13,
+    fontWeight: '900',
+    textAlign: 'right',
+    flexShrink: 1,
+  },
+
+  unreadBadge: {
+    backgroundColor: '#ffd7d7',
+    borderWidth: 1,
+    borderColor: '#a80000',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    marginLeft: 6,
+    marginBottom: 3,
+  },
+
+  unreadBadgeText: {
+    color: '#8a0000',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  userStatus: {
+    color: '#333333',
+    fontSize: 12,
+  },
+
+  userStatusOnline: {
+    color: '#0b7a16',
+    fontWeight: '900',
+  },
+
+  gearButton: {
+    width: 38,
+    height: 34,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  eyeToggleButton: {
+    width: 38,
+    height: 34,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+
+  eyeToggleButtonActive: {
+    backgroundColor: '#e8c6ff',
+    borderTopColor: '#b67ae8',
+    borderLeftColor: '#b67ae8',
+    borderRightColor: '#5d1f85',
+    borderBottomColor: '#5d1f85',
+  },
+
+  eyeToggleButtonMuted: {
+    backgroundColor: '#ffd7d7',
+    borderTopColor: '#e49b38',
+    borderLeftColor: '#e49b38',
+    borderRightColor: '#8b4700',
+    borderBottomColor: '#8b4700',
+  },
+
+  eyeToggleIcon: {
+    width: 20,
+    height: 20,
+  },
+
+  fuckerButton: {
+    width: 38,
+    height: 34,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+
+  fuckerButtonActive: {
+    borderTopColor: '#9af5a8',
+    borderLeftColor: '#9af5a8',
+    borderRightColor: '#1d7f2c',
+    borderBottomColor: '#1d7f2c',
+    backgroundColor: '#d7ffd8',
+  },
+
+  fuckerButtonIcon: {
+    width: 20,
+    height: 20,
+  },
+
+  gearButtonText: {
+    color: '#000000',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 20,
+  },
+
+  emptyBox: {
+    flex: 1,
+    minHeight: 260,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+
+  emptyTitle: {
+    color: '#000000',
+    fontSize: 20,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+
+  emptyText: {
+    color: '#333333',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+
+  actionBox: {
+    backgroundColor: '#fff8d7',
+    borderWidth: 1,
+    borderColor: '#b9a85c',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 10,
+  },
+
+  actionText: {
+    color: '#3a3200',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  bottomButtons: {
+    paddingTop: 10,
+    flexDirection: 'row',
+  },
+
+  bottomButton: {
+    flex: 1,
+    height: 42,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 4,
+  },
+
+  bottomButtonText: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  xpButtonPressed: {
+    borderTopColor: '#777777',
+    borderLeftColor: '#777777',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+    backgroundColor: '#d8d5c6',
+  },
+
+  statusBar: {
+    height: 25,
+    backgroundColor: '#d6d3c3',
+    borderTopWidth: 1,
+    borderTopColor: '#aaa793',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+
+  statusText: {
+    color: '#333333',
+    fontSize: 11,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 18,
+  },
+
+  modalWindow: {
+    width: '100%',
+    maxWidth: 410,
+    maxHeight: '86%',
+    backgroundColor: '#ece9d8',
+    borderWidth: 3,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#003c9e',
+    borderBottomColor: '#003c9e',
+  },
+
+  modalWindowDangerSingle: {
+    borderTopColor: '#ff8a8a',
+    borderLeftColor: '#ff8a8a',
+    borderRightColor: '#a80000',
+    borderBottomColor: '#a80000',
+  },
+
+  modalWindowDangerDouble: {
+    borderWidth: 4,
+    borderTopColor: '#ff8a8a',
+    borderLeftColor: '#ff8a8a',
+    borderRightColor: '#a80000',
+    borderBottomColor: '#a80000',
+    shadowColor: '#a80000',
+    shadowOpacity: 0.35,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 3,
+  },
+
+  modalTitleBar: {
+    height: 34,
+    backgroundColor: '#0058d8',
+    borderBottomWidth: 2,
+    borderBottomColor: '#003f9e',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 8,
+    paddingRight: 5,
+  },
+
+  modalTitleText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  modalCloseButton: {
+    width: 22,
+    height: 22,
+    backgroundColor: '#e04b31',
+    borderWidth: 1,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#8f1d10',
+    borderBottomColor: '#8f1d10',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  modalCloseButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 19,
+  },
+
+  modalBody: {
+    padding: 16,
+  },
+
+  modalLabel: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
+    marginBottom: 10,
+  },
+
+  modalInput: {
+    height: 42,
+    backgroundColor: '#ffffff',
+    color: '#000000',
+    fontSize: 14,
+    paddingHorizontal: 10,
+    borderWidth: 2,
+    borderTopColor: '#6e6e6e',
+    borderLeftColor: '#6e6e6e',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+    marginBottom: 12,
+  },
+
+  warningBox: {
+    backgroundColor: '#fff8d7',
+    borderWidth: 1,
+    borderColor: '#b9a85c',
+    padding: 8,
+    marginBottom: 10,
+  },
+
+  warningText: {
+    color: '#3a3200',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  errorText: {
+    color: '#b00000',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+  },
+
+  modalButton: {
+    minWidth: 88,
+    height: 36,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    marginLeft: 10,
+  },
+
+  modalButtonText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  statusOption: {
+    backgroundColor: '#ece9d8',
+    borderWidth: 3,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    marginBottom: 10,
+  },
+
+  statusOptionOn: {
+    borderColor: '#28c840',
+  },
+
+  statusOptionJob: {
+    borderColor: '#f5a623',
+  },
+
+  statusOptionOff: {
+    borderColor: '#ff3b30',
+  },
+
+  statusOptionTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+
+  statusDot: {
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    marginRight: 8,
+  },
+
+  statusDotOn: {
+    backgroundColor: '#28c840',
+  },
+
+  statusDotOff: {
+    backgroundColor: '#ff3b30',
+  },
+
+  statusDotJob: {
+    backgroundColor: '#f5a623',
+  },
+
+  statusOptionTitle: {
+    color: '#000000',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  statusOptionText: {
+    color: '#333333',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+
+  settingsOption: {
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    marginBottom: 10,
+  },
+
+  settingsOptionTitle: {
+    color: '#000000',
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+
+  settingsOptionText: {
+    color: '#333333',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+
+  settingsOptionMute: {
+    borderTopColor: '#e49b38',
+    borderLeftColor: '#e49b38',
+    borderRightColor: '#8b4700',
+    borderBottomColor: '#8b4700',
+  },
+
+  settingsOptionSecretMute: {
+    borderTopColor: '#b67ae8',
+    borderLeftColor: '#b67ae8',
+    borderRightColor: '#5d1f85',
+    borderBottomColor: '#5d1f85',
+  },
+
+  userRowMuted: {
+    borderTopColor: '#c46a00',
+    borderLeftColor: '#c46a00',
+    borderRightColor: '#8b4700',
+    borderBottomColor: '#8b4700',
+  },
+
+  userRowSecretMuted: {
+    borderTopColor: '#9c4dcc',
+    borderLeftColor: '#9c4dcc',
+    borderRightColor: '#5d1f85',
+    borderBottomColor: '#5d1f85',
+  },
+
+  settingsList: {
+    maxHeight: 360,
+  },
+
+  settingsUserRow: {
+    minHeight: 58,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    padding: 8,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  smallUserIconBox: {
+    width: 38,
+    height: 38,
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#245aa8',
+    borderBottomColor: '#245aa8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+
+  smallUserIconImage: {
+    width: 22,
+    height: 22,
+  },
+
+  settingsUserTextBox: {
+    flex: 1,
+  },
+
+  settingsUserName: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  settingsUserSubText: {
+    color: '#333333',
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  smallEmptyBox: {
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderTopColor: '#808080',
+    borderLeftColor: '#808080',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+    padding: 14,
+    marginBottom: 10,
+  },
+
+  smallEmptyText: {
+    color: '#333333',
+    fontSize: 13,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+
+  confirmIcon: {
+    fontSize: 42,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+
+  confirmTitle: {
+    color: '#000000',
+    fontSize: 17,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+
+  confirmUserName: {
+    color: '#003c9e',
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+
+  selectedUserText: {
+    color: '#003c9e',
+    fontSize: 17,
+    fontWeight: '900',
+    marginBottom: 12,
+  },
+
+  muteGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+
+  muteOptionButton: {
+    width: '48%',
+    height: 42,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+
+  muteOptionText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  colourGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+
+  colourButton: {
+    width: '48%',
+    minHeight: 46,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    marginBottom: 10,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  colourPreview: {
+    width: 24,
+    height: 24,
+    borderWidth: 1,
+    borderColor: '#201f1f',
+    marginRight: 8,
+  },
+
+  colourButtonText: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '900',
+    flexShrink: 1,
+  },
+});
+
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { socket } from '../socket';
+
+const KeyboardWrapper = Platform.OS === 'ios' ? KeyboardAvoidingView : View;
+
+const EYE_ICON = require('../assets/icons/oko.png');
+const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
+
+const USER_ICON_SOURCES = {
+  uzivatel: require('../assets/icons/uzivatel.png'),
+  cat: require('../assets/icons/cat.png'),
+  pes: require('../assets/icons/pes.png'),
+  happy: require('../assets/icons/happy.png'),
+  devil: require('../assets/icons/devil.png'),
+  klaun: require('../assets/icons/klaun.png'),
+  stop: require('../assets/icons/stop.png'),
+  vykricnik: require('../assets/icons/vykricnik.png'),
+  fuckerr: require('../assets/icons/fuckerr.png'),
+  zachod: require('../assets/icons/zachod.png'),
+  admin: require('../assets/icons/admin.png'),
+};
+
+const normalizeAvatarIcon = (iconKey) => {
+  const cleanIcon = String(iconKey || '').trim().toLowerCase();
+  if (cleanIcon === 'klan') return 'klaun';
+  if (cleanIcon === 'fucker') return 'fuckerr';
+  return USER_ICON_SOURCES[cleanIcon] ? cleanIcon : 'uzivatel';
+};
+
+const getIconSource = (iconKey) => {
+  return USER_ICON_SOURCES[normalizeAvatarIcon(iconKey)] || USER_ICON_SOURCES.uzivatel;
+};
+
+const MUTE_OPTIONS = [
+  { label: '5 min', milliseconds: 5 * 60 * 1000 },
+  { label: '10 min', milliseconds: 10 * 60 * 1000 },
+  { label: '30 min', milliseconds: 30 * 60 * 1000 },
+  { label: '1 hod', milliseconds: 60 * 60 * 1000 },
+  { label: '5 hod', milliseconds: 5 * 60 * 60 * 1000 },
+  { label: '12 hod', milliseconds: 12 * 60 * 60 * 1000 },
+  { label: '1 den', milliseconds: 24 * 60 * 60 * 1000 },
+  { label: '2 dny', milliseconds: 2 * 24 * 60 * 60 * 1000 },
+];
+
+const getGlobalChats = () => {
+  if (!globalThis.CUSIIK_CHATS) {
+    globalThis.CUSIIK_CHATS = {};
+  }
+
+  return globalThis.CUSIIK_CHATS;
+};
+
+const getGlobalMutedUsers = () => {
+  if (!globalThis.CUSIIK_MUTED_USERS) {
+    globalThis.CUSIIK_MUTED_USERS = {};
+  }
+
+  return globalThis.CUSIIK_MUTED_USERS;
+};
+
+const getGlobalAdminReadCounts = () => {
+  if (!globalThis.CUSIIK_ADMIN_READ_COUNTS) {
+    globalThis.CUSIIK_ADMIN_READ_COUNTS = {};
+  }
+
+  return globalThis.CUSIIK_ADMIN_READ_COUNTS;
+};
+
+const formatMuteTimeLeft = (muteUntil) => {
+  const now = Date.now();
+  const diff = muteUntil - now;
+
+  if (diff <= 0) {
+    return 'nenÄ‚Â­ umlĂ„Ĺ¤en';
+  }
+
+  const totalMinutes = Math.ceil(diff / 1000 / 60);
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
+
+  const totalHours = Math.ceil(totalMinutes / 60);
+
+  if (totalHours < 24) {
+    return `${totalHours} hod`;
+  }
+
+  const totalDays = Math.ceil(totalHours / 24);
+  return `${totalDays} dnÄ‚Â­`;
+};
+
+const formatMessageTime = (timestamp) => {
+  const date = timestamp ? new Date(timestamp) : new Date();
+
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+
+  return `${hours}:${minutes}`;
+};
+
+const AdminChat = ({ navigation, route }) => {
+  const userId = route?.params?.userId || 'unknown-user';
+  const userName = route?.params?.userName || 'UÄąÄľivatel';
+
+  const scrollViewRef = useRef(null);
+
+  const scrollToBottom = (animated = true) => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated });
+    }, 120);
+  };
+
+  const [message, setMessage] = useState('');
+  const [muteModalVisible, setMuteModalVisible] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState([]);
+  const [nowTick, setNowTick] = useState(Date.now());
+  const [serverMutedUsers, setServerMutedUsers] = useState(getGlobalMutedUsers());
+  const [secretMutedUsers, setSecretMutedUsers] = useState(
+    globalThis.CUSIIK_SECRET_MUTED_USERS || {}
+  );
+  const [currentUserData, setCurrentUserData] = useState(null);
+  const [adminAvatarIcon, setAdminAvatarIcon] = useState('admin');
+  const [adminProfile, setAdminProfile] = useState(globalThis.CUSIIK_ADMIN_PROFILE || { icon: 'admin', silhouetteColour: '#0b3d91', bgColour: '#ece9d8' });
+  const [connectionText, setConnectionText] = useState(
+    socket.connected ? 'Server online' : 'PÄąâ„˘ipojuji server...'
+  );
+
+  const getInitialMessages = () => {
+    const chats = getGlobalChats();
+
+    if (!chats[userId]) {
+      chats[userId] = [
+        {
+          id: 1,
+          sender: 'user',
+          text: `Ahoj, tady ${userName}.`,
+          createdAt: Date.now(),
+        },
+      ];
+    }
+
+    return chats[userId];
+  };
+
+  const [messages, setMessages] = useState(getInitialMessages);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowTick(Date.now());
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+useEffect(() => {
+  const unsubscribe = navigation.addListener('focus', () => {
+    globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID = String(userId);
+    scrollToBottom(false);
+  });
+
+  const unsubscribeBlur = navigation.addListener('blur', () => {
+    if (String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '') === String(userId)) {
+      globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID = null;
+    }
+  });
+
+  return () => {
+    unsubscribe();
+    unsubscribeBlur();
+
+    if (String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '') === String(userId)) {
+      globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID = null;
+    }
+  };
+}, [navigation, userId]);
+
+  useEffect(() => {
+    scrollToBottom(true);
+  }, [messages.length]);
+
+  useEffect(() => {
+    if (!selectionMode) {
+      setSelectedMessageIds([]);
+    }
+  }, [selectionMode]);
+
+  useEffect(() => {
+    const handleConnect = () => {
+      setConnectionText('Server online');
+
+      socket.emit('chat:get', {
+        userId,
+      });
+    };
+
+    const handleDisconnect = () => {
+      setConnectionText('Server offline - lokÄ‚Ë‡lnÄ‚Â­ reÄąÄľim');
+    };
+
+    const handleConnectError = () => {
+      setConnectionText('Server nedostupnÄ‚Ëť - lokÄ‚Ë‡lnÄ‚Â­ reÄąÄľim');
+    };
+
+    const handleServerState = (serverState) => {
+      if (serverState?.mutedUsers) {
+        setServerMutedUsers(serverState.mutedUsers);
+        globalThis.CUSIIK_MUTED_USERS = serverState.mutedUsers;
+      }
+
+      if (serverState?.secretMutedUsers) {
+        setSecretMutedUsers(serverState.secretMutedUsers);
+        globalThis.CUSIIK_SECRET_MUTED_USERS = serverState.secretMutedUsers;
+      }
+
+      if (serverState?.adminProfile) {
+        setAdminProfile(serverState.adminProfile);
+        setAdminAvatarIcon(normalizeAvatarIcon(serverState.adminProfile.icon || 'admin'));
+        globalThis.CUSIIK_ADMIN_PROFILE = serverState.adminProfile;
+      }
+
+      if (Array.isArray(serverState?.users)) {
+        const found = serverState.users.find((u) => String(u.id) === String(userId));
+        if (found) {
+          setCurrentUserData(found);
+        }
+      }
+
+      setNowTick(Date.now());
+    };
+
+    const handleChatMessages = ({ userId: incomingUserId, messages: nextMessages }) => {
+      if (incomingUserId !== userId) {
+        return;
+      }
+
+      const chats = getGlobalChats();
+      const safeMessages = nextMessages || [];
+      const userMessageCount = safeMessages.filter((item) => item?.sender === 'user').length;
+      const nextReadCounts = {
+        ...getGlobalAdminReadCounts(),
+        [userId]: userMessageCount,
+      };
+
+      chats[userId] = safeMessages;
+      globalThis.CUSIIK_ADMIN_READ_COUNTS = nextReadCounts;
+      setMessages(safeMessages);
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+    socket.on('server:state', handleServerState);
+    socket.on('chat:messages', handleChatMessages);
+
+    if (!socket.connected) {
+      socket.connect();
+    } else {
+      handleConnect();
+    }
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+      socket.off('server:state', handleServerState);
+      socket.off('chat:messages', handleChatMessages);
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    const chats = getGlobalChats();
+
+    setMessages(chats[userId] || getInitialMessages());
+
+    if (socket.connected) {
+      socket.emit('chat:get', {
+        userId,
+      });
+    }
+  }, [userId]);
+
+  const getMuteUntil = () => {
+    const mutedUsers = getGlobalMutedUsers();
+
+    return serverMutedUsers[userId] || mutedUsers[userId] || 0;
+  };
+
+  const muteUntil = getMuteUntil();
+  const isMuted = muteUntil > nowTick;
+  const muteTimeLeft = isMuted ? formatMuteTimeLeft(muteUntil) : 'nenÄ‚Â­ umlĂ„Ĺ¤en';
+  const isSecretMuted = Boolean(secretMutedUsers[userId]);
+  const isServerOnline = socket.connected;
+
+  const saveMessages = (nextMessages) => {
+    const chats = getGlobalChats();
+
+    chats[userId] = nextMessages;
+    setMessages(nextMessages);
+  };
+
+  const sendSystemMessage = (text) => {
+    if (socket.connected) {
+      socket.emit('chat:send', {
+        userId,
+        sender: 'system',
+        text,
+      });
+
+      return;
+    }
+
+    const systemMessage = {
+      id: Date.now(),
+      sender: 'system',
+      text,
+      createdAt: Date.now(),
+    };
+
+    saveMessages([...messages, systemMessage]);
+  };
+
+  const sendMessage = () => {
+    if (selectionMode) {
+      const selectedCount = selectedMessageIds.length;
+
+      if (selectedCount === 0) {
+        setSelectionMode(false);
+        return;
+      }
+
+      Alert.alert(
+        'Smazat zprÄ‚Ë‡vy',
+        `Opravdu smazat ${selectedCount} zprÄ‚Ë‡v?`,
+        [
+          {
+            text: 'Ne',
+            style: 'cancel',
+          },
+          {
+            text: 'Ano, smazat',
+            style: 'destructive',
+            onPress: () => {
+              if (socket.connected) {
+                socket.emit('chat:deleteMessages', {
+                  userId,
+                  messageIds: selectedMessageIds,
+                });
+              } else {
+                const selectedSet = new Set(selectedMessageIds.map((id) => String(id)));
+                const nextMessages = messages.filter(
+                  (item) => !selectedSet.has(String(item.id))
+                );
+
+                saveMessages(nextMessages);
+              }
+
+              setSelectionMode(false);
+              setSelectedMessageIds([]);
+            },
+          },
+        ]
+      );
+
+      return;
+    }
+
+    const trimmedMessage = message.trim();
+
+    if (!trimmedMessage) {
+      return;
+    }
+
+    if (socket.connected) {
+      socket.emit('chat:send', {
+        userId,
+        sender: 'admin',
+        text: trimmedMessage,
+      });
+
+      setMessage('');
+      return;
+    }
+
+    const newMessage = {
+      id: Date.now(),
+      sender: 'admin',
+      text: trimmedMessage,
+      createdAt: Date.now(),
+    };
+
+    const nextMessages = [...messages, newMessage];
+
+    saveMessages(nextMessages);
+    setMessage('');
+  };
+
+  const openMuteModal = () => {
+    setMuteModalVisible(true);
+  };
+
+  const closeMuteModal = () => {
+    setMuteModalVisible(false);
+  };
+
+  const muteUser = (option) => {
+    const mutedUsers = getGlobalMutedUsers();
+    const secretMutedUsersMap = {
+      ...secretMutedUsers,
+    };
+    const muteUntilTime = Date.now() + option.milliseconds;
+
+    delete secretMutedUsersMap[userId];
+    setSecretMutedUsers(secretMutedUsersMap);
+    globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsersMap;
+
+    mutedUsers[userId] = muteUntilTime;
+    globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+
+    setServerMutedUsers({
+      ...serverMutedUsers,
+      [userId]: muteUntilTime,
+    });
+
+    if (socket.connected) {
+      socket.emit('admin:secretMuteUser', {
+        userId,
+        enabled: false,
+      });
+
+      socket.emit('admin:muteUser', {
+        userId,
+        milliseconds: option.milliseconds,
+      });
+    }
+
+    sendSystemMessage(`UÄąÄľivatel ${userName} byl umlĂ„Ĺ¤en na ${option.label}.`);
+
+    setNowTick(Date.now());
+    closeMuteModal();
+  };
+
+  const unmuteUser = () => {
+    const mutedUsers = getGlobalMutedUsers();
+
+    delete mutedUsers[userId];
+
+    const nextServerMutedUsers = {
+      ...serverMutedUsers,
+    };
+
+    delete nextServerMutedUsers[userId];
+
+    setServerMutedUsers(nextServerMutedUsers);
+
+    if (socket.connected) {
+      socket.emit('admin:unmuteUser', {
+        userId,
+      });
+    }
+
+    sendSystemMessage(`UÄąÄľivatel ${userName} uÄąÄľ nenÄ‚Â­ umlĂ„Ĺ¤en.`);
+
+    setNowTick(Date.now());
+    closeMuteModal();
+  };
+
+  const goBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    navigation.replace('AdminPin');
+  };
+
+  const toggleMessageSelection = (messageId) => {
+    setSelectedMessageIds((current) => {
+      const nextId = String(messageId);
+      const exists = current.some((item) => String(item) === nextId);
+
+      let nextSelection;
+
+      if (exists) {
+        nextSelection = current.filter((item) => String(item) !== nextId);
+      } else {
+        nextSelection = [...current, messageId];
+      }
+
+      if (nextSelection.length === 0) {
+        setSelectionMode(false);
+      }
+
+      return nextSelection;
+    });
+  };
+
+  const onMessageLongPress = (messageId) => {
+    setSelectionMode(true);
+    toggleMessageSelection(messageId);
+  };
+
+  const onMessagePress = (messageId) => {
+    if (!selectionMode) {
+      return;
+    }
+
+    toggleMessageSelection(messageId);
+  };
+
+  const toggleSecretMute = () => {
+    const nextValue = !isSecretMuted;
+    const nextSecretMutedUsers = {
+      ...secretMutedUsers,
+    };
+
+    if (nextValue) {
+      nextSecretMutedUsers[userId] = true;
+    } else {
+      delete nextSecretMutedUsers[userId];
+    }
+
+    setSecretMutedUsers(nextSecretMutedUsers);
+    globalThis.CUSIIK_SECRET_MUTED_USERS = nextSecretMutedUsers;
+
+    if (socket.connected) {
+      socket.emit('admin:secretMuteUser', {
+        userId,
+        enabled: nextValue,
+      });
+
+      if (nextValue) {
+        socket.emit('admin:unmuteUser', {
+          userId,
+        });
+      }
+    }
+
+    if (nextValue) {
+      const mutedUsers = getGlobalMutedUsers();
+      delete mutedUsers[userId];
+
+      const nextServerMutedUsers = {
+        ...serverMutedUsers,
+      };
+
+      delete nextServerMutedUsers[userId];
+      setServerMutedUsers(nextServerMutedUsers);
+      setNowTick(Date.now());
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
+
+      <KeyboardWrapper
+        style={styles.page}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.window}>
+          <View style={styles.titleBar}>
+            <View style={styles.titleLeft}>
+              <View style={styles.windowsIcon}>
+                <View style={[styles.winSquare, { backgroundColor: '#f35325' }]} />
+                <View style={[styles.winSquare, { backgroundColor: '#81bc06' }]} />
+                <View style={[styles.winSquare, { backgroundColor: '#05a6f0' }]} />
+                <View style={[styles.winSquare, { backgroundColor: '#ffba08' }]} />
+              </View>
+
+              <Text style={styles.titleText}>Chat s uÄąÄľivatelem</Text>
+
+              <View
+                style={[
+                  styles.titleStatusDot,
+                  isServerOnline ? styles.titleStatusOnline : styles.titleStatusOffline,
+                ]}
+              />
+
+              <Text style={styles.titleStatusText}>{isServerOnline ? 'on' : 'off'}</Text>
+            </View>
+
+            <View style={styles.windowButtons}>
+              <View style={styles.windowButton}>
+                <Pressable style={styles.closePressable} onPress={goBack}>
+                  <Text style={styles.windowButtonText}>Ă˘â€ Â</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.windowButton}>
+                <Text style={styles.windowButtonText}>_</Text>
+              </View>
+
+              <View style={[styles.windowButton, styles.closeButton]}>
+                <Pressable style={styles.closePressable} onPress={goBack}>
+                  <Text style={[styles.windowButtonText, styles.closeButtonText]}>Ä‚â€”</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.topPanel}>
+            <View style={styles.userInfoBox}>
+              <View style={styles.userNameRow}>
+                <Text style={styles.userName}>{userName}</Text>
+
+                {isSecretMuted ? <Text style={styles.userNameSecretText}> (potajÄ‚Â­)</Text> : null}
+
+                {isMuted ? <Text style={styles.userNameMuteText}> ({muteTimeLeft})</Text> : null}
+              </View>
+
+              <View style={styles.muteStatusRow}>
+                <View
+                  style={[
+                    styles.muteStatusDot,
+                    isMuted ? styles.muteStatusMuted : styles.muteStatusOk,
+                  ]}
+                />
+
+                <Text style={styles.muteStatusText}>
+                  {isMuted ? `UmlĂ„Ĺ¤en: ${muteTimeLeft}` : 'MÄąĹ»ÄąÄľe psÄ‚Ë‡t'}
+                </Text>
+              </View>
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.muteButton,
+                isSecretMuted && styles.eyeButtonActive,
+                !isSecretMuted && isMuted && styles.muteButtonActive,
+                pressed && styles.xpButtonPressed,
+              ]}
+              onPress={toggleSecretMute}
+              onLongPress={openMuteModal}
+              delayLongPress={260}
+            >
+              <Image
+                source={isSecretMuted ? EYE_SLASH_ICON : EYE_ICON}
+                style={styles.muteButtonIcon}
+                resizeMode="contain"
+              />
+            </Pressable>
+          </View>
+
+          <View style={styles.chatArea}>
+            <ScrollView
+              ref={scrollViewRef}
+              style={styles.messagesScroll}
+              contentContainerStyle={styles.messagesContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {messages.map((item) => {
+                const isAdmin = item.sender === 'admin';
+                const isSystem = item.sender === 'system';
+                const messageTime = formatMessageTime(item.createdAt);
+                const isSelected = selectedMessageIds.some(
+                  (selectedId) => String(selectedId) === String(item.id)
+                );
+
+                if (isSystem) {
+                  return (
+                    <View key={item.id} style={styles.systemMessageRow}>
+                      <View style={styles.systemMessageBox}>
+                        <Text style={styles.systemMessageText}>{item.text}</Text>
+                        <Text style={styles.systemMessageTime}>{messageTime}</Text>
+                      </View>
+                    </View>
+                  );
+                }
+
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.messageRow,
+                      isAdmin ? styles.messageRowUser : styles.messageRowAdmin,
+                    ]}
+                  >
+                    <View style={styles.miniIconWrapper}>
+                      <Image
+                        source={getIconSource(isAdmin ? (adminProfile?.icon || adminAvatarIcon || 'admin') : (currentUserData?.avatarIcon || 'uzivatel'))}
+                        style={styles.miniIconImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <Pressable
+                      onLongPress={() => onMessageLongPress(item.id)}
+                      onPress={() => onMessagePress(item.id)}
+                      delayLongPress={250}
+                      style={({ pressed }) => [
+                        styles.messageBubble,
+                        isAdmin ? styles.userBubble : styles.adminBubble,
+                        isSelected && styles.selectedMessageBubble,
+                        pressed && { opacity: 0.85 },
+                      ]}
+                    >
+                      <View style={styles.messageHeaderRow}>
+                        <Text style={styles.messageAuthor}>
+                          {isAdmin ? 'Admin' : userName}
+                        </Text>
+                        <Text style={styles.messageTime}>{messageTime}</Text>
+                      </View>
+                      <Text style={styles.messageText}>{item.text}</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          <View style={styles.inputPanel}>
+            <TextInput
+              value={message}
+              onChangeText={setMessage}
+              placeholder={`NapiÄąË‡ zprÄ‚Ë‡vu pro ${userName}...`}
+              placeholderTextColor="#666666"
+              style={styles.input}
+              multiline
+              maxLength={500}
+              returnKeyType="send"
+              onSubmitEditing={sendMessage}
+            />
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.sendButton,
+                selectionMode && styles.deleteButton,
+                pressed && styles.sendButtonPressed,
+              ]}
+              onPress={sendMessage}
+            >
+              <Text style={styles.sendButtonText}>
+                {selectionMode ? 'Smazat' : 'Odeslat'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.statusBar}>
+            <Text style={styles.statusText}>Admin chat</Text>
+            <Text style={styles.statusText}>
+              {selectionMode
+                ? `VybrÄ‚Ë‡no: ${selectedMessageIds.length}`
+                : isMuted
+                  ? `Mute: ${muteTimeLeft}`
+                  : connectionText}
+            </Text>
+          </View>
+        </View>
+
+        <Modal
+          visible={muteModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeMuteModal}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>UmlĂ„Ĺ¤et uÄąÄľivatele</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closeMuteModal}>
+                  <Text style={styles.modalCloseButtonText}>Ä‚â€”</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>
+                  Vyber dÄ‚Â©lku umlĂ„Ĺ¤enÄ‚Â­ pro uÄąÄľivatele:
+                </Text>
+
+                <Text style={styles.selectedUserText}>{userName}</Text>
+
+                {isMuted ? (
+                  <View style={styles.warningBox}>
+                    <Text style={styles.warningText}>
+                      UÄąÄľivatel je aktuÄ‚Ë‡lnĂ„â€ş umlĂ„Ĺ¤en jeÄąË‡tĂ„â€ş na {muteTimeLeft}.
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.muteGrid}>
+                  {MUTE_OPTIONS.map((option) => (
+                    <Pressable
+                      key={option.label}
+                      style={({ pressed }) => [
+                        styles.muteOptionButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => muteUser(option)}
+                    >
+                      <Text style={styles.muteOptionText}>{option.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <View style={styles.modalButtons}>
+                  {isMuted ? (
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.modalButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={unmuteUser}
+                    >
+                      <Text style={styles.modalButtonText}>ZruÄąË‡it mlĂ„Ĺ¤enÄ‚Â­</Text>
+                    </Pressable>
+                  ) : null}
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={closeMuteModal}
+                  >
+                    <Text style={styles.modalButtonText}>ZavÄąâ„˘Ä‚Â­t</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </KeyboardWrapper>
+    </SafeAreaView>
+  );
+};
+
+export default AdminChat;
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0058d8',
+  },
+
+  page: {
+    flex: 1,
+    backgroundColor: '#1f7a7a',
+  },
+
+  window: {
+    flex: 1,
+    backgroundColor: '#ece9d8',
+    borderWidth: 3,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#003c9e',
+    borderBottomColor: '#003c9e',
+  },
+
+  titleBar: {
+    height: 38,
+    backgroundColor: '#0058d8',
+    borderBottomWidth: 2,
+    borderBottomColor: '#003f9e',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 8,
+    paddingRight: 5,
+  },
+
+  titleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+
+  windowsIcon: {
+    width: 18,
+    height: 18,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginRight: 7,
+  },
+
+  winSquare: {
+    width: 8,
+    height: 8,
+    margin: 0.5,
+  },
+
+  titleText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '900',
+    flexShrink: 1,
+    textShadowColor: '#00245c',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 1,
+  },
+
+  titleStatusDot: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    marginLeft: 8,
+  },
+
+  titleStatusText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '900',
+    marginLeft: 4,
+    textTransform: 'uppercase',
+  },
+
+  titleStatusOnline: {
+    backgroundColor: '#28c840',
+  },
+
+  titleStatusOffline: {
+    backgroundColor: '#ff3b30',
+  },
+
+  windowButtons: {
+    flexDirection: 'row',
+    marginLeft: 8,
+  },
+
+  windowButton: {
+    width: 22,
+    height: 22,
+    marginLeft: 4,
+    backgroundColor: '#d7e8ff',
+    borderWidth: 1,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#174a9c',
+    borderBottomColor: '#174a9c',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  closeButton: {
+    backgroundColor: '#e04b31',
+  },
+
+  closePressable: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  windowButtonText: {
+    color: '#003c8f',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 15,
+  },
+
+  closeButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    lineHeight: 19,
+  },
+
+  topPanel: {
+    backgroundColor: '#ece9d8',
+    borderBottomWidth: 2,
+    borderBottomColor: '#aaa793',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  backButton: {
+    height: 38,
+    minWidth: 70,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+
+  backButtonText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  userInfoBox: {
+    flex: 1,
+    paddingHorizontal: 10,
+  },
+
+  userName: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+
+  userNameMetaText: {
+    color: '#8a4d00',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+
+  userNameSecretText: {
+    color: '#7a00cc',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+
+  userNameMuteText: {
+    color: '#8a4d00',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+
+  muteStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  muteStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    marginRight: 5,
+  },
+
+  muteStatusOk: {
+    backgroundColor: '#28c840',
+  },
+
+  muteStatusMuted: {
+    backgroundColor: '#ff3b30',
+  },
+
+  muteStatusText: {
+    color: '#333333',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  muteButton: {
+    height: 38,
+    width: 42,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+  },
+
+  muteButtonIcon: {
+    width: 18,
+    height: 18,
+  },
+
+  eyeButtonActive: {
+    borderTopColor: '#cda0f0',
+    borderLeftColor: '#cda0f0',
+    borderRightColor: '#6d2ea4',
+    borderBottomColor: '#6d2ea4',
+  },
+
+  muteButtonActive: {
+    backgroundColor: '#ffd7d7',
+  },
+
+  chatArea: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderTopColor: '#808080',
+    borderLeftColor: '#808080',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+    margin: 10,
+    marginBottom: 6,
+  },
+
+  messagesScroll: {
+    flex: 1,
+  },
+
+  messagesContent: {
+    padding: 12,
+    paddingBottom: 18,
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+  },
+
+  messageRow: {
+    width: '100%',
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+
+  miniIconWrapper: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ece9d8',
+    borderWidth: 1,
+    borderColor: '#aaa793',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    marginLeft: 2,
+    marginBottom: 2,
+  },
+
+  miniIconImage: {
+    width: 20,
+    height: 20,
+  },
+
+  messageRowUser: {
+    justifyContent: 'flex-end',
+  },
+
+  messageRowAdmin: {
+    justifyContent: 'flex-start',
+  },
+
+  messageBubble: {
+    maxWidth: '82%',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderWidth: 2,
+  },
+
+  userBubble: {
+    backgroundColor: '#dceaff',
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#245aa8',
+    borderBottomColor: '#245aa8',
+  },
+
+  adminBubble: {
+    backgroundColor: '#ece9d8',
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+  },
+
+  messageHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+
+  messageAuthor: {
+    color: '#003c9e',
+    fontSize: 11,
+    fontWeight: '900',
+    marginRight: 8,
+  },
+
+  messageTime: {
+    color: '#555555',
+    fontSize: 10,
+    fontWeight: '900',
+    marginLeft: 6,
+  },
+
+  messageText: {
+    color: '#000000',
+    fontSize: 14,
+    lineHeight: 19,
+  },
+
+  selectedMessageBubble: {
+    backgroundColor: '#ffe38d',
+    borderTopColor: '#fff7d1',
+    borderLeftColor: '#fff7d1',
+    borderRightColor: '#9b7f14',
+    borderBottomColor: '#9b7f14',
+  },
+
+  systemMessageRow: {
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+
+  systemMessageBox: {
+    backgroundColor: '#fff8d7',
+    borderWidth: 1,
+    borderColor: '#b9a85c',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    maxWidth: '92%',
+    alignItems: 'center',
+  },
+
+  systemMessageText: {
+    color: '#3a3200',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  systemMessageTime: {
+    color: '#6b5d00',
+    fontSize: 10,
+    fontWeight: '900',
+    marginTop: 3,
+  },
+
+  inputPanel: {
+    backgroundColor: '#ece9d8',
+    borderTopWidth: 2,
+    borderTopColor: '#ffffff',
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+
+  input: {
+    flex: 1,
+    minHeight: 42,
+    maxHeight: 95,
+    backgroundColor: '#ffffff',
+    color: '#000000',
+    fontSize: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 2,
+    borderTopColor: '#6e6e6e',
+    borderLeftColor: '#6e6e6e',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+    textAlignVertical: 'top',
+  },
+
+  sendButton: {
+    height: 42,
+    minWidth: 88,
+    marginLeft: 8,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+
+  deleteButton: {
+    backgroundColor: '#d84b4b',
+    borderTopColor: '#ffd1d1',
+    borderLeftColor: '#ffd1d1',
+    borderRightColor: '#7f1f1f',
+    borderBottomColor: '#7f1f1f',
+  },
+
+  sendButtonPressed: {
+    borderTopColor: '#777777',
+    borderLeftColor: '#777777',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+    backgroundColor: '#d8d5c6',
+  },
+
+  sendButtonText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  statusBar: {
+    height: 25,
+    backgroundColor: '#d6d3c3',
+    borderTopWidth: 1,
+    borderTopColor: '#aaa793',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+
+  statusText: {
+    color: '#333333',
+    fontSize: 11,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 18,
+  },
+
+  modalWindow: {
+    width: '100%',
+    maxWidth: 410,
+    maxHeight: '86%',
+    backgroundColor: '#ece9d8',
+    borderWidth: 3,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#003c9e',
+    borderBottomColor: '#003c9e',
+  },
+
+  modalTitleBar: {
+    height: 34,
+    backgroundColor: '#0058d8',
+    borderBottomWidth: 2,
+    borderBottomColor: '#003f9e',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 8,
+    paddingRight: 5,
+  },
+
+  modalTitleText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  modalCloseButton: {
+    width: 22,
+    height: 22,
+    backgroundColor: '#e04b31',
+    borderWidth: 1,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#8f1d10',
+    borderBottomColor: '#8f1d10',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  modalCloseButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 19,
+  },
+
+  modalBody: {
+    padding: 16,
+  },
+
+  modalLabel: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
+
+  selectedUserText: {
+    color: '#003c9e',
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 12,
+  },
+
+  warningBox: {
+    backgroundColor: '#fff8d7',
+    borderWidth: 1,
+    borderColor: '#b9a85c',
+    padding: 8,
+    marginBottom: 12,
+  },
+
+  warningText: {
+    color: '#3a3200',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  muteGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+
+  muteOptionButton: {
+    width: '48%',
+    height: 42,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+
+  muteOptionText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+  },
+
+  modalButton: {
+    minWidth: 88,
+    height: 36,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    marginLeft: 10,
+  },
+
+  modalButtonText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  xpButtonPressed: {
+    borderTopColor: '#777777',
+    borderLeftColor: '#777777',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+    backgroundColor: '#d8d5c6',
+  },
+});
+
+
+
+
+const express = require('express');
+const http = require('http');
+const cors = require('cors');
+const { Server } = require('socket.io');
+
+const PORT = process.env.PORT || 8080;
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: { origin: '*', methods: ['GET','POST'] }
+});
+
+const state = {
+  userPin: '1111',
+  adminPin: '8831',
+  adminStatus: 'off',
+
+  nextUserNumber: 1,
+
+  users: [],
+
+  chats: {},
+
+  mutedUsers: {},
+
+  secretMutedUsers: {},
+
+  userPinsById: {},
+  kickedRoomUserIds: {},
+  userProfilesById: {},
+
+  pushTokensByUserId: {},
+  adminPushTokens: new Set(),
+  pushCooldowns: {},
+};
+
+const SUPPORTED_AVATAR_ICONS = new Set([
+  'uzivatel',
+  'cat',
+  'pes',
+  'happy',
+  'devil',
+  'klaun',
+  'stop',
+  'vykricnik',
+  'fuckerr',
+]);
+
+const normalizeAvatarIcon = (icon) => {
+  const cleanIcon = String(icon || '').trim().toLowerCase();
+
+  if (cleanIcon === 'klan') {
+    return 'klaun';
+  }
+
+  if (cleanIcon === 'fucker') {
+    return 'fuckerr';
+  }
+
+  return SUPPORTED_AVATAR_ICONS.has(cleanIcon) ? cleanIcon : 'uzivatel';
+};
+
+const PUSH_COOLDOWN_MS = 5 * 60 * 1000;
+
+const sendExpoPushAsync = async ({ to, title, body, data = {} }) => {
+  if (!to) return;
+  const tokens = Array.isArray(to) ? to : [to];
+  if (tokens.length === 0) return;
+
+  try {
+    const messages = tokens.map((token) => ({
+      to: token,
+      sound: 'default',
+      title: String(title || 'Nova zprava').slice(0, 120),
+      body: String(body || '').slice(0, 240),
+      data: data || {},
+      channelId: 'default',
+    }));
+
+    const res = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(messages),
+    });
+
+    const result = await res.json().catch(() => null);
+    console.log('Expo push result:', result);
+  } catch (e) {
+    console.log('Expo push error:', e?.message || e);
+  }
+};
+
+const shouldSendPushWithCooldown = (key) => {
+  const now = Date.now();
+  const last = state.pushCooldowns[key] || 0;
+  if (now - last < PUSH_COOLDOWN_MS) return false;
+  state.pushCooldowns[key] = now;
+  return true;
+};
+
+const RANDOM_USER_NAMES = [
+  'JiĹ™Ă­', 'Jan', 'Petr', 'Josef', 'Pavel', 'Martin', 'TomĂˇĹˇ', 'Jaroslav', 'Miroslav', 'ZdenÄ›k',
+  'VĂˇclav', 'Michal', 'FrantiĹˇek', 'Jakub', 'Milan', 'Karel', 'LukĂˇĹˇ', 'David', 'VladimĂ­r', 'OndĹ™ej',
+  'Ladislav', 'Roman', 'Marek', 'Stanislav', 'Daniel', 'Radek', 'AntonĂ­n', 'VojtÄ›ch', 'Filip', 'Adam',
+  'MatÄ›j', 'Dominik', 'AleĹˇ', 'Miloslav', 'JaromĂ­r', 'Patrik', 'Libor', 'JindĹ™ich', 'Vlastimil', 'MiloĹˇ',
+  'LubomĂ­r', 'Ĺ tÄ›pĂˇn', 'OldĹ™ich', 'Rudolf', 'MatyĂˇĹˇ', 'Ivan', 'Robert', 'LuboĹˇ', 'Radim', 'Richard',
+  'VĂ­t', 'Bohumil', 'Ĺ imon', 'Rostislav', 'Ivo', 'LudÄ›k', 'DuĹˇan', 'Kamil', 'Michael', 'Vladislav',
+  'ZbynÄ›k', 'Viktor', 'Bohuslav', 'KryĹˇtof', 'Alois', 'RenĂ©', 'VĂ­tÄ›zslav', 'TadeĂˇĹˇ', 'Ĺ tefan', 'Eduard',
+  'Marcel', 'Jan', 'Jozef', 'Samuel', 'Dalibor', 'Emil', 'RadomĂ­r', 'LudvĂ­k', 'Denis', 'VilĂ©m',
+  'TobiĂˇĹˇ', 'Jana', 'Marie', 'Eva', 'Hana', 'Anna', 'Lenka', 'KateĹ™ina', 'Lucie', 'VÄ›ra',
+  'Alena', 'Petra', 'Veronika', 'Jaroslava', 'Tereza', 'Martina', 'Michaela', 'Jitka', 'Helena', 'Ludmila',
+  'ZdeĹka', 'Ivana', 'Monika', 'EliĹˇka', 'Zuzana', 'MarkĂ©ta', 'Jarmila', 'Barbora', 'JiĹ™ina', 'Marcela',
+  'KristĂ˝na', 'Dana', 'Dagmar', 'AdĂ©la', 'Pavla', 'Vlasta', 'Miroslava', 'Andrea', 'Irena', 'BoĹľena',
+  'KlĂˇra', 'LibuĹˇe', 'Marta', 'Ĺ Ăˇrka', 'Nikola', 'KarolĂ­na', 'Iveta', 'PavlĂ­na', 'NatĂˇlie', 'Olga',
+  'Blanka', 'Gabriela', 'Renata', 'Aneta', 'Simona', 'RĹŻĹľena', 'Radka', 'Daniela', 'Denisa', 'Iva',
+  'Milada', 'Milena', 'Romana', 'Miloslava', 'MiluĹˇe', 'Ilona', 'AneĹľka', 'SoĹa', 'Kamila', 'Stanislava',
+  'Nela', 'VladimĂ­ra', 'NadÄ›Ĺľda', 'KvÄ›toslava', 'Danuse', 'Vendula', 'DrahomĂ­ra', 'Julie', 'JindĹ™iĹˇka', 'Emilie',
+  'Viktorie',
+];
+
+const pickRandomUserName = () => {
+  const baseName = RANDOM_USER_NAMES[Math.floor(Math.random() * RANDOM_USER_NAMES.length)] || 'Uzivatel';
+  const usedNames = new Set(state.users.map((user) => user.name));
+
+  if (!usedNames.has(baseName)) {
+    return baseName;
+  }
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const suffix = Math.floor(Math.random() * 90) + 10;
+    const candidate = `${baseName} ${suffix}`;
+
+    if (!usedNames.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return `${baseName} ${state.nextUserNumber}`;
+};
+
+const isPlaceholderUserName = (name) => {
+  const cleanName = String(name || '').trim().toLowerCase();
+
+  if (!cleanName) {
+    return true;
+  }
+
+  if (/^uzivatel\s*\d*$/.test(cleanName)) {
+    return true;
+  }
+
+  if (/^host\s*\d+$/.test(cleanName)) {
+    return true;
+  }
+
+  return false;
+};
+
+const ensureRandomNameForUser = (userId) => {
+  const existing = getUserById(userId);
+
+  if (!existing || !isPlaceholderUserName(existing.name)) {
+    return existing;
+  }
+
+  const nextName = pickRandomUserName();
+
+  state.users = state.users.map((user) =>
+    user.id === userId
+      ? {
+          ...user,
+          name: nextName,
+        }
+      : user
+  );
+
+  return getUserById(userId);
+};
+
+const createMessageId = () => {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+const getPublicUsers = () => {
+  return state.users.map((user) => ({
+    ...(() => {
+      const normalizedUser = ensureRandomNameForUser(user.id) || user;
+
+      return {
+        id: normalizedUser.id,
+        name: normalizedUser.name,
+        silhouetteColour: normalizedUser.silhouetteColour,
+        bgColour: normalizedUser.bgColour,
+        avatarIcon: normalizeAvatarIcon(normalizedUser.avatarIcon),
+        avatarLocked: Boolean(normalizedUser.avatarLocked),
+        colour: normalizedUser.silhouetteColour,
+        online: normalizedUser.online,
+        lastSeenAt: normalizedUser.lastSeenAt,
+      };
+    })(),
+  }));
+};
+
+const getPublicState = () => {
+  const normalizedSecretMutedUsers = Object.fromEntries(
+    Object.entries(state.secretMutedUsers || {}).filter(([, value]) => Boolean(value))
+  );
+
+  state.secretMutedUsers = normalizedSecretMutedUsers;
+
+  return {
+    userPin: state.userPin,
+    adminStatus: state.adminStatus,
+    users: getPublicUsers(),
+    mutedUsers: state.mutedUsers,
+    secretMutedUsers: normalizedSecretMutedUsers,
+  };
+};
+
+const rememberUserProfile = (user) => {
+  if (!user || !user.id) {
+    return;
+  }
+
+  const cleanUserId = String(user.id);
+
+  state.userProfilesById[cleanUserId] = {
+    name: user.name,
+    silhouetteColour: user.silhouetteColour,
+    bgColour: user.bgColour,
+    avatarIcon: normalizeAvatarIcon(user.avatarIcon),
+    avatarLocked: Boolean(user.avatarLocked),
+  };
+};
+
+const getStoredUserProfile = (userId) => {
+  const cleanUserId = String(userId || '').trim();
+
+  if (!cleanUserId) {
+    return null;
+  }
+
+  return state.userProfilesById[cleanUserId] || null;
+};
+
+const patchStoredUserProfile = (userId, patch) => {
+  const cleanUserId = String(userId || '').trim();
+
+  if (!cleanUserId || !patch || typeof patch !== 'object') {
+    return;
+  }
+
+  const existing = state.userProfilesById[cleanUserId] || {
+    name: pickRandomUserName(),
+    silhouetteColour: '#0b3d91',
+    bgColour: '#ece9d8',
+    avatarIcon: 'uzivatel',
+    avatarLocked: false,
+  };
+
+  state.userProfilesById[cleanUserId] = {
+    ...existing,
+    ...patch,
+    avatarIcon: normalizeAvatarIcon(patch.avatarIcon || existing.avatarIcon),
+    avatarLocked:
+      typeof patch.avatarLocked === 'boolean'
+        ? patch.avatarLocked
+        : Boolean(existing.avatarLocked),
+  };
+};
+
+const clearRoomKickReuseBlock = (userId) => {
+  const cleanUserId = String(userId || '').trim();
+
+  if (!cleanUserId) {
+    return;
+  }
+
+  delete state.kickedRoomUserIds[cleanUserId];
+};
+
+const emitState = () => {
+  io.emit('server:state', getPublicState());
+};
+
+const ensureChatForUser = (user) => {
+  if (!state.chats[user.id]) {
+    state.chats[user.id] = [];
+  }
+};
+
+const createUserForSocket = (socket) => {
+  const userId = String(state.nextUserNumber);
+  const userName = pickRandomUserName();
+
+  state.nextUserNumber += 1;
+
+  const user = {
+    id: userId,
+    name: userName,
+    silhouetteColour: '#0b3d91',
+    bgColour: '#ece9d8',
+    avatarIcon: 'uzivatel',
+    avatarLocked: false,
+    online: true,
+    lastSeenAt: Date.now(),
+    socketId: socket.id,
+   };
+
+  state.users.push(user);
+  rememberUserProfile(user);
+
+  socket.data.role = 'user';
+  socket.data.userId = user.id;
+
+  socket.join('users');
+  socket.join(`user:${user.id}`);
+
+  ensureChatForUser(user);
+
+  return user;
+};
+
+const createUserWithKnownIdForSocket = (socket, userId) => {
+  const cleanUserId = String(userId || '').trim();
+
+  if (!cleanUserId) {
+    return null;
+  }
+
+  const profile = getStoredUserProfile(cleanUserId);
+  const nextName = !isPlaceholderUserName(profile?.name)
+    ? profile.name
+    : pickRandomUserName();
+
+  const user = {
+    id: cleanUserId,
+    name: nextName,
+    silhouetteColour: profile?.silhouetteColour || '#0b3d91',
+    bgColour: profile?.bgColour || '#ece9d8',
+    avatarIcon: normalizeAvatarIcon(profile?.avatarIcon),
+    avatarLocked: Boolean(profile?.avatarLocked),
+    online: true,
+    lastSeenAt: Date.now(),
+    socketId: socket.id,
+  };
+
+  state.users.push(user);
+  rememberUserProfile(user);
+
+  const numericUserId = Number.parseInt(cleanUserId, 10);
+  if (Number.isFinite(numericUserId) && numericUserId >= state.nextUserNumber) {
+    state.nextUserNumber = numericUserId + 1;
+  }
+
+  socket.data.role = 'user';
+  socket.data.userId = user.id;
+
+  socket.join('users');
+  socket.join(`user:${user.id}`);
+
+  ensureChatForUser(user);
+
+  return user;
+};
+
+const getUserById = (userId) => {
+  return state.users.find((user) => user.id === userId);
+};
+
+const markUserOnline = (userId, socket) => {
+  state.users = state.users.map((user) =>
+    user.id === userId
+      ? {
+          ...user,
+          online: true,
+          lastSeenAt: Date.now(),
+          socketId: socket.id,
+        }
+      : user
+  );
+
+  socket.data.role = 'user';
+  socket.data.userId = userId;
+
+  socket.join('users');
+  socket.join(`user:${userId}`);
+
+  const currentUser = getUserById(userId);
+  rememberUserProfile(currentUser);
+};
+
+const markUserOfflineBySocket = (socket) => {
+  const userId = socket.data.userId;
+
+  if (!userId) {
+    return;
+  }
+
+  state.users = state.users.map((user) =>
+    user.id === userId
+      ? {
+          ...user,
+          online: false,
+          lastSeenAt: Date.now(),
+          socketId: null,
+        }
+      : user
+  );
+};
+
+const removeUserById = (userId) => {
+  const cleanUserId = String(userId || '').trim();
+
+  if (!cleanUserId) {
+    return;
+  }
+
+  state.users = state.users.filter((user) => user.id !== cleanUserId);
+  delete state.chats[cleanUserId];
+  delete state.mutedUsers[cleanUserId];
+  delete state.secretMutedUsers[cleanUserId];
+  delete state.userPinsById[cleanUserId];
+};
+
+const kickUser = (userId, reason = 'Byl jsi vyhozen z roomky.') => {
+  const cleanUserId = String(userId || '').trim();
+  const user = getUserById(cleanUserId);
+
+  if (!user) {
+    return;
+  }
+
+  rememberUserProfile(user);
+  const specialPin = state.userPinsById[cleanUserId] || null;
+
+  io.to(`user:${cleanUserId}`).emit('user:kicked', {
+    userId: cleanUserId,
+    reason,
+    preserveIdentity: Boolean(specialPin),
+    specialPin,
+  });
+
+  state.users = state.users.filter((item) => item.id !== cleanUserId);
+
+  delete state.mutedUsers[cleanUserId];
+  delete state.secretMutedUsers[cleanUserId];
+
+  if (!specialPin) {
+    delete state.userPinsById[cleanUserId];
+  }
+
+  emitState();
+};
+
+const kickAllUsers = (reason = 'Roomka byla zmÄ›nÄ›na. PĹ™ihlaĹˇ se znovu.') => {
+  io.to('users').emit('room:kicked', {
+    reason,
+  });
+
+  state.users.forEach((user) => {
+    state.kickedRoomUserIds[String(user.id)] = Date.now();
+  });
+
+  state.users = [];
+  state.chats = {};
+  state.mutedUsers = {};
+  state.secretMutedUsers = {};
+  state.userPinsById = {};
+  state.userProfilesById = {};
+  state.kickedRoomUserIds = {};
+  state.nextUserNumber = 1;
+
+  emitState();
+};
+
+app.get('/', (req, res) => {
+  res.json({
+    ok: true,
+    message: 'Chat-XP server jede!',
+    users: getPublicUsers(),
+  });
+});
+
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+
+  socket.emit('server:state', getPublicState());
+
+  socket.on('client:ready', ({ lastUserId }) => {
+    const cleanLastId = String(lastUserId || '').trim();
+
+    if (!cleanLastId) {
+      return;
+    }
+
+    socket.data.lastUserId = cleanLastId;
+  });
+
+  socket.on('auth:checkPin', ({ pin, lastUserId }) => {
+    const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 4);
+    const cleanLastId = String(lastUserId || socket.data.lastUserId || '').trim();
+    const specialPinForLastId = cleanLastId ? state.userPinsById[cleanLastId] : null;
+    const isSpecialPinLogin = Boolean(
+      cleanLastId && specialPinForLastId && cleanPin === specialPinForLastId
+    );
+    const isRoomPinLogin = cleanPin === state.userPin;
+
+    if (cleanPin === state.adminPin) {
+      socket.leave('users');
+      if (socket.data.userId) {
+        socket.leave(`user:${String(socket.data.userId)}`);
+      }
+
+      socket.data.role = 'admin';
+      socket.data.userId = null;
+      socket.join('admins');
+
+      socket.emit('auth:success', {
+        role: 'admin',
+      });
+
+      emitState();
+      return;
+    }
+
+    if (cleanLastId && specialPinForLastId && cleanPin !== specialPinForLastId) {
+      socket.emit('auth:error', {
+        message: `Pro tento ĂşÄŤet musĂ­Ĺˇ pouĹľĂ­t PIN ${specialPinForLastId}.`,
+      });
+      return;
+    }
+
+    if (isRoomPinLogin || isSpecialPinLogin) {
+      socket.leave('admins');
+
+      if (cleanLastId && state.kickedRoomUserIds[cleanLastId] && !isSpecialPinLogin) {
+        removeUserById(cleanLastId);
+      }
+
+      if (cleanLastId) {
+        const existing = getUserById(cleanLastId);
+
+        if (existing && !state.kickedRoomUserIds[cleanLastId]) {
+          const isUsedByOtherSocket = Boolean(
+            existing.online && existing.socketId && existing.socketId !== socket.id
+          );
+
+          if (isUsedByOtherSocket && !isSpecialPinLogin) {
+            const user = createUserForSocket(socket);
+            socket.data.lastUserId = user.id;
+
+            socket.emit('auth:success', {
+              role: 'user',
+              userId: user.id,
+              userName: user.name,
+            });
+
+            socket.emit('chat:messages', {
+              userId: user.id,
+              messages: state.chats[user.id] || [],
+            });
+
+            emitState();
+            return;
+          }
+
+          const normalizedUser = ensureRandomNameForUser(existing.id) || existing;
+
+          markUserOnline(existing.id, socket);
+          socket.data.lastUserId = existing.id;
+          clearRoomKickReuseBlock(existing.id);
+
+          socket.emit('auth:success', {
+            role: 'user',
+            userId: existing.id,
+            userName: normalizedUser.name,
+          });
+
+          socket.emit('chat:messages', {
+            userId: existing.id,
+            messages: state.chats[existing.id] || [],
+          });
+
+          emitState();
+          return;
+        }
+
+        if (isSpecialPinLogin) {
+          const restoredUser = createUserWithKnownIdForSocket(socket, cleanLastId);
+
+          if (restoredUser) {
+            socket.data.lastUserId = restoredUser.id;
+            clearRoomKickReuseBlock(restoredUser.id);
+
+            socket.emit('auth:success', {
+              role: 'user',
+              userId: restoredUser.id,
+              userName: restoredUser.name,
+            });
+
+            socket.emit('chat:messages', {
+              userId: restoredUser.id,
+              messages: state.chats[restoredUser.id] || [],
+            });
+
+            emitState();
+            return;
+          }
+        }
+
+        if (isRoomPinLogin && !state.kickedRoomUserIds[cleanLastId]) {
+          const rememberedProfile = getStoredUserProfile(cleanLastId);
+
+          if (rememberedProfile) {
+            const restoredUser = createUserWithKnownIdForSocket(socket, cleanLastId);
+
+            if (restoredUser) {
+              socket.data.lastUserId = restoredUser.id;
+              clearRoomKickReuseBlock(restoredUser.id);
+
+              socket.emit('auth:success', {
+                role: 'user',
+                userId: restoredUser.id,
+                userName: restoredUser.name,
+              });
+
+              socket.emit('chat:messages', {
+                userId: restoredUser.id,
+                messages: state.chats[restoredUser.id] || [],
+              });
+
+              emitState();
+              return;
+            }
+          }
+        }
+      }
+
+      const user = createUserForSocket(socket);
+      socket.data.lastUserId = user.id;
+
+      socket.emit('auth:success', {
+        role: 'user',
+        userId: user.id,
+        userName: user.name,
+      });
+
+      socket.emit('chat:messages', {
+        userId: user.id,
+        messages: state.chats[user.id] || [],
+      });
+
+      emitState();
+      return;
+    }
+
+    socket.emit('auth:error', {
+      message: 'Ĺ patnĂ˝ PIN.',
+    });
+  });
+
+  socket.on('auth:logout', () => {
+    if (socket.data.userId) {
+      removeUserById(socket.data.userId);
+    }
+
+    socket.leave('admins');
+    socket.leave('users');
+
+    if (socket.data.userId) {
+      socket.leave(`user:${String(socket.data.userId)}`);
+    }
+
+    socket.data.role = null;
+    socket.data.userId = null;
+    socket.data.lastUserId = null;
+
+    emitState();
+  });
+
+  socket.on('auth:pauseUser', () => {
+    if (socket.data.role !== 'user' || !socket.data.userId) {
+      return;
+    }
+
+    markUserOfflineBySocket(socket);
+    socket.leave('users');
+    socket.leave(`user:${String(socket.data.userId)}`);
+    socket.data.role = null;
+    socket.data.userId = null;
+
+    emitState();
+  });
+
+  socket.on('state:get', () => {
+    socket.emit('server:state', getPublicState());
+  });
+
+  socket.on('chat:get', ({ userId }) => {
+    const cleanUserId = String(userId || '');
+
+    socket.emit('chat:messages', {
+      userId: cleanUserId,
+      messages: state.chats[cleanUserId] || [],
+    });
+  });
+
+  socket.on('chat:send', ({ userId, sender, text }) => {
+  const cleanUserId = String(userId || '');
+  const cleanSender = String(sender || '');
+  const trimmedText = String(text || '').trim();
+
+  if (!cleanUserId || !trimmedText) {
+    return;
+  }
+
+  const user = getUserById(cleanUserId);
+
+  if (cleanSender === 'user') {
+    if (!user) {
+      socket.emit('user:kicked', {
+        userId: cleanUserId,
+        reason: 'UĹľ nejsi v roomce. PĹ™ihlaĹˇ se znovu.',
+      });
+      return;
+    }
+
+    if (socket.data.userId !== cleanUserId) {
+      socket.emit('user:kicked', {
+        userId: cleanUserId,
+        reason: 'NeplatnĂ© pĹ™ihlĂˇĹˇenĂ­. PĹ™ihlaĹˇ se znovu.',
+      });
+      return;
+    }
+
+    const muteUntil = state.mutedUsers[cleanUserId] || 0;
+
+    if (muteUntil > Date.now()) {
+      socket.emit('chat:muted', {
+        userId: cleanUserId,
+        muteUntil,
+      });
+      return;
+    }
+
+    markUserOnline(cleanUserId, socket);
+  }
+
+  const allowedSenders = ['user', 'admin', 'system'];
+
+  if (!allowedSenders.includes(cleanSender)) {
+    return;
+  }
+
+  const newMessage = {
+    id: createMessageId(),
+    sender: cleanSender,
+    text: trimmedText,
+    createdAt: Date.now(),
+  };
+
+  if (!state.chats[cleanUserId]) {
+    state.chats[cleanUserId] = [];
+  }
+
+  state.chats[cleanUserId].push(newMessage);
+
+  io.emit('chat:messages', {
+    userId: cleanUserId,
+    messages: state.chats[cleanUserId],
+  });
+
+  emitState();
+
+  // REAL PUSH for killed app
+  (async () => {
+    try {
+      if (cleanSender === 'admin') {
+        // admin -> user
+        const userToken = state.pushTokensByUserId[cleanUserId];
+        if (userToken && shouldSendPushWithCooldown(`push-user-${cleanUserId}`)) {
+          await sendExpoPushAsync({
+            to: userToken,
+            title: 'Nova zprava od admina',
+            body: trimmedText.slice(0, 120),
+            data: { userId: cleanUserId, action: 'openChat' },
+          });
+        }
+      } else if (cleanSender === 'user') {
+        // user -> admin
+        const adminTokens = Array.from(state.adminPushTokens);
+        if (adminTokens.length > 0 && shouldSendPushWithCooldown(`push-admin-${cleanUserId}`)) {
+          const senderName = user?.name || `Uzivatel ${cleanUserId}`;
+          await sendExpoPushAsync({
+            to: adminTokens,
+            title: `Nova zprava od ${senderName}`,
+            body: trimmedText.slice(0, 120),
+            data: { userId: cleanUserId, action: 'openChat' },
+          });
+        }
+      }
+    } catch {}
+  })();
+});
+
+  socket.on('chat:deleteMessages', ({ userId, messageIds }) => {
+    const cleanUserId = String(userId || '');
+    const ids = Array.isArray(messageIds)
+      ? messageIds.map((item) => String(item || '')).filter(Boolean)
+      : [];
+
+    if (!cleanUserId || ids.length === 0) {
+      return;
+    }
+
+    const isAdmin = socket.data.role === 'admin';
+    const isSameUser = socket.data.role === 'user' && socket.data.userId === cleanUserId;
+
+    if (!isAdmin && !isSameUser) {
+      return;
+    }
+
+    if (!state.chats[cleanUserId]) {
+      return;
+    }
+
+    const idsSet = new Set(ids);
+    state.chats[cleanUserId] = state.chats[cleanUserId].filter(
+      (message) => !idsSet.has(String(message.id))
+    );
+
+    io.emit('chat:messages', {
+      userId: cleanUserId,
+      messages: state.chats[cleanUserId],
+    });
+  });
+
+  socket.on('admin:setStatus', ({ status }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const nextStatus = String(status || '').toLowerCase();
+    state.adminStatus = ['on', 'off', 'job'].includes(nextStatus) ? nextStatus : 'off';
+
+    emitState();
+  });
+
+  socket.on('admin:setUserPin', ({ pin }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 4);
+
+    if (cleanPin.length !== 4) {
+      socket.emit('admin:error', {
+        message: 'UĹľivatelskĂ˝ PIN musĂ­ mĂ­t 4 ÄŤĂ­slice.',
+      });
+      return;
+    }
+
+    state.userPin = cleanPin;
+
+    kickAllUsers('PIN roomky byl zmÄ›nÄ›n. PĹ™ihlaĹˇ se znovu.');
+
+    emitState();
+  });
+
+  socket.on('admin:setAdminPin', ({ pin }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 4);
+
+    if (cleanPin.length !== 4) {
+      socket.emit('admin:error', {
+        message: 'Admin PIN musĂ­ mĂ­t 4 ÄŤĂ­slice.',
+      });
+      return;
+    }
+
+    state.adminPin = cleanPin;
+
+    emitState();
+  });
+
+  socket.on('admin:renameUser', ({ userId, name }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '');
+    const cleanName = String(name || '').trim();
+
+    if (!cleanUserId || !cleanName) {
+      return;
+    }
+
+    state.users = state.users.map((user) =>
+      user.id === cleanUserId
+        ? {
+            ...user,
+            name: cleanName,
+          }
+        : user
+    );
+
+    const renamedUser = getUserById(cleanUserId);
+    rememberUserProfile(renamedUser);
+    patchStoredUserProfile(cleanUserId, {
+      name: cleanName,
+    });
+
+    emitState();
+  });
+
+  socket.on('admin:kickUser', ({ userId, newPin }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '');
+    const cleanPin = String(newPin || '').replace(/[^0-9]/g, '').slice(0, 4);
+
+    if (!cleanUserId) {
+      return;
+    }
+
+    const targetPin = cleanPin.length === 4 ? cleanPin : '0008';
+    state.userPinsById[cleanUserId] = targetPin;
+
+    kickUser(cleanUserId, `Byl jsi vyhozen adminem z roomky. TvĹŻj PIN je ${targetPin}.`);
+  });
+
+  socket.on('admin:muteUser', ({ userId, milliseconds }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '');
+    const duration = Number(milliseconds || 0);
+
+    if (!cleanUserId || !duration) {
+      return;
+    }
+
+    state.mutedUsers[cleanUserId] = Date.now() + duration;
+
+    emitState();
+  });
+
+  socket.on('admin:unmuteUser', ({ userId }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '');
+
+    if (!cleanUserId) {
+      return;
+    }
+
+    delete state.mutedUsers[cleanUserId];
+
+    emitState();
+  });
+
+  socket.on('admin:secretMuteUser', ({ userId, enabled }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '');
+    const isEnabled = Boolean(enabled);
+
+    if (!cleanUserId) {
+      return;
+    }
+
+    if (isEnabled) {
+      state.secretMutedUsers[cleanUserId] = true;
+    } else {
+      delete state.secretMutedUsers[cleanUserId];
+    }
+
+    if (isEnabled) {
+      delete state.mutedUsers[cleanUserId];
+    }
+
+    emitState();
+  });
+
+  socket.on('admin:setUserColour', ({ userId, colour }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '');
+    const cleanColour = String(colour || '').trim();
+
+    if (!cleanUserId || !cleanColour) {
+      return;
+    }
+
+    state.users = state.users.map((user) =>
+      user.id === cleanUserId
+        ? {
+            ...user,
+            silhouetteColour: cleanColour,
+          }
+        : user
+    );
+
+    const updatedUser = getUserById(cleanUserId);
+    rememberUserProfile(updatedUser);
+    patchStoredUserProfile(cleanUserId, {
+      silhouetteColour: cleanColour,
+    });
+
+    emitState();
+  });
+
+  socket.on('admin:setUserFuckerAvatar', ({ userId, enabled }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '').trim();
+    const isEnabled = Boolean(enabled);
+
+    if (!cleanUserId) {
+      return;
+    }
+
+    state.users = state.users.map((user) =>
+      user.id === cleanUserId
+        ? {
+            ...user,
+            avatarIcon: isEnabled ? 'fuckerr' : 'uzivatel',
+            avatarLocked: isEnabled,
+          }
+        : user
+    );
+
+    const updatedUser = getUserById(cleanUserId);
+    rememberUserProfile(updatedUser);
+    patchStoredUserProfile(cleanUserId, {
+      avatarIcon: isEnabled ? 'fuckerr' : 'uzivatel',
+      avatarLocked: isEnabled,
+    });
+
+    emitState();
+  });
+
+  socket.on('user:setBgColour', ({ userId, colour }) => {
+    const cleanUserId = String(userId || '');
+    const cleanColour = String(colour || '').trim();
+
+    if (!cleanUserId || !cleanColour) {
+      return;
+    }
+
+    if (socket.data.role !== 'user' || socket.data.userId !== cleanUserId) {
+      return;
+    }
+
+    state.users = state.users.map((user) =>
+      user.id === cleanUserId
+        ? {
+            ...user,
+            bgColour: cleanColour,
+          }
+        : user
+    );
+
+    const updatedUser = getUserById(cleanUserId);
+    rememberUserProfile(updatedUser);
+    patchStoredUserProfile(cleanUserId, {
+      bgColour: cleanColour,
+    });
+
+    emitState();
+  });
+
+  socket.on('user:setAvatarIcon', ({ userId, icon }) => {
+    const cleanUserId = String(userId || '').trim();
+    const normalizedIcon = normalizeAvatarIcon(icon);
+
+    if (!cleanUserId) {
+      return;
+    }
+
+    if (socket.data.role !== 'user' || socket.data.userId !== cleanUserId) {
+      return;
+    }
+
+    const currentUser = getUserById(cleanUserId);
+    if (currentUser?.avatarLocked) {
+      return;
+    }
+
+    state.users = state.users.map((user) =>
+      user.id === cleanUserId
+        ? {
+            ...user,
+            avatarIcon: normalizedIcon,
+          }
+        : user
+    );
+
+    const updatedUser = getUserById(cleanUserId);
+    rememberUserProfile(updatedUser);
+    patchStoredUserProfile(cleanUserId, {
+      avatarIcon: normalizedIcon,
+    });
+
+    emitState();
+  });
+
+  socket.on('notifications:registerToken', ({ token, role, userId }) => {
+    const cleanToken = String(token || '').trim();
+
+    if (!cleanToken) {
+      return;
+    }
+
+    socket.data.pushToken = cleanToken;
+
+    if (role === 'admin') {
+      socket.data.role = 'admin';
+      socket.join('admins');
+      state.adminPushTokens.add(cleanToken);
+    }
+
+    if (role === 'user' && userId) {
+      const cleanUserId = String(userId);
+      socket.data.role = 'user';
+      socket.data.userId = cleanUserId;
+      socket.join('users');
+      socket.join(`user:${cleanUserId}`);
+      state.pushTokensByUserId[cleanUserId] = cleanToken;
+    }
+
+    console.log('Push token registered:', {
+      socketId: socket.id,
+      role,
+      userId,
+      token: cleanToken.slice(0, 20) + '...',
+    });
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+
+    markUserOfflineBySocket(socket);
+
+    emitState();
+  });
+});
+app.get('/health', (req, res) => {
+  res.status(200).json({ ok: true, message: 'Server alive' });
+
+});
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`âś… Chat-XP server bÄ›ĹľĂ­ na portu ${PORT}`);
+});
