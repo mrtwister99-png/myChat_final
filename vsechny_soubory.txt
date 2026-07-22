@@ -1,6 +1,7 @@
 ﻿
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\.claude\settings.json =====
+
 {
   "enabledPlugins": {
     "expo@claude-plugins-official": true
@@ -10,6 +11,7 @@
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\server\index.js =====
+
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
@@ -1113,6 +1115,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\server\package-lock.json =====
+
 {
   "name": "chat-server",
   "version": "1.0.0",
@@ -2582,6 +2585,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\server\package.json =====
+
 {
   "name": "chat-server",
   "version": "1.0.0",
@@ -2602,6 +2606,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\src\screens\AdminChat.js =====
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -4029,6 +4034,7 @@ const styles = StyleSheet.create({
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\src\screens\AdminPin.js =====
+
 // src/screens/AdminPin.js
 
 import React, { useEffect, useState } from 'react';
@@ -6779,6 +6785,7 @@ const styles = StyleSheet.create({
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\src\screens\PinEntry.js =====
+
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7470,6 +7477,7 @@ const styles = StyleSheet.create({
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\src\screens\UzivatelPin.js =====
+
 // src/screens/UzivatelPin.js
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -7488,6 +7496,7 @@ import {
   View,
   Keyboard,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
 import {
@@ -7636,6 +7645,9 @@ const getGlobalUserReadCounts = () => {
   return globalThis.CUSIIK_USER_READ_COUNTS;
 };
 
+const USER_READ_COUNTS_STORAGE_KEY = 'CUSIIK_USER_READ_COUNTS_PERSISTED';
+
+
 const formatMuteTimeLeft = (muteUntil) => {
   const now = Date.now();
   const diff = muteUntil - now;
@@ -7725,6 +7737,23 @@ const UzivatelPin = ({ navigation, route }) => {
   }, [currentUserId]);
 
   useEffect(() => {
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(USER_READ_COUNTS_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === 'object') {
+            globalThis.CUSIIK_USER_READ_COUNTS = parsed;
+            if (parsed[currentUserId] !== undefined) {
+              setReadAdminCount(parsed[currentUserId]);
+            }
+          }
+        }
+      } catch {}
+    })();
+  }, [currentUserId]);
+
+  useEffect(() => {
     screenModeRef.current = screenMode;
     if (screenMode === 'chat') {
       globalThis.CUSIIK_ACTIVE_USER_CHAT_ID = String(currentUserId);
@@ -7774,14 +7803,18 @@ const UzivatelPin = ({ navigation, route }) => {
     }, 120);
   };
 
-  const markMessagesAsRead = (nextMessages = messages) => {
+  const markMessagesAsRead = async (nextMessages = messages) => {
+    const count = getAdminMessageCount(nextMessages);
     const nextReadCounts = {
       ...getGlobalUserReadCounts(),
-      [currentUserId]: getAdminMessageCount(nextMessages),
+      [currentUserId]: count,
     };
 
     globalThis.CUSIIK_USER_READ_COUNTS = nextReadCounts;
-    setReadAdminCount(nextReadCounts[currentUserId] || 0);
+    setReadAdminCount(count);
+    try {
+      await AsyncStorage.setItem(USER_READ_COUNTS_STORAGE_KEY, JSON.stringify(nextReadCounts));
+    } catch {}
   };
 
   const openChat = () => {
@@ -7914,10 +7947,12 @@ const UzivatelPin = ({ navigation, route }) => {
 
       if (isInitialSync) {
         initialSyncDoneRef.current = true;
-        markMessagesAsRead(safeMessages);
-
-        // First sync after mount/reconnect can contain historical backlog;
-        // use it as baseline and do not notify for that backlog.
+        if (looksLikeHistoricalSync) {
+          return;
+        }
+        if (screenModeRef.current === 'chat' || isActiveInThisChat) {
+          markMessagesAsRead(safeMessages);
+        }
         return;
       }
 
@@ -7937,7 +7972,7 @@ const UzivatelPin = ({ navigation, route }) => {
         });
       }
 
-      if (screenModeRef.current === 'chat') {
+      if (screenModeRef.current === 'chat' || isActiveInThisChat) {
         markMessagesAsRead(safeMessages);
       }
     };
@@ -9219,6 +9254,7 @@ const styles = StyleSheet.create({
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\src\notifications.js =====
+
 // Push notifikace - zĂˇkladnĂ­ ukĂˇzka pĹ™es Expo Notifications
 // instalace:
 // npx expo install expo-notifications expo-device
@@ -9316,6 +9352,7 @@ export const showLocalMessageNotification = async ({ title, body, cooldownKey = 
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\src\socket.js =====
+
 // src/socket.js
 import { io } from 'socket.io-client';
 
@@ -9341,6 +9378,7 @@ socket.on('connect', () => {
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\App.js =====
+
 // App.js
 import React, { useEffect } from 'react';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
@@ -9537,6 +9575,7 @@ export default App;
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\app.json =====
+
 {
   "expo": {
     "name": "BLBEchat",
@@ -9571,6 +9610,7 @@ export default App;
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\index.js =====
+
 import { registerRootComponent } from 'expo';
 
 import App from './App';
@@ -9583,6 +9623,7 @@ registerRootComponent(App);
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\package-lock.json =====
+
 {
   "name": "deepseek",
   "version": "1.0.0",
@@ -19557,6 +19598,7 @@ registerRootComponent(App);
 
 
 ===== FILE: C:\Users\Admin\Desktop\myChat_fin\deepseek\package.json =====
+
 {
   "name": "deepseek",
   "version": "1.0.0",

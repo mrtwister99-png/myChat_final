@@ -1,0 +1,27 @@
+--- a/src/screens/UzivatelPin.js
++++ b/src/screens/UzivatelPin.js
+@@ -388,14 +388,21 @@
+       const newestAdminMessage = [...safeMessages]
+         .reverse()
+         .find((item) => item?.sender === 'admin');
+       const newestAdminAt = Number(newestAdminMessage?.createdAt || 0);
+-      const looksLikeHistoricalSync = newestAdminAt > 0 && newestAdminAt < screenMountAtRef.current;
++      const looksLikeHistoricalSync =
++        previousMessages.length === 0 && newestAdminAt > 0 && newestAdminAt < screenMountAtRef.current;
+       const isInitialSync = !initialSyncDoneRef.current;
+ 
+       if (isInitialSync) {
+         initialSyncDoneRef.current = true;
+         if (looksLikeHistoricalSync) {
+           return;
+         }
+         if (screenModeRef.current === 'chat' || isActiveInThisChat) {
+           markMessagesAsRead(safeMessages);
++        } else if (nextUnread > previousUnread) {
++          showLocalMessageNotification({
++            title: 'Nová zpráva od admina',
++            body: 'Máš novou zprávu v chatu.',
++          });
+         }
+         return;
+       }
