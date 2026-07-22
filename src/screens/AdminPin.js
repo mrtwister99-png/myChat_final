@@ -26,6 +26,7 @@ const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '8831';
 const DEFAULT_ADMIN_STATUS = globalThis.CUSIIK_ADMIN_STATUS || 'off';
 
 const MUTE_OPTIONS = [
+  { label: '5 min', milliseconds: 5 * 60 * 1000 },
   { label: '10 min', milliseconds: 10 * 60 * 1000 },
   { label: '30 min', milliseconds: 30 * 60 * 1000 },
   { label: '1 hod', milliseconds: 60 * 60 * 1000 },
@@ -33,7 +34,6 @@ const MUTE_OPTIONS = [
   { label: '12 hod', milliseconds: 12 * 60 * 60 * 1000 },
   { label: '1 den', milliseconds: 24 * 60 * 60 * 1000 },
   { label: '2 dny', milliseconds: 2 * 24 * 60 * 60 * 1000 },
-  { label: '7 dní', milliseconds: 7 * 24 * 60 * 60 * 1000 },
 ];
 
 const USER_COLOURS = [
