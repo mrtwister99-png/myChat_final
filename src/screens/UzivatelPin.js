@@ -350,6 +350,15 @@ const UzivatelPin = ({ navigation, route }) => {
   }, []);
 
   useEffect(() => {
+    const handleConnect = () => {
+      initialSyncDoneRef.current = false;
+
+      socket.emit('state:get');
+      socket.emit('chat:get', {
+        userId: currentUserId,
+      });
+    };
+
     const handleServerState = (serverState) => {
       if (serverState?.adminStatus) {
         setAdminStatus(serverState.adminStatus);
@@ -433,15 +442,15 @@ const UzivatelPin = ({ navigation, route }) => {
 
       if (isInitialSync) {
         initialSyncDoneRef.current = true;
+        markMessagesAsRead(safeMessages);
 
-        // First sync can contain old server history; do not notify for that backlog.
-        if (looksLikeHistoricalSync) {
-          if (screenModeRef.current === 'chat') {
-            markMessagesAsRead(safeMessages);
-          }
+        // First sync after mount/reconnect can contain historical backlog;
+        // use it as baseline and do not notify for that backlog.
+        return;
+      }
 
-          return;
-        }
+      if (looksLikeHistoricalSync) {
+        return;
       }
 
       const shouldNotify =
@@ -475,20 +484,19 @@ const UzivatelPin = ({ navigation, route }) => {
     socket.on('server:state', handleServerState);
     socket.on('chat:messages', handleChatMessages);
     socket.on('chat:muted', handleMuted);
+    socket.on('connect', handleConnect);
 
     if (!socket.connected) {
       socket.connect();
+    } else {
+      handleConnect();
     }
-
-    socket.emit('state:get');
-    socket.emit('chat:get', {
-      userId: currentUserId,
-    });
 
     return () => {
       socket.off('server:state', handleServerState);
       socket.off('chat:messages', handleChatMessages);
       socket.off('chat:muted', handleMuted);
+      socket.off('connect', handleConnect);
     };
   }, [currentUserId]);
 
@@ -645,6 +653,15 @@ const UzivatelPin = ({ navigation, route }) => {
   };
 
   const renderTitleBar = (title) => {
+    const handleTopBack = () => {
+      if (screenMode === 'chat') {
+        setScreenMode('menu');
+        return;
+      }
+
+      goToLogin();
+    };
+
     return (
       <View style={styles.titleBar}>
         <View style={styles.titleLeft}>
@@ -674,23 +691,17 @@ const UzivatelPin = ({ navigation, route }) => {
         </View>
 
         <View style={styles.windowButtons}>
-          {screenMode === 'chat' ? (
-            <View style={styles.windowButton}>
-              <Pressable
-                style={styles.closePressable}
-                onPress={() => setScreenMode('menu')}
-              >
-                <Text style={styles.windowButtonText}>←</Text>
-              </Pressable>
-            </View>
-          ) : null}
-
           <View style={styles.windowButton}>
-            <Text style={styles.windowButtonText}>_</Text>
+            <Pressable
+              style={styles.closePressable}
+              onPress={handleTopBack}
+            >
+              <Text style={styles.windowButtonText}>←</Text>
+            </Pressable>
           </View>
 
           <View style={styles.windowButton}>
-            <Text style={styles.windowButtonText}>□</Text>
+            <Text style={styles.windowButtonText}>_</Text>
           </View>
 
           <View style={[styles.windowButton, styles.closeButton]}>

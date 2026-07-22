@@ -103,6 +103,7 @@ const App = () => {
         showLocalMessageNotification({
           title: `Nová zpráva od ${senderName}`,
           body: 'Otevři admin chat.',
+          cooldownKey: `admin-user-${cleanUserId}`,
         });
       }
     };

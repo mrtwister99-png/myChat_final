@@ -8,12 +8,22 @@ import Constants from 'expo-constants';
 
 const NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000;
 
-const getLastNotificationAt = () => {
-  return Number(globalThis.CUSIIK_LAST_NOTIFICATION_AT || 0);
+const getNotificationCooldownMap = () => {
+  if (!globalThis.CUSIIK_NOTIFICATION_COOLDOWNS || typeof globalThis.CUSIIK_NOTIFICATION_COOLDOWNS !== 'object') {
+    globalThis.CUSIIK_NOTIFICATION_COOLDOWNS = {};
+  }
+
+  return globalThis.CUSIIK_NOTIFICATION_COOLDOWNS;
 };
 
-const setLastNotificationAt = (timestamp) => {
-  globalThis.CUSIIK_LAST_NOTIFICATION_AT = Number(timestamp || 0);
+const getLastNotificationAt = (cooldownKey) => {
+  const cooldownMap = getNotificationCooldownMap();
+  return Number(cooldownMap[cooldownKey] || 0);
+};
+
+const setLastNotificationAt = (cooldownKey, timestamp) => {
+  const cooldownMap = getNotificationCooldownMap();
+  cooldownMap[cooldownKey] = Number(timestamp || 0);
 };
 
 Notifications.setNotificationHandler({
@@ -61,9 +71,10 @@ export const registerForPushNotificationsAsync = async () => {
   return tokenData.data;
 };
 
-export const showLocalMessageNotification = async ({ title, body }) => {
+export const showLocalMessageNotification = async ({ title, body, cooldownKey = 'global-message' }) => {
+  const safeCooldownKey = String(cooldownKey || 'global-message');
   const now = Date.now();
-  const lastNotificationAt = getLastNotificationAt();
+  const lastNotificationAt = getLastNotificationAt(safeCooldownKey);
 
   if (lastNotificationAt > 0 && now - lastNotificationAt < NOTIFICATION_COOLDOWN_MS) {
     return false;
@@ -78,6 +89,6 @@ export const showLocalMessageNotification = async ({ title, body }) => {
     trigger: null,
   });
 
-  setLastNotificationAt(now);
+  setLastNotificationAt(safeCooldownKey, now);
   return true;
 };

@@ -48,6 +48,14 @@ const getGlobalMutedUsers = () => {
   return globalThis.CUSIIK_MUTED_USERS;
 };
 
+const getGlobalAdminReadCounts = () => {
+  if (!globalThis.CUSIIK_ADMIN_READ_COUNTS) {
+    globalThis.CUSIIK_ADMIN_READ_COUNTS = {};
+  }
+
+  return globalThis.CUSIIK_ADMIN_READ_COUNTS;
+};
+
 const formatMuteTimeLeft = (muteUntil) => {
   const now = Date.now();
   const diff = muteUntil - now;
@@ -202,9 +210,16 @@ useEffect(() => {
       }
 
       const chats = getGlobalChats();
+      const safeMessages = nextMessages || [];
+      const userMessageCount = safeMessages.filter((item) => item?.sender === 'user').length;
+      const nextReadCounts = {
+        ...getGlobalAdminReadCounts(),
+        [userId]: userMessageCount,
+      };
 
-      chats[userId] = nextMessages || [];
-      setMessages(nextMessages || []);
+      chats[userId] = safeMessages;
+      globalThis.CUSIIK_ADMIN_READ_COUNTS = nextReadCounts;
+      setMessages(safeMessages);
     };
 
     socket.on('connect', handleConnect);
@@ -541,6 +556,16 @@ useEffect(() => {
             </View>
 
             <View style={styles.windowButtons}>
+              <View style={styles.windowButton}>
+                <Pressable style={styles.closePressable} onPress={goBack}>
+                  <Text style={styles.windowButtonText}>←</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.windowButton}>
+                <Text style={styles.windowButtonText}>_</Text>
+              </View>
+
               <View style={[styles.windowButton, styles.closeButton]}>
                 <Pressable style={styles.closePressable} onPress={goBack}>
                   <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>

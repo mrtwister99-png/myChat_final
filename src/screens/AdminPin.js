@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -259,6 +258,9 @@ const AdminPin = ({ navigation }) => {
   const [changeModalVisible, setChangeModalVisible] = useState(false);
   const [newPin, setNewPin] = useState('');
   const [changeError, setChangeError] = useState('');
+  const [hardResetConfirmStep1Visible, setHardResetConfirmStep1Visible] = useState(false);
+  const [hardResetConfirmStep2Visible, setHardResetConfirmStep2Visible] = useState(false);
+  const [pendingHardResetPin, setPendingHardResetPin] = useState('');
 
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [settingsScreen, setSettingsScreen] = useState('menu');
@@ -372,12 +374,33 @@ const AdminPin = ({ navigation }) => {
     };
 
     const handleChatMessages = ({ userId, messages }) => {
+      const cleanUserId = String(userId || '').trim();
+
+      if (!cleanUserId) {
+        return;
+      }
+
       const chats = getGlobalChats();
       const safeMessages = messages || [];
+      const userMessagesCount = safeMessages.filter((item) => item?.sender === 'user').length;
+      const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
 
-      chats[userId] = safeMessages;
+      chats[cleanUserId] = safeMessages;
 
       const nextReadCounts = { ...getGlobalReadCounts() };
+
+      if (!Object.prototype.hasOwnProperty.call(nextReadCounts, cleanUserId)) {
+        nextReadCounts[cleanUserId] = userMessagesCount;
+      }
+
+      if (activeAdminChatUserId && activeAdminChatUserId === cleanUserId) {
+        nextReadCounts[cleanUserId] = userMessagesCount;
+      }
+
+      globalThis.CUSIIK_ADMIN_READ_COUNTS = nextReadCounts;
+
+      setNowTick(Date.now());
+
       setReadCounts((currentReadCounts) => {
         if (areReadCountsEqual(currentReadCounts, nextReadCounts)) {
           return currentReadCounts;
@@ -535,6 +558,9 @@ const AdminPin = ({ navigation }) => {
     setChangeModalVisible(false);
     setNewPin('');
     setChangeError('');
+    setPendingHardResetPin('');
+    setHardResetConfirmStep1Visible(false);
+    setHardResetConfirmStep2Visible(false);
   };
 
   const saveChangeAndKickUsers = () => {
@@ -545,51 +571,37 @@ const AdminPin = ({ navigation }) => {
       return;
     }
 
-    Alert.alert(
-      'HARD ROOM RESET',
-      'Po potvrzení se nastaví nový PIN pro všechny uživatele, všichni uživatelé budou kicknuti z roomky a smazáni!\n\nOpravdu chceš toto udělat?\nInformoval jsi všechny důležité o novém PINu?',
-      [
-        {
-          text: 'NE',
-          style: 'cancel',
-        },
-        {
-          text: 'OK',
-          onPress: () => {
-            Alert.alert(
-              'Poslední potvrzení',
-              'Tento krok je nevratný... Opravdu potvrdit?',
-              [
-                {
-                  text: 'NE',
-                  style: 'cancel',
-                },
-                {
-                  text: 'ANO',
-                  style: 'destructive',
-                  onPress: () => {
-                    globalThis.CUSIIK_USER_PIN = cleanedPin;
-                    setCurrentUserPin(cleanedPin);
+    setPendingHardResetPin(cleanedPin);
+    setHardResetConfirmStep1Visible(true);
+  };
 
-                    if (socket.connected) {
-                      socket.emit('admin:setUserPin', {
-                        pin: cleanedPin,
-                      });
-                    }
+  const confirmHardResetStep1 = () => {
+    setHardResetConfirmStep1Visible(false);
+    setHardResetConfirmStep2Visible(true);
+  };
 
-                    setLastActionText(
-                      `HARD ROOM RESET proveden. Nový PIN je ${cleanedPin}.`
-                    );
+  const confirmHardResetFinal = () => {
+    const cleanPin = String(pendingHardResetPin || '').replace(/[^0-9]/g, '').slice(0, 4);
 
-                    closeChangeModal();
-                  },
-                },
-              ]
-            );
-          },
-        },
-      ]
-    );
+    if (cleanPin.length !== 4) {
+      setHardResetConfirmStep2Visible(false);
+      setChangeError('PIN musí mít přesně 4 číslice.');
+      return;
+    }
+
+    globalThis.CUSIIK_USER_PIN = cleanPin;
+    setCurrentUserPin(cleanPin);
+
+    if (socket.connected) {
+      socket.emit('admin:setUserPin', {
+        pin: cleanPin,
+      });
+    }
+
+    setLastActionText(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
+
+    setHardResetConfirmStep2Visible(false);
+    closeChangeModal();
   };
 
   const openSettings = () => {
@@ -1132,6 +1144,16 @@ const AdminPin = ({ navigation }) => {
             </View>
 
             <View style={styles.windowButtons}>
+              <View style={styles.windowButton}>
+                <Pressable style={styles.closePressable} onPress={goToPinEntry}>
+                  <Text style={styles.windowButtonText}>←</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.windowButton}>
+                <Text style={styles.windowButtonText}>_</Text>
+              </View>
+
               <View style={[styles.windowButton, styles.closeButton]}>
                 <Pressable style={styles.closePressable} onPress={goToPinEntry}>
                   <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
@@ -1202,7 +1224,6 @@ const AdminPin = ({ navigation }) => {
                     .map((user) => {
                     const unreadCount = getUnreadCount(user.id);
                     const isUserMuted = getMuteMsLeft(user.id, nowTick) > 0;
-                    const secretMutedUsers = getGlobalSecretMutedUsers();
                     const isUserSecretMuted = Boolean(secretMutedUsers[user.id]);
                     const isUserFuckerLocked = Boolean(user.avatarLocked);
 
@@ -1622,7 +1643,7 @@ const AdminPin = ({ navigation }) => {
           onRequestClose={closeChangeModal}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.modalWindow}>
+            <View style={[styles.modalWindow, styles.modalWindowDangerDouble]}>
               <View style={styles.modalTitleBar}>
                 <Text style={styles.modalTitleText}>HARD ROOM RESET</Text>
 
@@ -1682,6 +1703,112 @@ const AdminPin = ({ navigation }) => {
                     onPress={closeChangeModal}
                   >
                     <Text style={styles.modalButtonText}>Zrušit</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={hardResetConfirmStep1Visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setHardResetConfirmStep1Visible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalWindow, styles.modalWindowDangerSingle]}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>HARD ROOM RESET - potvrzení 1/2</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setHardResetConfirmStep1Visible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <View style={styles.warningBox}>
+                  <Text style={styles.warningText}>
+                    Po potvrzení se nastaví nový PIN: {pendingHardResetPin || '----'}
+                  </Text>
+                  <Text style={styles.warningText}>
+                    Všichni uživatelé budou kicknuti a roomka se resetuje.
+                  </Text>
+                </View>
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={confirmHardResetStep1}
+                  >
+                    <Text style={styles.modalButtonText}>Pokračovat</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => setHardResetConfirmStep1Visible(false)}
+                  >
+                    <Text style={styles.modalButtonText}>Zrušit</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={hardResetConfirmStep2Visible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setHardResetConfirmStep2Visible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalWindow, styles.modalWindowDangerSingle]}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>HARD ROOM RESET - finální potvrzení</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setHardResetConfirmStep2Visible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <View style={styles.warningBox}>
+                  <Text style={styles.warningText}>Tento krok je nevratný.</Text>
+                  <Text style={styles.warningText}>Opravdu potvrdit HARD ROOM RESET?</Text>
+                </View>
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={confirmHardResetFinal}
+                  >
+                    <Text style={styles.modalButtonText}>ANO, potvrdit</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => setHardResetConfirmStep2Visible(false)}
+                  >
+                    <Text style={styles.modalButtonText}>NE</Text>
                   </Pressable>
                 </View>
               </View>
@@ -2210,6 +2337,26 @@ const styles = StyleSheet.create({
     borderLeftColor: '#ffffff',
     borderRightColor: '#003c9e',
     borderBottomColor: '#003c9e',
+  },
+
+  modalWindowDangerSingle: {
+    borderTopColor: '#ff8a8a',
+    borderLeftColor: '#ff8a8a',
+    borderRightColor: '#a80000',
+    borderBottomColor: '#a80000',
+  },
+
+  modalWindowDangerDouble: {
+    borderWidth: 4,
+    borderTopColor: '#ff8a8a',
+    borderLeftColor: '#ff8a8a',
+    borderRightColor: '#a80000',
+    borderBottomColor: '#a80000',
+    shadowColor: '#a80000',
+    shadowOpacity: 0.35,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 3,
   },
 
   modalTitleBar: {
