@@ -263,8 +263,8 @@ const PulsingDot = ({ active, style }) => {
     if (active) {
       loopRef.current = Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.6, duration: 550, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 550, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.5, duration: 700, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
         ])
       );
       loopRef.current.start();

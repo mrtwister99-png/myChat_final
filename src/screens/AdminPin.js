@@ -304,6 +304,32 @@ const areUsersEqual = (a, b) => {
 
   return true;
 };
+const PulsingAdminDot = ({ active, style }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const loopRef = useRef(null);
+
+  useEffect(() => {
+    if (active) {
+      loopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.15, duration: 850, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 750, useNativeDriver: true }),
+        ])
+      );
+      loopRef.current.start();
+    } else {
+      loopRef.current?.stop?.();
+      pulseAnim.setValue(1);
+    }
+
+    return () => {
+      loopRef.current?.stop?.();
+    };
+  }, [active]);
+
+  return <Animated.View style={[style, { transform: [{ scale: pulseAnim }] }]} />;
+};
+
 
 const UnreadBadge = ({ count, isSecret }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -763,7 +789,7 @@ const AdminPin = ({ navigation }) => {
     setHardResetConfirmStep2Visible(false);
   };
 
-  const saveChangeAndKickUsers = () => {
+    const saveChangeAndKickUsers = () => {
     const cleanedPin = newPin.replace(/[^0-9]/g, '').slice(0, 4);
 
     if (cleanedPin.length !== 4) {
@@ -772,13 +798,21 @@ const AdminPin = ({ navigation }) => {
     }
 
     setPendingHardResetPin(cleanedPin);
+    setChangeModalVisible(false);
     setHardResetConfirmStep1Visible(true);
   };
 
-  const confirmHardResetStep1 = () => {
+
+    const confirmHardResetStep1 = () => {
     setHardResetConfirmStep1Visible(false);
     setHardResetConfirmStep2Visible(true);
   };
+
+  const goBackFromHardResetStep1 = () => {
+    setHardResetConfirmStep1Visible(false);
+    setChangeModalVisible(true);
+  };
+
 
   const confirmHardResetFinal = () => {
     const cleanPin = String(pendingHardResetPin || '').replace(/[^0-9]/g, '').slice(0, 4);
@@ -1684,8 +1718,9 @@ const AdminPin = ({ navigation }) => {
                   Uživatelský PIN: <Text style={styles.pinText}>{currentUserPin}</Text>
                 </Text>
 
-                <View style={styles.adminStatusRow}>
-                  <View
+                                <View style={styles.adminStatusRow}>
+                  <PulsingAdminDot
+                    active={isAdminOnline}
                     style={[
                       styles.adminStatusDot,
                       isAdminOnline
@@ -1700,6 +1735,7 @@ const AdminPin = ({ navigation }) => {
                     <Text style={styles.pinText}>{getAdminStatusLabel()}</Text>
                   </Text>
                 </View>
+
               </View>
 
               <View
@@ -2460,15 +2496,16 @@ const AdminPin = ({ navigation }) => {
                     <Text style={styles.modalButtonText}>Pokračovat</Text>
                   </Pressable>
 
-                  <Pressable
+                                    <Pressable
                     style={({ pressed }) => [
                       styles.modalButton,
                       pressed && styles.xpButtonPressed,
                     ]}
-                    onPress={() => setHardResetConfirmStep1Visible(false)}
+                    onPress={goBackFromHardResetStep1}
                   >
-                    <Text style={styles.modalButtonText}>Zrušit</Text>
+                    <Text style={styles.modalButtonText}>Zpět</Text>
                   </Pressable>
+
                 </View>
               </View>
             </View>
