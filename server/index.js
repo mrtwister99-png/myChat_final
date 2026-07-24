@@ -507,10 +507,10 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
     reason,
   });
 
-  state.users.forEach((user) => {
-    state.kickedRoomUserIds[String(user.id)] = Date.now();
+   io.to('admins').emit('room:hardReset',  {
+    reason,
+    timestamp: Date.now(),
   });
-
   state.users = [];
   state.chats = {};
   state.mutedUsers = {};
@@ -519,7 +519,7 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
   state.userProfilesById = {};
   state.kickedRoomUserIds = {};
   state.nextUserNumber = 1;
-
+  state.pushCooldowns = {};
   emitState();
 };
 
@@ -836,8 +836,12 @@ io.on('connection', (socket) => {
             data: { userId: cleanUserId, action: 'openChat' },
           });
         }
-      } else if (cleanSender === 'user') {
+  } else if (cleanSender === 'user') {
         // user -> admin
+        // POTAJI = OFF pro uzivatele, zadny push pro admina
+        if (state.secretMutedUsers[cleanUserId]) {
+          return;
+        }
         const adminTokens = Array.from(state.adminPushTokens);
         if (adminTokens.length > 0 && shouldSendPushWithCooldown(`push-admin-${cleanUserId}`)) {
           const senderName = user?.name || `Uzivatel ${cleanUserId}`;
@@ -1009,7 +1013,7 @@ io.on('connection', (socket) => {
     kickUser(cleanUserId, `Byl jsi vyhozen adminem z roomky. Tvůj PIN je ${targetPin}.`);
   });
 
-  socket.on('admin:muteUser', ({ userId, milliseconds }) => {
+    socket.on('admin:muteUser', ({ userId, milliseconds }) => {
     if (socket.data.role !== 'admin') {
       return;
     }
@@ -1022,9 +1026,11 @@ io.on('connection', (socket) => {
     }
 
     state.mutedUsers[cleanUserId] = Date.now() + duration;
+    delete state.secretMutedUsers[cleanUserId];
 
     emitState();
   });
+
 
   socket.on('admin:unmuteUser', ({ userId }) => {
     if (socket.data.role !== 'admin') {

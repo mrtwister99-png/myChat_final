@@ -1,9 +1,12 @@
 // src/screens/AdminPin.js
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
+  AppState,
   BackHandler,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -20,6 +23,7 @@ import { socket } from '../socket';
 
 const EYE_ICON = require('../assets/icons/oko.png');
 const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
+const EYE_SECRET_ICON = require('../assets/icons/okopotaji.png');
 const FUCKER_ICON = require('../assets/icons/fuckerr.png');
 
 const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
@@ -151,6 +155,21 @@ const getGlobalReadCounts = () => {
   return globalThis.CUSIIK_ADMIN_READ_COUNTS;
 };
 
+const persistReadCounts = (counts) => {
+  try {
+    globalThis.CUSIIK_ADMIN_READ_COUNTS = counts;
+  } catch {}
+};
+const clearAllLocalAdminData = () => {
+  try {
+    globalThis.CUSIIK_CHATS = {};
+    globalThis.CUSIIK_ADMIN_READ_COUNTS = {};
+    globalThis.CUSIIK_MUTED_USERS = {};
+    globalThis.CUSIIK_SECRET_MUTED_USERS = {};
+    globalThis.CUSIIK_INITIAL_LOAD_DONE = true;
+  } catch {}
+};
+
 const getMuteMsLeft = (userId, nowTick) => {
   const mutedUsers = getGlobalMutedUsers();
   const muteUntil = mutedUsers[userId] || 0;
@@ -241,7 +260,10 @@ const getUserMessageCount = (userId) => {
   const chats = getGlobalChats();
   const messages = chats[userId] || [];
 
-  return messages.filter((message) => message.sender === 'user').length;
+  return messages.filter((message) => {
+    const sender = String(message?.sender || '').toLowerCase();
+    return sender === 'user';
+  }).length;
 };
 
 const areReadCountsEqual = (a, b) => {
@@ -264,11 +286,13 @@ const areUsersEqual = (a, b) => {
     const current = a[index];
     const next = b[index];
 
+    const lastSeenDiff = Math.abs((current.lastSeenAt || 0) - (next.lastSeenAt || 0));
+
     if (
       current.id !== next.id ||
       current.name !== next.name ||
       current.online !== next.online ||
-      current.lastSeenAt !== next.lastSeenAt ||
+      lastSeenDiff > 60000 ||
       current.silhouetteColour !== next.silhouetteColour ||
       current.bgColour !== next.bgColour ||
       current.avatarIcon !== next.avatarIcon
@@ -279,6 +303,38 @@ const areUsersEqual = (a, b) => {
   }
 
   return true;
+};
+
+const UnreadBadge = ({ count, isSecret }) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const prevCountRef = useRef(count);
+
+  useEffect(() => {
+    if (prevCountRef.current === 0 && count > 0) {
+      scaleAnim.setValue(0);
+      Animated.sequence([
+        Animated.timing(scaleAnim, { toValue: 1.3, duration: 180, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 1, duration: 110, useNativeDriver: true }),
+      ]).start();
+    } else if (count > prevCountRef.current) {
+      Animated.sequence([
+        Animated.timing(scaleAnim, { toValue: 0.5, duration: 90, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 1.45, duration: 140, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
+      ]).start();
+    }
+    prevCountRef.current = count;
+  }, [count]);
+
+  if (count <= 0) {
+    return null;
+  }
+
+  return (
+    <Animated.View style={[styles.unreadCircle, isSecret && styles.unreadCircleSecret, { transform: [{ scale: scaleAnim }] }]}>
+      <Text style={styles.unreadCircleText}>{count}</Text>
+    </Animated.View>
+  );
 };
 
 const AdminPin = ({ navigation }) => {
@@ -363,6 +419,21 @@ const AdminPin = ({ navigation }) => {
   }, []);
 
   useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') {
+        Keyboard.dismiss();
+      } else {
+        // pri navratu z pozadi jen refresh tick, ne cely users re-render
+        setNowTick(Date.now());
+      }
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
     const handleConnect = () => {
       setConnectionText('Server online');
       socket.emit('state:get');
@@ -439,6 +510,10 @@ const AdminPin = ({ navigation }) => {
             socket.emit('chat:get', { userId: user.id });
           });
         }
+
+        setTimeout(() => {
+          globalThis.CUSIIK_INITIAL_LOAD_DONE = true;
+        }, 3000);
       }
 
     };
@@ -452,24 +527,33 @@ const AdminPin = ({ navigation }) => {
 
       const chats = getGlobalChats();
       const safeMessages = messages || [];
-      const userMessagesCount = safeMessages.filter((item) => item?.sender === 'user').length;
+      const userMessagesCount = safeMessages.filter((item) => {
+        const s = String(item?.sender || '').toLowerCase();
+        return s === 'user';
+      }).length;
       const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
+      const isSecretMuted = Boolean(secretMutedUsers[cleanUserId] || secretMutedUsers[String(cleanUserId)]);
 
       chats[cleanUserId] = safeMessages;
 
       const nextReadCounts = { ...getGlobalReadCounts() };
 
       if (!Object.prototype.hasOwnProperty.call(nextReadCounts, cleanUserId)) {
-        nextReadCounts[cleanUserId] = 0;
+        const isInitialLoad = !globalThis.CUSIIK_INITIAL_LOAD_DONE;
+        if (isInitialLoad) {
+          nextReadCounts[cleanUserId] = userMessagesCount;
+        } else {
+          nextReadCounts[cleanUserId] = 0;
+        }
       }
 
-      if (activeAdminChatUserId && activeAdminChatUserId === cleanUserId) {
+      if (isSecretMuted) {
+        nextReadCounts[cleanUserId] = userMessagesCount;
+      } else if (activeAdminChatUserId && activeAdminChatUserId === cleanUserId) {
         nextReadCounts[cleanUserId] = userMessagesCount;
       }
 
-      globalThis.CUSIIK_ADMIN_READ_COUNTS = nextReadCounts;
-
-      setNowTick(Date.now());
+      persistReadCounts(nextReadCounts);
 
       setReadCounts((currentReadCounts) => {
         if (areReadCountsEqual(currentReadCounts, nextReadCounts)) {
@@ -480,11 +564,20 @@ const AdminPin = ({ navigation }) => {
       });
     };
 
+    const handleHardReset = () => {
+      clearAllLocalAdminData();
+      setReadCounts({});
+      setSecretMutedUsers({});
+      setUsers([]);
+      setLastActionText('HARD ROOM RESET přijat ze serveru - lokální data vymazána.');
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
     socket.on('server:state', handleServerState);
     socket.on('chat:messages', handleChatMessages);
+    socket.on('room:hardReset', handleHardReset);
 
     if (!socket.connected) {
       socket.connect();
@@ -505,18 +598,27 @@ const AdminPin = ({ navigation }) => {
       socket.off('connect_error', handleConnectError);
       socket.off('server:state', handleServerState);
       socket.off('chat:messages', handleChatMessages);
+      socket.off('room:hardReset');
     };
   }, []);
 
   const renderUserNameWithMute = (user, textStyle) => {
+    return (
+      <Text style={textStyle}>{user.name}</Text>
+    );
+  };
+
+  const renderMuteTag = (user) => {
     const muteText = formatMuteLeft(user.id, nowTick);
     const isSecretMuted = Boolean(secretMutedUsers[user.id]);
 
+    if (!muteText && !isSecretMuted) {
+      return null;
+    }
+
     return (
-      <Text style={textStyle}>
-        {user.name}
-        {muteText ? <Text style={styles.mutedMinutesText}> ({muteText})</Text> : null}
-        {isSecretMuted ? <Text style={styles.secretMutedText}> (potají)</Text> : null}
+      <Text style={isSecretMuted ? styles.muteTagSecretText : styles.muteTagText}>
+        {isSecretMuted ? '(potají)' : `(${muteText})`}
       </Text>
     );
   };
@@ -530,12 +632,15 @@ const AdminPin = ({ navigation }) => {
   };
 
   const markUserAsRead = (userId) => {
+    const cleanId = String(userId || '').trim();
+    if (!cleanId) return;
+
     const nextReadCounts = {
       ...getGlobalReadCounts(),
-      [userId]: getUserMessageCount(userId),
+      [cleanId]: getUserMessageCount(cleanId),
     };
 
-    globalThis.CUSIIK_ADMIN_READ_COUNTS = nextReadCounts;
+    persistReadCounts(nextReadCounts);
     setReadCounts(nextReadCounts);
   };
 
@@ -607,7 +712,6 @@ const AdminPin = ({ navigation }) => {
 
   const closeRenameModal = () => {
     setRenameModalVisible(false);
-    setSelectedUser(null);
     setNewUserName('');
   };
 
@@ -618,9 +722,11 @@ const AdminPin = ({ navigation }) => {
       return;
     }
 
+    const renamedId = selectedUser.id;
+
     setUsers((currentUsers) =>
       currentUsers.map((user) =>
-        user.id === selectedUser.id
+        user.id === renamedId
           ? {
               ...user,
               name: trimmedName,
@@ -629,9 +735,12 @@ const AdminPin = ({ navigation }) => {
       )
     );
 
+    setSelectedUser((prev) => (prev ? { ...prev, name: trimmedName } : prev));
+    setActionUser((prev) => (prev && prev.id === renamedId ? { ...prev, name: trimmedName } : prev));
+
     if (socket.connected) {
       socket.emit('admin:renameUser', {
-        userId: selectedUser.id,
+        userId: renamedId,
         name: trimmedName,
       });
     }
@@ -683,6 +792,11 @@ const AdminPin = ({ navigation }) => {
 
     globalThis.CUSIIK_USER_PIN = cleanPin;
     setCurrentUserPin(cleanPin);
+
+    clearAllLocalAdminData();
+    setReadCounts({});
+    setSecretMutedUsers({});
+    setUsers([]);
 
     if (socket.connected) {
       socket.emit('admin:setUserPin', {
@@ -840,17 +954,20 @@ const AdminPin = ({ navigation }) => {
       return;
     }
 
-    const mutedUsers = getGlobalMutedUsers();
-    const secretMutedUsersMap = getGlobalSecretMutedUsers();
+    const mutedUsers = { ...getGlobalMutedUsers() };
+    const secretMutedUsersMap = { ...getGlobalSecretMutedUsers() };
     const muteUntilTime = Date.now() + option.milliseconds;
 
     delete secretMutedUsersMap[user.id];
+    delete secretMutedUsersMap[String(user.id)];
     globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsersMap;
 
     mutedUsers[user.id] = muteUntilTime;
+    mutedUsers[String(user.id)] = muteUntilTime;
     globalThis.CUSIIK_MUTED_USERS = mutedUsers;
 
     setSecretMutedUsers({ ...secretMutedUsersMap });
+    setNowTick(Date.now());
 
     if (socket.connected) {
       socket.emit('admin:secretMuteUser', {
@@ -870,7 +987,6 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setNowTick(Date.now());
     setLastActionText(`Uživatel ${user.name} byl umlčen na ${option.label}.`);
     setMuteModalVisible(false);
     closeUserMenu();
@@ -881,9 +997,11 @@ const AdminPin = ({ navigation }) => {
       return;
     }
 
-    const mutedUsers = getGlobalMutedUsers();
+    const mutedUsers = { ...getGlobalMutedUsers() };
     delete mutedUsers[user.id];
+    delete mutedUsers[String(user.id)];
     globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+    setNowTick(Date.now());
 
     if (socket.connected) {
       socket.emit('admin:unmuteUser', {
@@ -897,7 +1015,6 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setNowTick(Date.now());
     setLastActionText(`Umlčení uživatele ${user.name} bylo zrušeno.`);
     setMuteModalVisible(false);
     closeUserMenu();
@@ -918,20 +1035,24 @@ const AdminPin = ({ navigation }) => {
       return;
     }
 
-    const secretMutedUsers = getGlobalSecretMutedUsers();
-    const nextValue = !secretMutedUsers[user.id];
-    const mutedUsers = getGlobalMutedUsers();
+    const secretMutedMap = { ...getGlobalSecretMutedUsers() };
+    const uid = String(user.id);
+    const nextValue = !(secretMutedMap[user.id] || secretMutedMap[uid]);
+    const mutedUsersMap = { ...getGlobalMutedUsers() };
 
     if (nextValue) {
-      secretMutedUsers[user.id] = true;
+      secretMutedMap[user.id] = true;
+      secretMutedMap[uid] = true;
     } else {
-      delete secretMutedUsers[user.id];
+      delete secretMutedMap[user.id];
+      delete secretMutedMap[uid];
     }
-    globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsers;
+    globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedMap;
 
     if (nextValue) {
-      delete mutedUsers[user.id];
-      globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+      delete mutedUsersMap[user.id];
+      delete mutedUsersMap[uid];
+      globalThis.CUSIIK_MUTED_USERS = mutedUsersMap;
     }
 
     if (socket.connected) {
@@ -947,8 +1068,8 @@ const AdminPin = ({ navigation }) => {
       }
     }
 
+    setSecretMutedUsers({ ...secretMutedMap });
     setNowTick(Date.now());
-    setSecretMutedUsers({ ...secretMutedUsers });
     setLastActionText(
       nextValue
         ? `Uživatel ${user.name} byl umlčen potají.`
@@ -959,13 +1080,15 @@ const AdminPin = ({ navigation }) => {
   };
 
   const changeUserColour = (user, colour) => {
-    if (!user) {
+    const targetUser = user || selectedUser || actionUser;
+
+    if (!targetUser) {
       return;
     }
 
     setUsers((currentUsers) =>
       currentUsers.map((currentUser) =>
-        currentUser.id === user.id
+        currentUser.id === targetUser.id
           ? {
               ...currentUser,
               silhouetteColour: colour,
@@ -974,16 +1097,18 @@ const AdminPin = ({ navigation }) => {
       )
     );
 
+    setSelectedUser((prev) => (prev && prev.id === targetUser.id ? { ...prev, silhouetteColour: colour } : prev));
+    setActionUser((prev) => (prev && prev.id === targetUser.id ? { ...prev, silhouetteColour: colour } : prev));
+
     if (socket.connected) {
       socket.emit('admin:setUserColour', {
-        userId: user.id,
+        userId: targetUser.id,
         colour,
       });
     }
 
-    setLastActionText(`Obrys uživatele ${user.name} byl změněn.`);
+    setLastActionText(`Obrys uživatele ${targetUser.name} byl změněn.`);
     setColourModalVisible(false);
-    closeUserMenu();
   };
 
   const setUserToFuckerAvatar = (user) => {
@@ -1135,6 +1260,149 @@ const AdminPin = ({ navigation }) => {
       );
     }
 
+    if (settingsScreen === 'userList') {
+      return (
+        <View style={styles.modalBody}>
+          <Text style={styles.modalLabel}>Vyber uživatele k úpravě:</Text>
+
+          {users.length === 0 ? (
+            <View style={styles.smallEmptyBox}>
+              <Text style={styles.smallEmptyText}>
+                V roomce teď není žádný uživatel.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView style={styles.settingsList}>
+              {[...users]
+                .sort((a, b) => {
+                  if (a.online !== b.online) {
+                    return a.online ? -1 : 1;
+                  }
+                  return (b.lastSeenAt || 0) - (a.lastSeenAt || 0);
+                })
+                .map((user) => (
+                  <Pressable
+                    key={user.id}
+                    style={({ pressed }) => [
+                      styles.settingsUserRow,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => {
+                      setSelectedUser(user);
+                      setActionUser(user);
+                      setSettingsScreen('userEdit');
+                    }}
+                  >
+                    <View
+                      style={[
+                        styles.smallUserIconBox,
+                        {
+                          backgroundColor: user.bgColour || '#dceaff',
+                          borderTopColor: user.silhouetteColour || '#0b3d91',
+                          borderLeftColor: user.silhouetteColour || '#0b3d91',
+                          borderRightColor: user.silhouetteColour || '#0b3d91',
+                          borderBottomColor: user.silhouetteColour || '#0b3d91',
+                        },
+                      ]}
+                    >
+                      <Image
+                        source={getUserIconSource(user.avatarIcon)}
+                        style={styles.smallUserIconImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+
+                    <View style={styles.settingsUserTextBox}>
+                      {renderUserNameWithMute(user, styles.settingsUserName)}
+                      <Text style={styles.settingsUserSubText}>
+                        Kliknutím upravíš
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+            </ScrollView>
+          )}
+
+          <View style={styles.modalButtons}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && styles.xpButtonPressed,
+              ]}
+              onPress={goBackToSettingsMenu}
+            >
+              <Text style={styles.modalButtonText}>Zpět</Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
+
+    if (settingsScreen === 'userEdit') {
+      return (
+        <View style={styles.modalBody}>
+          <Text style={styles.modalLabel}>Nastavení uživatele:</Text>
+          <Text style={styles.selectedUserText}>
+            {selectedUser ? selectedUser.name : actionUser ? actionUser.name : ''}
+          </Text>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.settingsOption,
+              pressed && styles.xpButtonPressed,
+            ]}
+            onPress={() => {
+              if (selectedUser || actionUser) {
+                openRenameModal(selectedUser || actionUser);
+              }
+            }}
+          >
+            <Text style={styles.settingsOptionTitle}>Přejmenovat</Text>
+            <Text style={styles.settingsOptionText}>
+              Změní jméno vybraného uživatele.
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.settingsOption,
+              pressed && styles.xpButtonPressed,
+            ]}
+            onPress={() => {
+              setColourModalVisible(true);
+            }}
+          >
+            <Text style={styles.settingsOptionTitle}>Změna obrysu</Text>
+            <Text style={styles.settingsOptionText}>
+              Změní obrys uživatele, který uvidí admin i uživatel.
+            </Text>
+          </Pressable>
+
+          <View style={styles.modalButtons}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && styles.xpButtonPressed,
+              ]}
+              onPress={() => setSettingsScreen('userList')}
+            >
+              <Text style={styles.modalButtonText}>Zpět na výběr</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalButton,
+                pressed && styles.xpButtonPressed,
+              ]}
+              onPress={goBackToSettingsMenu}
+            >
+              <Text style={styles.modalButtonText}>Menu</Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
+
     if (settingsScreen === 'editProfile') {
       return (
         <View style={styles.modalBody}>
@@ -1191,6 +1459,19 @@ const AdminPin = ({ navigation }) => {
             <Text style={styles.settingsOptionTitle}>Nastavit barvu obrysu</Text>
             <Text style={styles.settingsOptionText}>
               Barva obrysu admina se zobrazí uživateli aktivně v chatu.
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.settingsOption,
+              pressed && styles.xpButtonPressed,
+            ]}
+            onPress={() => setSettingsScreen('adminPin')}
+          >
+            <Text style={styles.settingsOptionTitle}>Admin PIN</Text>
+            <Text style={styles.settingsOptionText}>
+              Nastavíš nový PIN pro vstup do admin panelu.
             </Text>
           </Pressable>
 
@@ -1320,11 +1601,11 @@ const AdminPin = ({ navigation }) => {
             styles.settingsOption,
             pressed && styles.xpButtonPressed,
           ]}
-          onPress={() => setSettingsScreen('adminPin')}
+          onPress={() => setSettingsScreen('userList')}
         >
-          <Text style={styles.settingsOptionTitle}>Admin PIN</Text>
+          <Text style={styles.settingsOptionTitle}>Nastavení uživatele</Text>
           <Text style={styles.settingsOptionText}>
-            Nastavíš nový PIN pro vstup do admin panelu.
+            Přejmenování a změna obrysu uživatele.
           </Text>
         </Pressable>
 
@@ -1335,9 +1616,9 @@ const AdminPin = ({ navigation }) => {
           ]}
           onPress={() => setSettingsScreen('editProfile')}
         >
-          <Text style={styles.settingsOptionTitle}>Upravit profil</Text>
+          <Text style={styles.settingsOptionTitle}>Nastavení admina</Text>
           <Text style={styles.settingsOptionText}>
-            Nastavíš ikonku a barvu obrysu, které uvidí uživatel v chatu.
+            Nastavíš ikonku a barvu obrysu admina.
           </Text>
         </Pressable>
 
@@ -1385,13 +1666,7 @@ const AdminPin = ({ navigation }) => {
               </View>
 
               <View style={styles.windowButton}>
-                <Pressable style={styles.closePressable} onPress={() => {
-                  try {
-                    if (Platform.OS === 'android') {
-                      BackHandler.moveTaskToBack();
-                    }
-                  } catch {}
-                }}>
+                <Pressable style={styles.closePressable} onPress={goToPinEntry}>
                   <Text style={styles.windowButtonText}>_</Text>
                 </Pressable>
               </View>
@@ -1429,8 +1704,24 @@ const AdminPin = ({ navigation }) => {
                 </View>
               </View>
 
-              <Text style={styles.topInfoUnreadText}>{getUnreadSummaryText()}</Text>
-
+              <View
+                style={[
+                  styles.topAdminIconBox,
+                  {
+                    backgroundColor: adminProfile?.bgColour || '#ece9d8',
+                    borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
+                    borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
+                    borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
+                    borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
+                  },
+                ]}
+              >
+                <Image
+                  source={getAdminIconSource(adminProfile?.icon || 'admin')}
+                  style={styles.topAdminIconImage}
+                  resizeMode="contain"
+                />
+              </View>
             </View>
 
             <View style={styles.usersPanel}>
@@ -1510,26 +1801,22 @@ const AdminPin = ({ navigation }) => {
                           <View style={styles.userTextBox}>
                             <View style={styles.userNameRow}>
                               {renderUserNameWithMute(user, styles.userName)}
-
-                              {unreadCount > 0 ? (
-                                <View style={styles.unreadBadge}>
-                                  <Text style={styles.unreadBadgeText}>
-                                    {unreadCount}{' '}
-                                    {unreadCount === 1 ? 'nová zpráva' : 'nových zpráv'}
-                                  </Text>
-                                </View>
-                              ) : null}
+                              <UnreadBadge count={unreadCount} isSecret={isUserSecretMuted} />
                             </View>
 
-                            <Text
-                              style={[
-                                styles.userStatus,
-                                user.online ? styles.userStatusOnline : null,
-                              ]}
-                            >
-                              {formatLastSeen(user, nowTick)}
-                            </Text>
+                            <View style={styles.userStatusRow}>
+                              <Text
+                                style={[
+                                  styles.userStatus,
+                                  user.online ? styles.userStatusOnline : null,
+                                ]}
+                              >
+                                {formatLastSeen(user, nowTick)}
+                              </Text>
+                            </View>
                           </View>
+
+                          {renderMuteTag(user)}
                         </Pressable>
 
                         <Pressable
@@ -1544,7 +1831,7 @@ const AdminPin = ({ navigation }) => {
                           delayLongPress={260}
                         >
                           <Image
-                            source={isUserSecretMuted ? EYE_SLASH_ICON : EYE_ICON}
+                            source={isUserSecretMuted ? EYE_SECRET_ICON : (isUserMuted ? EYE_SLASH_ICON : EYE_ICON)}
                             style={styles.eyeToggleIcon}
                             resizeMode="contain"
                           />
@@ -1563,16 +1850,6 @@ const AdminPin = ({ navigation }) => {
                             style={styles.fuckerButtonIcon}
                             resizeMode="contain"
                           />
-                        </Pressable>
-
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.gearButton,
-                            pressed && styles.xpButtonPressed,
-                          ]}
-                          onPress={() => openUserMenu(user)}
-                        >
-                          <Text style={styles.gearButtonText}>⚙</Text>
                         </Pressable>
                       </View>
                     );
@@ -1607,6 +1884,8 @@ const AdminPin = ({ navigation }) => {
               >
                 <Text style={styles.bottomButtonText}>Nastavení</Text>
               </Pressable>
+
+
             </View>
           </View>
 
@@ -1684,6 +1963,23 @@ const AdminPin = ({ navigation }) => {
                   </Text>
                 </Pressable>
 
+                {getMuteMsLeft(actionUser?.id, nowTick) > 0 ? (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.settingsOption,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => {
+                      unmuteUser(actionUser);
+                      closeUserMenu();
+                    }}
+                  >
+                    <Text style={styles.settingsOptionTitle}>Zrušit umlčení</Text>
+                    <Text style={styles.settingsOptionText}>
+                      Umožní uživateli psát normálně.
+                    </Text>
+                  </Pressable>
+                ) : null}
 
               </View>
             </View>
@@ -1712,8 +2008,16 @@ const AdminPin = ({ navigation }) => {
               <View style={styles.modalBody}>
                 <Text style={styles.modalLabel}>Vyber délku umlčení:</Text>
                 <Text style={styles.selectedUserText}>
-                  {actionUser ? actionUser.name : ''}
+                  {selectedUser ? selectedUser.name : actionUser ? actionUser.name : ''}
                 </Text>
+
+                {getMuteMsLeft(actionUser?.id, nowTick) > 0 ? (
+                  <View style={styles.warningBox}>
+                    <Text style={styles.warningText}>
+                      Uživatel je aktuálně umlčen ještě na {formatMuteLeft(actionUser?.id, nowTick)}.
+                    </Text>
+                  </View>
+                ) : null}
 
                 <View style={styles.muteGrid}>
                   {MUTE_OPTIONS.map((option) => (
@@ -1728,6 +2032,33 @@ const AdminPin = ({ navigation }) => {
                       <Text style={styles.muteOptionText}>{option.label}</Text>
                     </Pressable>
                   ))}
+                </View>
+
+                <View style={styles.modalButtons}>
+                  {getMuteMsLeft(actionUser?.id, nowTick) > 0 ? (
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.modalButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => {
+                        unmuteUser(actionUser);
+                        setMuteModalVisible(false);
+                      }}
+                    >
+                      <Text style={styles.modalButtonText}>Zrušit mlčení</Text>
+                    </Pressable>
+                  ) : null}
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => setMuteModalVisible(false)}
+                  >
+                    <Text style={styles.modalButtonText}>Zavřít</Text>
+                  </Pressable>
                 </View>
               </View>
             </View>
@@ -2227,12 +2558,12 @@ export default AdminPin;
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0058d8',
+    backgroundColor: '#ece9d8',
   },
 
   page: {
     flex: 1,
-    backgroundColor: '#1f7a7a',
+    backgroundColor: '#ece9d8',
   },
 
   window: {
@@ -2465,6 +2796,12 @@ const styles = StyleSheet.create({
     height: 26,
   },
 
+  userTextAndBadge: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
   userTextBox: {
     flex: 1,
   },
@@ -2531,6 +2868,26 @@ const styles = StyleSheet.create({
   userStatusOnline: {
     color: '#0b7a16',
     fontWeight: '900',
+  },
+
+  userStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  muteTagText: {
+    color: '#8a4d00',
+    fontSize: 12,
+    fontWeight: '900',
+    marginRight: 6,
+  },
+
+  muteTagSecretText: {
+    color: '#7a00cc',
+    fontSize: 12,
+    fontWeight: '900',
+    marginRight: 6,
   },
 
   gearButton: {
@@ -3216,5 +3573,44 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     flexShrink: 1,
+  },
+
+  topAdminIconBox: {
+    width: 42,
+    height: 42,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 10,
+  },
+
+  topAdminIconImage: {
+    width: 26,
+    height: 26,
+  },
+
+  unreadCircle: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#ff3b30',
+    borderWidth: 1,
+    borderColor: '#a80000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+    marginLeft: 6,
+  },
+
+  unreadCircleSecret: {
+    backgroundColor: '#9b3ecf',
+    borderColor: '#5d1f85',
+  },
+
+  unreadCircleText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '900',
+    textAlign: 'center',
   },
 });

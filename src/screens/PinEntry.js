@@ -279,17 +279,8 @@ const PinEntry = ({ navigation }) => {
   };
 
   // Windows titleBar handlers
-  const handleArrow = () => {
-    Keyboard.dismiss();
-    inputRef.current?.blur();
-  };
-
   const handleMinimize = () => {
-    try {
-      if (Platform.OS === 'android') {
-        BackHandler.moveTaskToBack();
-      }
-    } catch {}
+    Keyboard.dismiss();
   };
 
   const handleCloseApp = () => {
@@ -409,15 +400,10 @@ const PinEntry = ({ navigation }) => {
                       <View style={[styles.winSquare, { backgroundColor: '#ffba08' }]} />
                     </View>
 
-                    <Text style={styles.titleText}>Cusiik Chat-XP - Přihlášení</Text>
+                    <Text style={styles.titleText}>Blbej server - Přihlášení</Text>
                   </View>
 
                   <View style={styles.windowButtons}>
-                    <View style={styles.windowButton}>
-                      <Pressable style={styles.closePressable} onPress={handleArrow}>
-                        <Text style={styles.windowButtonText}>←</Text>
-                      </Pressable>
-                    </View>
                     <View style={styles.windowButton}>
                       <Pressable style={styles.closePressable} onPress={handleMinimize}>
                         <Text style={styles.windowButtonText}>_</Text>

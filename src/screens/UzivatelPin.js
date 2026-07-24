@@ -1,22 +1,25 @@
 
 
-import React, { useEffect, useRef, useState } from 'react';
+import React,{ useEffect,useRef,useState } from 'react';
 import {
-  AppState,
-  BackHandler,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  Keyboard,
+Animated,
+AppState,
+BackHandler,
+Image,
+Dimensions,
+KeyboardAvoidingView,
+Modal,
+Platform,
+Pressable,
+ScrollView,
+StatusBar,
+StyleSheet,
+Text,
+TextInput,
+View,
+Keyboard,
 } from 'react-native';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
@@ -38,22 +41,22 @@ const resolveCurrentUserId = (routeUserId) => {
 };
 
 const LOCAL_RANDOM_USER_NAMES = [
-  'Jiří„˘Ä‚Â­', 'Jan', 'Petr', 'Josef', 'Pavel', 'Martin', 'TomÄ‚Ë‡ÄąË‡', 'Jaroslav', 'Miroslav', 'ZdenĂ„â€şk',
-  'VÄ‚Ë‡clav', 'Michal', 'FrantišË‡ek', 'Jakub', 'Milan', 'Karel', 'LukÄ‚Ë‡ÄąË‡', 'David', 'VladimÄ‚Â­r', 'OndÄąâ„˘ej',
-  'Ladislav', 'Roman', 'Marek', 'Stanislav', 'Daniel', 'Radek', 'AntonÄ‚Â­n', 'VojtĂ„â€şch', 'Filip', 'Adam',
-  'MatĂ„â€şj', 'Dominik', 'AleÄąË‡', 'Miloslav', 'JaromÄ‚Â­r', 'Patrik', 'Libor', 'JindÄąâ„˘ich', 'Vlastimil', 'MiloÄąË‡',
-  'LubomÄ‚Â­r', 'Äą tĂ„â€şpÄ‚Ë‡n', 'OldÄąâ„˘ich', 'Rudolf', 'MatyÄ‚Ë‡ÄąË‡', 'Ivan', 'Robert', 'LuboÄąË‡', 'Radim', 'Richard',
-  'VÄ‚Â­t', 'Bohumil', 'Äą imon', 'Rostislav', 'Ivo', 'LudĂ„â€şk', 'DuÄąË‡an', 'Kamil', 'Michael', 'Vladislav',
-  'ZbynĂ„â€şk', 'Viktor', 'Bohuslav', 'KryÄąË‡tof', 'Alois', 'RenÄ‚Â©', 'VÄ‚Â­tĂ„â€şzslav', 'TadeÄ‚Ë‡ÄąË‡', 'Äą tefan', 'Eduard',
-  'Marcel', 'Jan', 'Jozef', 'Samuel', 'Dalibor', 'Emil', 'Radomí‚Â­r', 'LudvÄ‚Â­k', 'Denis', 'VilÄ‚Â©m',
-  'TobiÄ‚Ë‡ÄąË‡', 'Jana', 'Marie', 'Eva', 'Hana', 'Anna', 'Lenka', 'KateÄąâ„˘ina', 'Lucie', 'VĂ„â€şra',
+  'Jiří', 'Jan', 'Petr', 'Josef', 'Pavel', 'Martin', 'Tomáš', 'Jaroslav', 'Miroslav', 'Zdeněk',
+  'Václav', 'Michal', 'František', 'Jakub', 'Milan', 'Karel', 'Lukáš', 'David', 'Vladimír', 'Ondřej',
+  'Ladislav', 'Roman', 'Marek', 'Stanislav', 'Daniel', 'Radek', 'Antonín', 'Vojtěch', 'Filip', 'Adam',
+  'Matěj', 'Dominik', 'Aleš', 'Miloslav', 'Jaromír', 'Patrik', 'Libor', 'Jindřich', 'Vlastimil', 'Miloš',
+  'Lubomír', 'Čestmír', 'Oldřich', 'Rudolf', 'Matyáš', 'Ivan', 'Robert', 'Luboš', 'Radim', 'Richard',
+  'Vít', 'Bohumil', 'Šimon', 'Rostislav', 'Ivo', 'Luděk', 'Dušan', 'Kamil', 'Michael', 'Vladislav',
+  'Zbyněk', 'Viktor', 'Bohuslav', 'Kryštof', 'Alois', 'René', 'Vítězslav', 'Tadeáš', 'Štefan', 'Eduard',
+  'Marcel', 'Jan', 'Jozef', 'Samuel', 'Dalibor', 'Emil', 'Radomír', 'Luděk', 'Denis', 'Vilém',
+  'Tobiáš', 'Jana', 'Marie', 'Eva', 'Hana', 'Anna', 'Lenka', 'Kateřina', 'Lucie', 'Věra',
   'Alena', 'Petra', 'Veronika', 'Jaroslava', 'Tereza', 'Martina', 'Michaela', 'Jitka', 'Helena', 'Ludmila',
-  'ZdeÄąÂka', 'Ivana', 'Monika', 'EliÄąË‡ka', 'Zuzana', 'MarkÄ‚Â©ta', 'Jarmila', 'Barbora', 'JiÄąâ„˘ina', 'Marcela',
-  'KristÄ‚Ëťna', 'Dana', 'Dagmar', 'AdÄ‚Â©la', 'Pavla', 'Vlasta', 'Miroslava', 'Andrea', 'Irena', 'BoÄąÄľena',
-  'KlÄ‚Ë‡ra', 'LibuÄąË‡e', 'Marta', 'Äą Ä‚Ë‡rka', 'Nikola', 'KarolÄ‚Â­na', 'Iveta', 'PavlÄ‚Â­na', 'NatÄ‚Ë‡lie', 'Olga',
-  'Blanka', 'Gabriela', 'Renata', 'Aneta', 'Simona', 'RÄąĹ»ÄąÄľena', 'Radka', 'Daniela', 'Denisa', 'Iva',
-  'Milada', 'Milena', 'Romana', 'Miloslava', 'MiluÄąË‡e', 'Ilona', 'AneÄąÄľka', 'SoÄąÂa', 'Kamila', 'Stanislava',
-  'Nela', 'VladimÄ‚Â­ra', 'NadĂ„â€şÄąÄľda', 'KvĂ„â€ştoslava', 'Danuse', 'Vendula', 'DrahomÄ‚Â­ra', 'Julie', 'JindÄąâ„˘iÄąË‡ka', 'Emilie',
+  'Zdeňka', 'Ivana', 'Monika', 'Eliška', 'Zuzana', 'Markéta', 'Jarmila', 'Barbora', 'Jiřina', 'Marcela',
+  'Kristýna', 'Dana', 'Dagmar', 'Adéla', 'Pavla', 'Vlasta', 'Miroslava', 'Andrea', 'Irena', 'Božena',
+  'Klára', 'Libuše', 'Marta', 'Šárka', 'Nikola', 'Karolína', 'Iveta', 'Pavlína', 'Natálie', 'Olga',
+  'Blanka', 'Gabriela', 'Renata', 'Aneta', 'Simona', 'Růžena', 'Radka', 'Daniela', 'Denisa', 'Iva',
+  'Milada', 'Milena', 'Romana', 'Miloslava', 'Miluše', 'Ilona', 'Aneta', 'Soňa', 'Kamila', 'Stanislava',
+  'Nela', 'Vladimíra', 'Naděžda', 'Květoslava', 'Danuse', 'Vendula', 'Drahomíra', 'Julie', 'Jindřiška', 'Emilie',
   'Viktorie',
 ];
 
@@ -107,21 +110,22 @@ const USER_ICON_SOURCES = {
   admin4: require('../assets/icons/admin4.png'),
   admin5: require('../assets/icons/admin5.png'),
 };
-
+const MUTE_ICON = require('../assets/icons/nemluv.png');
+const HAHA_ICON = require('../assets/egg/hahanachytal.png');
 const normalizeAdminIcon = (iconKey) => {
   const cleanIcon = String(iconKey || '').trim().toLowerCase();
   return USER_ICON_SOURCES[cleanIcon] && cleanIcon.startsWith('admin') ? cleanIcon : 'admin';
 };
 
 const USER_ICON_OPTIONS = [
-  { key: 'uzivatel', label: 'uÄąÄľivatel' },
-  { key: 'cat', label: 'kočĹ¤ka' },
+  { key: 'uzivatel', label: 'uživatel' },
+  { key: 'cat', label: 'kočka' },
   { key: 'pes', label: 'pes' },
   { key: 'devil', label: 'devil' },
   { key: 'klaun', label: 'klaun' },
   { key: 'happy', label: 'prsa' },
   { key: 'stop', label: 'stop' },
-  { key: 'vykricnik', label: 'vÄ ‚Ëťstraha' },
+  { key: 'vykricnik', label: 'výstraha' },
   { key: 'zachod', label: 'zachod' },
 ];
 
@@ -206,7 +210,7 @@ const formatMuteTimeLeft = (muteUntil) => {
   }
 
   const totalDays = Math.ceil(totalHours / 24);
-  return `${totalDays} dnĂ„â€šĂ‚Â­`;
+  return `${totalDays} dnů`;
 };
 
 const formatMessageTime = (timestamp) => {
@@ -229,11 +233,39 @@ const getInitialMessages = (userId) => {
   return chats[userId];
 };
 
-const getAdminMessageCount = (messages) => {
-  return messages.filter((item) => item.sender === 'admin').length;
+const getAdminMessageCount=(messages)=>{
+return messages.filter((item)=>item.sender==='admin').length;
 };
+const UnreadBadge=({ count })=>{
+const scaleAnim=useRef(new Animated.Value(1)).current;
+const prevCountRef=useRef(count);
+useEffect(()=>{
+if (prevCountRef.current===0 && count>0) {
+scaleAnim.setValue(0);
+Animated.sequence([
+Animated.timing(scaleAnim,{ toValue:1.3,duration:180,useNativeDriver:true }),
+Animated.timing(scaleAnim,{ toValue:1,duration:110,useNativeDriver:true }),
+]).start();
+} else if (count>prevCountRef.current) {
+Animated.sequence([
+Animated.timing(scaleAnim,{ toValue:0.5,duration:90,useNativeDriver:true }),
+Animated.timing(scaleAnim,{ toValue:1.45,duration:140,useNativeDriver:true }),
+Animated.timing(scaleAnim,{ toValue:1,duration:100,useNativeDriver:true }),
+]).start();
+}
+prevCountRef.current=count;
+},[count]);
+if (count<=0) {
+return null;
+}
+return (
+<Animated.View style={[styles.chatUnreadCircle,{ transform:[{ scale:scaleAnim }] }]}>
+<Text style={styles.chatUnreadCircleText}>{count}</Text>
+</Animated.View>
+);
+};
+const UzivatelPin=({ navigation,route })=>{
 
-const UzivatelPin = ({ navigation, route }) => {
   const scrollViewRef = useRef(null);
   const initialSyncDoneRef = useRef(false);
   const screenMountAtRef = useRef(Date.now());
@@ -268,9 +300,19 @@ const UzivatelPin = ({ navigation, route }) => {
     Boolean(globalThis.CUSIIK_USER_AVATAR_LOCKED)
   );
 
-  const [readAdminCount, setReadAdminCount] = useState(
+   const [readAdminCount, setReadAdminCount] = useState(
     getGlobalUserReadCounts()[currentUserId] || 0
   );
+
+  const [eggImages, setEggImages] = useState([]);
+  const [eggMessageVisible, setEggMessageVisible] = useState(false);
+
+
+
+  const [eggVisible, setEggVisible] = useState(false);
+  const [eggPos, setEggPos] = useState({ top: 100, left: 50 });
+  const [eggSize, setEggSize] = useState(150);
+
 
   useEffect(() => {
     globalThis.CUSIIK_CURRENT_USER_ID = currentUserId;
@@ -334,7 +376,7 @@ const UzivatelPin = ({ navigation, route }) => {
 
   const isSecretMuted = Boolean(secretMutedUsers[currentUserId]);
 
-  const effectiveAdminStatus = adminStatus;
+  const effectiveAdminStatus = isSecretMuted ? 'off' : adminStatus;
   const isAdminOnline = effectiveAdminStatus === 'on';
   const isAdminJob = effectiveAdminStatus === 'job';
 
@@ -411,10 +453,10 @@ const UzivatelPin = ({ navigation, route }) => {
     if (prevIsMutedRef.current && !isMuted) {
       const stillMutedUntil = getMuteUntil();
       if (stillMutedUntil <= Date.now()) {
-        setBlockedInfo(`UĹľ nejsi umlÄŤenĂ˝, mĹŻĹľeĹˇ znovu psĂˇt. (${formatMessageTime(Date.now())})`);
+        setBlockedInfo(`Už nejsi umlčený, můžeš znovu psát. (${formatMessageTime(Date.now())})`);
         setTimeout(() => {
           setBlockedInfo((current) => {
-            if (current && current.includes('UĹľ nejsi umlÄŤenĂ˝')) {
+            if (current && current.includes('Už nejsi umlčený')) {
               return '';
             }
             return current;
@@ -422,7 +464,7 @@ const UzivatelPin = ({ navigation, route }) => {
         }, 5000);
       }
     }
-    if (!isMuted && blockedInfo && blockedInfo.includes('Jsi umlÄŤenĂ˝')) {
+    if (!isMuted && blockedInfo && blockedInfo.includes('Jsi umlčen')) {
       const stillMutedUntil = getMuteUntil();
       if (stillMutedUntil <= Date.now()) {
         setBlockedInfo('');
@@ -527,8 +569,6 @@ const UzivatelPin = ({ navigation, route }) => {
         setSecretMutedUsers(serverState.secretMutedUsers);
         globalThis.CUSIIK_SECRET_MUTED_USERS = serverState.secretMutedUsers;
       }
-
-      setNowTick(Date.now());
     };
 
     const handleChatMessages = ({ userId, messages: nextMessages }) => {
@@ -571,8 +611,8 @@ const UzivatelPin = ({ navigation, route }) => {
           markMessagesAsRead(safeMessages);
         } else if (nextUnread > previousUnread) {
           showLocalMessageNotification({
-            title: 'NovÄ‚Ë‡ zprÄ‚Ë‡va od admina',
-            body: 'MÄ‚Ë‡ÄąË‡ novou zprÄ‚Ë‡vu v chatu.',
+            title: 'Nová zpráva od admina',
+            body: 'Máte novou zprávu v chatu.',
           });
         }
         return;
@@ -589,8 +629,8 @@ const UzivatelPin = ({ navigation, route }) => {
 
       if (shouldNotify) {
         showLocalMessageNotification({
-          title: 'NovÄ‚Ë‡ zprÄ‚Ë‡va od admina',
-          body: 'MÄ‚Ë‡ÄąË‡ novou zprÄ‚Ë‡vu v chatu.',
+          title: 'Nová zpráva od admina',
+          body: 'Máte novou zprávu v chatu.',
         });
       }
 
@@ -615,20 +655,19 @@ const UzivatelPin = ({ navigation, route }) => {
 
       if (nextMuteUntil && nextMuteUntil > Date.now()) {
         setBlockedInfo(
-        `NemÄąĹ»ÄąÄľeÄąË‡ psÄ‚Ë‡t. Jsi umlĂ„Ĺ¤enÄ‚Ëť jeÄąË‡tĂ„â€ş na ${formatMuteTimeLeft(nextMuteUntil)}.`
+        `Nemůžeš psát. Jsi umlčený ještě na ${formatMuteTimeLeft(nextMuteUntil)}.`
         );
       } else {
-        setBlockedInfo(`UĹľ nejsi umlÄŤenĂ˝, mĹŻĹľeĹˇ znovu psĂˇt. (${formatMessageTime(Date.now())})`);
+        setBlockedInfo(`Už nejsi umlčený, můžeš znovu psát. (${formatMessageTime(Date.now())})`);
         setTimeout(() => {
           setBlockedInfo((current) => {
-            if (current && current.includes('UĹľ nejsi umlÄŤenĂ˝')) {
+            if (current && current.includes('Už nejsi umlčený')) {
               return '';
             }
             return current;
           });
         }, 5000);
       }
-      setNowTick(Date.now());
     };
 
     socket.on('server:state', handleServerState);
@@ -739,7 +778,7 @@ const UzivatelPin = ({ navigation, route }) => {
 
   const useHelperMessage = () => {
     if (isMuted) {
-      setBlockedInfo(`NemÄąĹ»ÄąÄľeÄąË‡ psÄ‚Ë‡t. Jsi umlĂ„Ĺ¤enÄ‚Ëť jeÄąË‡tĂ„â€ş na ${muteTimeLeft}.`);
+      setBlockedInfo(`Nemůžeš psát. Jsi umlčený ještě na ${muteTimeLeft}.`);
       return;
     }
 
@@ -749,7 +788,7 @@ const UzivatelPin = ({ navigation, route }) => {
 
   const changeUserAvatarIcon = (iconKey) => {
     if (isAvatarLocked) {
-      setBlockedInfo('Ikonka je uzamĂ„Ĺ¤enÄ‚Ë‡ adminem a nelze ji zmÄ‚â€žĂ˘â‚¬Ĺźnit.');
+      setBlockedInfo('Ikonka je uzamčena adminem a nelze ji změnit.');
       setIconModalVisible(false);
       return;
     }
@@ -774,7 +813,7 @@ const UzivatelPin = ({ navigation, route }) => {
     const trimmedMessage = message.trim();
 
     if (isMuted) {
-      setBlockedInfo(`NemÄąĹ»ÄąÄľeÄąË‡ psÄ‚Ë‡t. Jsi umlĂ„Ĺ¤enÄ‚Ëť jeÄąË‡tĂ„â€ş na ${muteTimeLeft}.`);
+      setBlockedInfo(`Nemůžeš psát. Jsi umlčený ještě na ${muteTimeLeft}.`);
       return;
     }
 
@@ -808,7 +847,48 @@ const UzivatelPin = ({ navigation, route }) => {
     setBlockedInfo('');
   };
 
+    const triggerHahaEgg = () => {
+    const screenDim = Dimensions.get('window');
+    const baseSize = 110;
+
+    const nextImages = Array.from({ length: 3 }).map((_, index) => {
+      const scale = Math.random() * 0.7 + 0.6;
+      const size = Math.round(baseSize * scale);
+      const maxTop = Math.max(screenDim.height - size - 80, 40);
+      const maxLeft = Math.max(screenDim.width - size - 20, 10);
+      const top = Math.floor(Math.random() * maxTop) + 30;
+      const left = Math.floor(Math.random() * maxLeft) + 10;
+
+      return {
+        id: `${Date.now()}-${index}`,
+        top,
+        left,
+        size,
+      };
+    });
+
+    setEggMessageVisible(false);
+    setEggImages(nextImages);
+  };
+
+  const closeHahaImage = (id) => {
+    setEggImages((current) => {
+      const nextImages = current.filter((item) => item.id !== id);
+
+      if (nextImages.length === 0) {
+        setEggMessageVisible(true);
+      }
+
+      return nextImages;
+    });
+  };
+
+  const closeHahaMessage = () => {
+    setEggMessageVisible(false);
+  };
+
   const renderTitleBar = (title) => {
+
     const handleTopBack = () => {
       if (screenMode === 'chat') {
         setScreenMode('menu');
@@ -818,9 +898,9 @@ const UzivatelPin = ({ navigation, route }) => {
       goToLogin();
     };
 
-    const handleMinimize = () => {
+        const handleMinimize = () => {
       if (screenMode === 'chat') {
-        setScreenMode('menu');
+        triggerHahaEgg();
         return;
       }
 
@@ -831,7 +911,17 @@ const UzivatelPin = ({ navigation, route }) => {
       }
     };
 
+    const handleClose = () => {
+      if (screenMode === 'chat') {
+        triggerHahaEgg();
+        return;
+      }
+
+      goToLogin();
+    };
+
     return (
+
       <View style={styles.titleBar}>
         <View style={styles.titleLeft}>
           <View style={styles.windowsIcon}>
@@ -857,6 +947,18 @@ const UzivatelPin = ({ navigation, route }) => {
           <Text style={styles.titleStatusText}>
             {getAdminStatusLabel()}
           </Text>
+
+                    {isMuted ? (
+            <View style={styles.titleMuteIconBox}>
+              <Image
+                source={MUTE_ICON}
+                style={styles.titleMuteIcon}
+                resizeMode="contain"
+              />
+            </View>
+          ) : null}
+
+       
         </View>
 
         <View style={styles.windowButtons}>
@@ -865,7 +967,7 @@ const UzivatelPin = ({ navigation, route }) => {
               style={styles.closePressable}
               onPress={handleTopBack}
             >
-              <Text style={styles.windowButtonText}>Ă˘â€ Â</Text>
+              <Text style={styles.windowButtonText}>←</Text>
             </Pressable>
           </View>
 
@@ -878,13 +980,14 @@ const UzivatelPin = ({ navigation, route }) => {
             </Pressable>
           </View>
 
-          <View style={[styles.windowButton, styles.closeButton]}>
-            <Pressable style={styles.closePressable} onPress={goToLogin}>
+                    <View style={[styles.windowButton, styles.closeButton]}>
+            <Pressable style={styles.closePressable} onPress={handleClose}>
               <Text style={[styles.windowButtonText, styles.closeButtonText]}>
                 X
               </Text>
             </Pressable>
           </View>
+
         </View>
       </View>
     );
@@ -897,7 +1000,7 @@ const UzivatelPin = ({ navigation, route }) => {
 
         <View style={styles.page}>
           <View style={styles.window}>
-            {renderTitleBar('UÄąÄľivatel - menu')}
+            {renderTitleBar('Menu')}
 
             <View style={styles.menuBody}>
               <View style={styles.menuTopSection}>
@@ -930,7 +1033,7 @@ const UzivatelPin = ({ navigation, route }) => {
                   ]}
                   onPress={() => {
                     if (isAvatarLocked) {
-                      setBlockedInfo('Ikonka je uzamĂ„Ĺ¤enÄ‚Ë‡ adminem a nelze ji zmÄ‚â€žĂ˘â‚¬Ĺźnit.');
+                      setBlockedInfo('Ikonka je uzamčena adminem a nelze ji změnit.');
                       return;
                     }
 
@@ -938,56 +1041,69 @@ const UzivatelPin = ({ navigation, route }) => {
                   }}
                 >
                   <Text style={[styles.menuButtonText, isAvatarLocked && styles.menuButtonTextDisabled]}>
-                    {isAvatarLocked ? 'Ikonka je uzamĂ„Ĺ¤enÄ‚Ë‡' : 'ZmĂ„â€şnit ikonku'}
+                    {isAvatarLocked ? 'Ikonka je uzamčena' : 'Změnit ikonku'}
                   </Text>
                 </Pressable>
 
                 <View style={styles.adminMainMessageBox}>
                   <Text style={styles.adminMainMessageText}>
-                    Sleduj status - tÄ‚Â­m zjistÄ‚Â­ÄąË‡ jestli ti aktuÄ‚Ë‡lnĂ„â€ş mohu pomoct (status je vidĂ„â€şt nahoÄąâ„˘e v liÄąË‡tĂ„â€ş)
+                    Sleduj status - tím zjistíš jestli ti aktuálně mohu pomoct (status je vidět nahoře v liště)
                   </Text>
                   <Text style={styles.adminMainMessageText}>
-                    KdyÄąÄľ zÄ‚Ë‡drhel nevyÄąâ„˘eÄąË‡Ä‚Â­me online lepÄąË‡Ä‚Â­ bude se sejÄ‚Â­t a problÄ‚Â©m vyÄąâ„˘eÄąË‡it tÄąâ„˘eba u piva :D
+                    Když zadrhel nevyřešíme online lepší bude se sejít a problém vyřešit třeba u piva :D
                   </Text>
-                  <Text style={styles.adminMainMessageText}>ÄąËťijem pouze jednou! Tak si hru hlavnĂ„â€ş uÄąÄľÄ‚Â­vej!!!</Text>
+                  <Text style={styles.adminMainMessageText}>Žijem pouze jednou! Tak si hru hlavně užívej!!!</Text>
                 </View>
               </View>
 
               <View style={styles.menuBottomSection}>
-                <View style={styles.menuInfoBox}>
-                  <Text style={styles.menuInfoText}>
-                    Admin: {getAdminStatusText()}
-                  </Text>
+<Pressable
+style={({ pressed })=>[
+styles.chatButton,
+styles.chatButtonGreenOutline,
+unreadCount>0 && styles.menuButtonUnread,
+pressed && styles.sendButtonPressed,
+]}
+onPress={openChat}
+>
+<View style={styles.chatButtonLeft}>
+<View
+style={[
+styles.chatButtonIconBox,
+{
+backgroundColor:adminProfile?.bgColour||'#ece9d8',
+borderTopColor:adminProfile?.silhouetteColour||'#0b3d91',
+borderLeftColor:adminProfile?.silhouetteColour||'#0b3d91',
+borderRightColor:adminProfile?.silhouetteColour||'#0b3d91',
+borderBottomColor:adminProfile?.silhouetteColour||'#0b3d91',
+},
+]}
+>
+<Image
+source={getIconSource(adminProfile?.icon||'admin')}
+style={styles.chatButtonIconImage}
+resizeMode="contain"
+/>
+</View>
+<View style={styles.chatButtonTextBox}>
+<View style={styles.chatButtonNameRow}>
+<Text style={styles.chatButtonAdminName}>Admin</Text>
+<UnreadBadge count={unreadCount}/>
+</View>
 
-                  {unreadCount > 0 ? (
-                    <Text style={styles.menuUnreadText}>
-                      {unreadCount} {unreadCount === 1 ? 'novÄ‚Ë‡ zprÄ‚Ë‡va' : 'novÄ‚Ëťch zprÄ‚Ë‡v'}
-                    </Text>
-                  ) : (
-                    <Text style={styles.menuInfoText}>ÄąËťÄ‚Ë‡dnÄ‚Â© novÄ‚Â© zprÄ‚Ë‡vy</Text>
-                  )}
-                </View>
+<Text style={styles.chatButtonAdminStatus}>{getAdminStatusText()}</Text>
+</View>
+</View>
+<Text style={styles.chatButtonArrowText}>→ Chatuj</Text>
+</Pressable>
+</View>
 
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.chatButton,
-                    styles.chatButtonGreenOutline,
-                    unreadCount > 0 && styles.menuButtonUnread,
-                    pressed && styles.sendButtonPressed,
-                  ]}
-                  onPress={openChat}
-                >
-                  <Text style={styles.chatButtonText}>
-                    Chat{unreadCount > 0 ? ` (${unreadCount} novÄ‚Â©)` : ''}
-                  </Text>
-                </Pressable>
-              </View>
             </View>
 
             <View style={styles.statusBar}>
-              <Text style={styles.statusText}>PÄąâ„˘ipojeno jako uÄąÄľivatel</Text>
+              <Text style={styles.statusText}>Připojeno jako uživatel</Text>
               <Text style={styles.statusText}>
-                {unreadCount > 0 ? `${unreadCount} novÄ‚Ëťch zprÄ‚Ë‡v` : 'Menu'}
+                {unreadCount > 0 ? `${unreadCount} nových zpráv` : 'Menu'}
               </Text>
             </View>
           </View>
@@ -1001,7 +1117,7 @@ const UzivatelPin = ({ navigation, route }) => {
             <View style={styles.modalOverlay}>
               <View style={styles.modalWindow}>
                 <View style={styles.modalTitleBar}>
-                  <Text style={styles.modalTitleText}>VÄ‚ËťbĂ„â€şr ikonky</Text>
+                  <Text style={styles.modalTitleText}>Výběr ikonky</Text>
 
                   <Pressable
                     style={styles.modalCloseButton}
@@ -1087,6 +1203,13 @@ const UzivatelPin = ({ navigation, route }) => {
                   );
                 }
 
+                const myOutlineColour = userIconColour || '#0b3d91';
+                const myBgColour = userBgColour || '#ece9d8';
+                const adminOutlineColour = adminProfile?.silhouetteColour || '#0b3d91';
+                const adminBgColour = adminProfile?.bgColour || '#ece9d8';
+                const iconOutlineColour = isUser ? myOutlineColour : adminOutlineColour;
+                const iconBgColour = isUser ? myBgColour : adminBgColour;
+
                 return (
                   <View
                     key={item.id}
@@ -1095,7 +1218,7 @@ const UzivatelPin = ({ navigation, route }) => {
                       isUser ? styles.messageRowUser : styles.messageRowAdmin,
                     ]}
                   >
-                    <View style={styles.miniIconWrapper}>
+                    <View style={[styles.miniIconWrapper, { borderColor: iconOutlineColour, backgroundColor: iconBgColour, borderWidth: 2 }]}>
                       <Image
                         source={getIconSource(isUser ? (userAvatarIcon || 'uzivatel') : (adminProfile?.icon || 'admin'))}
                         style={styles.miniIconImage}
@@ -1110,7 +1233,7 @@ const UzivatelPin = ({ navigation, route }) => {
                     >
                       <View style={styles.messageAuthorRow}>
                         <Text style={styles.messageAuthor}>
-                          {isUser ? 'JÄ‚Ë‡' : 'Admin'}
+                          {isUser ? 'Já' : 'Admin'}
                         </Text>
 
                         {!isUser ? (
@@ -1163,7 +1286,7 @@ const UzivatelPin = ({ navigation, route }) => {
                 isMuted && styles.helperBubbleTextDisabled,
               ]}
             >
-              PomocnÄ‚Ë‡ vĂ„â€şta:
+              Pomocná včta:
             </Text>
 
             <Text
@@ -1185,8 +1308,8 @@ const UzivatelPin = ({ navigation, route }) => {
               }}
               placeholder={
                 isMuted
-                  ? `UmlĂ„Ĺ¤eno jeÄąË‡tĂ„â€ş na ${muteTimeLeft}`
-                  : 'NapiÄąË‡ zprá‚Ë‡vu adminovi...'
+                  ? `Umlčeno ještě na ${muteTimeLeft}`
+                  : 'Napiš zprávu adminovi...'
               }
               placeholderTextColor="#666666"
               style={[styles.input, isMuted && styles.inputDisabled]}
@@ -1219,22 +1342,63 @@ const UzivatelPin = ({ navigation, route }) => {
 
           <View style={styles.statusBar}>
             <Pressable onPress={() => setScreenMode('menu')}>
-              <Text style={styles.statusText}>ZpĂ„â€şt do menu</Text>
+              <Text style={styles.statusText}>Zpět do menu</Text>
             </Pressable>
 
             <Text style={styles.statusText}>
               {isMuted
-                ? `UmlĂ„Ĺ¤en: ${muteTimeLeft}`
+                ? `Umlčeno: ${muteTimeLeft}`
                 : `Admin: ${getAdminStatusText()}`}
             </Text>
           </View>
         </View>
-      </KeyboardWrapper>
+            </KeyboardWrapper>
+
+      <Modal
+        visible={eggImages.length > 0 || eggMessageVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setEggImages([]);
+          setEggMessageVisible(false);
+        }}
+      >
+        <View style={styles.eggOverlay}>
+          {eggImages.map((item) => (
+            <Pressable
+              key={item.id}
+              onPress={() => closeHahaImage(item.id)}
+              style={[
+                styles.eggImageWrapper,
+                {
+                  top: item.top,
+                  left: item.left,
+                  width: item.size,
+                  height: item.size,
+                },
+              ]}
+            >
+              <Image
+                source={HAHA_ICON}
+                style={styles.eggImage}
+                resizeMode="contain"
+              />
+            </Pressable>
+          ))}
+
+          {eggMessageVisible ? (
+            <Pressable style={styles.eggMessageOverlay} onPress={closeHahaMessage}>
+              <Text style={styles.eggMessageText}>HAHA, neříkaj ti náhodou Nachytanec ? :P :D</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
 
 export default UzivatelPin;
+
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -1308,7 +1472,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
-  titleStatusText: {
+    titleStatusText: {
     color: '#ffffff',
     fontSize: 11,
     fontWeight: '900',
@@ -1316,7 +1480,25 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
+    titleMuteIconBox: {
+    width: 22,
+    height: 22,
+    marginLeft: 6,
+    backgroundColor: '#ffffff',
+    borderRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  titleMuteIcon: {
+    width: 16,
+    height: 16,
+    tintColor: '#ff3b30',
+  },
+
+
   statusOnline: {
+
     backgroundColor: '#28c840',
   },
 
@@ -1456,7 +1638,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#d7d7d7',
   },
 
-  chatButton: {
+    chatButton: {
     width: '100%',
     height: 88,
     backgroundColor: '#ece9d8',
@@ -1466,9 +1648,81 @@ const styles = StyleSheet.create({
     borderRightColor: '#777777',
     borderBottomColor: '#777777',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    flexDirection: 'row',
+    paddingHorizontal: 14,
     marginBottom: 2,
   },
+
+  chatButtonLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+  },
+
+  chatButtonIconBox: {
+    width: 44,
+    height: 44,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+
+  chatButtonIconImage: {
+    width: 28,
+    height: 28,
+  },
+
+  chatButtonTextBox: {
+    flexShrink: 1,
+  },
+
+  chatButtonNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  chatButtonAdminName: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
+  chatButtonAdminStatus: {
+    color: '#333333',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+    textTransform: 'capitalize',
+  },
+
+  chatUnreadCircle: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#ff3b30',
+    borderWidth: 1,
+    borderColor: '#a80000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+    marginLeft: 8,
+  },
+
+  chatUnreadCircleText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  chatButtonArrowText: {
+    color: '#000000',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
 
   chatButtonGreenOutline: {
     borderTopColor: '#67d977',
@@ -1556,7 +1810,7 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 10,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
   },
 
   miniIconWrapper: {
@@ -1938,10 +2192,42 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
 
-  colourButtonText: {
+    colourButtonText: {
     color: '#000000',
     fontSize: 12,
     fontWeight: '900',
     flexShrink: 1,
   },
+
+  eggOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+
+  eggImageWrapper: {
+    position: 'absolute',
+  },
+
+  eggImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  eggMessageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  eggMessageText: {
+    color: '#ffffff',
+    fontSize: 26,
+    fontWeight: '900',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+    textShadowColor: '#000000',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
 });
+

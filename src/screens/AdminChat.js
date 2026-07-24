@@ -2,7 +2,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  BackHandler,
+  Dimensions,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -21,6 +24,7 @@ const KeyboardWrapper = Platform.OS === 'ios' ? KeyboardAvoidingView : View;
 
 const EYE_ICON = require('../assets/icons/oko.png');
 const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
+const EYE_SECRET_MUTED_ICON = require('../assets/icons/okopotaji.png');
 
 const USER_ICON_SOURCES = {
   uzivatel: require('../assets/icons/uzivatel.png'),
@@ -249,8 +253,6 @@ useEffect(() => {
           setCurrentUserData(found);
         }
       }
-
-      setNowTick(Date.now());
     };
 
     const handleChatMessages = ({ userId: incomingUserId, messages: nextMessages }) => {
@@ -428,54 +430,57 @@ useEffect(() => {
   };
 
   const muteUser = (option) => {
-    const mutedUsers = getGlobalMutedUsers();
+    const mutedUsers = { ...getGlobalMutedUsers() };
     const secretMutedUsersMap = {
       ...secretMutedUsers,
     };
     const muteUntilTime = Date.now() + option.milliseconds;
 
     delete secretMutedUsersMap[userId];
+    delete secretMutedUsersMap[String(userId)];
     setSecretMutedUsers(secretMutedUsersMap);
     globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsersMap;
 
     mutedUsers[userId] = muteUntilTime;
+    mutedUsers[String(userId)] = muteUntilTime;
     globalThis.CUSIIK_MUTED_USERS = mutedUsers;
 
     setServerMutedUsers({
       ...serverMutedUsers,
       [userId]: muteUntilTime,
+      [String(userId)]: muteUntilTime,
     });
+    setNowTick(Date.now());
 
-    if (socket.connected) {
-      socket.emit('admin:secretMuteUser', {
-        userId,
-        enabled: false,
-      });
-
+       if (socket.connected) {
       socket.emit('admin:muteUser', {
         userId,
         milliseconds: option.milliseconds,
       });
     }
 
+
     sendSystemMessage(`Uživatel ${userName} byl umlčen na ${option.label}.`);
 
-    setNowTick(Date.now());
     closeMuteModal();
   };
 
   const unmuteUser = () => {
-    const mutedUsers = getGlobalMutedUsers();
+    const mutedUsers = { ...getGlobalMutedUsers() };
 
     delete mutedUsers[userId];
+    delete mutedUsers[String(userId)];
+    globalThis.CUSIIK_MUTED_USERS = mutedUsers;
 
     const nextServerMutedUsers = {
       ...serverMutedUsers,
     };
 
     delete nextServerMutedUsers[userId];
+    delete nextServerMutedUsers[String(userId)];
 
     setServerMutedUsers(nextServerMutedUsers);
+    setNowTick(Date.now());
 
     if (socket.connected) {
       socket.emit('admin:unmuteUser', {
@@ -485,7 +490,6 @@ useEffect(() => {
 
     sendSystemMessage(`Uživatel ${userName} už není umlčen.`);
 
-    setNowTick(Date.now());
     closeMuteModal();
   };
 
@@ -496,6 +500,17 @@ useEffect(() => {
     }
 
     navigation.replace('AdminPin');
+  };
+
+  const handleMinimize = () => {
+    Keyboard.dismiss();
+    goBack();
+  };
+
+  const closeApp = () => {
+    try {
+      BackHandler.exitApp();
+    } catch {}
   };
 
   const toggleMessageSelection = (messageId) => {
@@ -537,15 +552,19 @@ useEffect(() => {
     const nextSecretMutedUsers = {
       ...secretMutedUsers,
     };
+    const uidStr = String(userId);
 
     if (nextValue) {
       nextSecretMutedUsers[userId] = true;
+      nextSecretMutedUsers[uidStr] = true;
     } else {
       delete nextSecretMutedUsers[userId];
+      delete nextSecretMutedUsers[uidStr];
     }
 
     setSecretMutedUsers(nextSecretMutedUsers);
     globalThis.CUSIIK_SECRET_MUTED_USERS = nextSecretMutedUsers;
+    setNowTick(Date.now());
 
     if (socket.connected) {
       socket.emit('admin:secretMuteUser', {
@@ -561,14 +580,17 @@ useEffect(() => {
     }
 
     if (nextValue) {
-      const mutedUsers = getGlobalMutedUsers();
+      const mutedUsers = { ...getGlobalMutedUsers() };
       delete mutedUsers[userId];
+      delete mutedUsers[uidStr];
+      globalThis.CUSIIK_MUTED_USERS = mutedUsers;
 
       const nextServerMutedUsers = {
         ...serverMutedUsers,
       };
 
       delete nextServerMutedUsers[userId];
+      delete nextServerMutedUsers[uidStr];
       setServerMutedUsers(nextServerMutedUsers);
       setNowTick(Date.now());
     }
@@ -607,16 +629,18 @@ useEffect(() => {
             <View style={styles.windowButtons}>
               <View style={styles.windowButton}>
                 <Pressable style={styles.closePressable} onPress={goBack}>
-                  <Text style={styles.windowButtonText}>â†</Text>
+                  <Text style={styles.windowButtonText}>←</Text>
                 </Pressable>
               </View>
 
               <View style={styles.windowButton}>
-                <Text style={styles.windowButtonText}>_</Text>
+                <Pressable style={styles.closePressable} onPress={handleMinimize}>
+                  <Text style={styles.windowButtonText}>_</Text>
+                </Pressable>
               </View>
 
               <View style={[styles.windowButton, styles.closeButton]}>
-                <Pressable style={styles.closePressable} onPress={goBack}>
+                <Pressable style={styles.closePressable} onPress={closeApp}>
                   <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
                 </Pressable>
               </View>
@@ -624,6 +648,12 @@ useEffect(() => {
           </View>
 
           <View style={styles.topPanel}>
+            <Image
+              source={getIconSource(currentUserData?.avatarIcon || 'uzivatel')}
+              style={styles.userHeaderIcon}
+              resizeMode="contain"
+            />
+
             <View style={styles.userInfoBox}>
               <View style={styles.userNameRow}>
                 <Text style={styles.userName}>{userName}</Text>
@@ -647,24 +677,34 @@ useEffect(() => {
               </View>
             </View>
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.muteButton,
-                isSecretMuted && styles.eyeButtonActive,
-                !isSecretMuted && isMuted && styles.muteButtonActive,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={toggleSecretMute}
-              onLongPress={openMuteModal}
-              delayLongPress={260}
-            >
-              <Image
-                source={isSecretMuted ? EYE_SLASH_ICON : EYE_ICON}
-                style={styles.muteButtonIcon}
-                resizeMode="contain"
-              />
-            </Pressable>
+            <View style={styles.buttonsGroup}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.muteButton,
+                  isSecretMuted && styles.eyeToggleButtonActive,
+                  !isSecretMuted && isMuted && styles.eyeToggleButtonMuted,
+                  pressed && styles.xpButtonPressed,
+                ]}
+                onPress={toggleSecretMute}
+                onLongPress={openMuteModal}
+                delayLongPress={260}
+              >
+                <Image
+                  source={isSecretMuted ? EYE_SECRET_MUTED_ICON : (isMuted ? EYE_SLASH_ICON : EYE_ICON)}
+                  style={styles.muteButtonIcon}
+                  resizeMode="contain"
+                />
+              </Pressable>
+            </View>
           </View>
+
+          {isSecretMuted ? (
+            <View style={styles.secretMutedBanner}>
+              <Text style={styles.secretMutedBannerText}>
+                Uzivatel je umlcen potaji - neuvidí, ze je umlcen
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.chatArea}>
             <ScrollView
@@ -692,6 +732,13 @@ useEffect(() => {
                   );
                 }
 
+                const userOutlineColour = currentUserData?.silhouetteColour || currentUserData?.colour || '#0b3d91';
+                const userBgColour = currentUserData?.bgColour || '#ece9d8';
+                const adminOutlineColour = adminProfile?.silhouetteColour || '#0b3d91';
+                const adminBgColour = adminProfile?.bgColour || '#ece9d8';
+                const iconOutlineColour = isAdmin ? adminOutlineColour : userOutlineColour;
+                const iconBgColour = isAdmin ? adminBgColour : userBgColour;
+
                 return (
                   <View
                     key={item.id}
@@ -700,7 +747,7 @@ useEffect(() => {
                       isAdmin ? styles.messageRowUser : styles.messageRowAdmin,
                     ]}
                   >
-                    <View style={styles.miniIconWrapper}>
+                    <View style={[styles.miniIconWrapper, { borderColor: iconOutlineColour, backgroundColor: iconBgColour, borderWidth: 2 }]}>
                       <Image
                         source={getIconSource(isAdmin ? (adminProfile?.icon || adminAvatarIcon || 'admin') : (currentUserData?.avatarIcon || 'uzivatel'))}
                         style={styles.miniIconImage}
@@ -1024,6 +1071,18 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
 
+  userListItemIcon: {
+    width: 36,
+    height: 36,
+    marginRight: 8,
+  },
+
+  userHeaderIcon: {
+    width: 38,
+    height: 38,
+    marginRight: 10,
+  },
+
   userNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1098,15 +1157,20 @@ const styles = StyleSheet.create({
     height: 18,
   },
 
-  eyeButtonActive: {
-    borderTopColor: '#cda0f0',
-    borderLeftColor: '#cda0f0',
-    borderRightColor: '#6d2ea4',
-    borderBottomColor: '#6d2ea4',
+  eyeToggleButtonActive: {
+    backgroundColor: '#e8c6ff',
+    borderTopColor: '#b67ae8',
+    borderLeftColor: '#b67ae8',
+    borderRightColor: '#5d1f85',
+    borderBottomColor: '#5d1f85',
   },
 
-  muteButtonActive: {
+  eyeToggleButtonMuted: {
     backgroundColor: '#ffd7d7',
+    borderTopColor: '#e49b38',
+    borderLeftColor: '#e49b38',
+    borderRightColor: '#8b4700',
+    borderBottomColor: '#8b4700',
   },
 
   chatArea: {
@@ -1136,7 +1200,7 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 10,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
   },
 
   miniIconWrapper: {
@@ -1483,6 +1547,26 @@ const styles = StyleSheet.create({
     borderRightColor: '#ffffff',
     borderBottomColor: '#ffffff',
     backgroundColor: '#d8d5c6',
+  },
+
+  buttonsGroup: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+
+  secretMutedBanner: {
+    backgroundColor: '#ffd7d7',
+    borderBottomWidth: 1,
+    borderBottomColor: '#a80000',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+
+  secretMutedBannerText: {
+    color: '#8a0000',
+    fontSize: 12,
+    fontWeight: '900',
+    textAlign: 'center',
   },
 });
 
