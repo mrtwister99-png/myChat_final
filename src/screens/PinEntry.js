@@ -51,8 +51,11 @@ const PinEntry = ({ navigation }) => {
   const [errorText, setErrorText] = useState('');
   const [serverStatusText, setServerStatusText] = useState('Připojuji server...');
   const [isCheckingPin, setIsCheckingPin] = useState(false);
-  const inputRef = useRef(null);
+    const inputRef = useRef(null);
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  const entranceAnim = useRef(new Animated.Value(-Dimensions.get('window').width)).current;
+  const windowTranslateX = Animated.add(entranceAnim, shakeAnim);
+
 
   // Easter egg states
   const [easterActive, setEasterActive] = useState(false);
@@ -65,10 +68,19 @@ const PinEntry = ({ navigation }) => {
   const timerRef = useRef(null);
   const screenDim = Dimensions.get('window');
 
-  useEffect(() => {
+    useEffect(() => {
     const t = setTimeout(() => inputRef.current?.focus(), 400);
     return () => clearTimeout(t);
   }, []);
+
+  useEffect(() => {
+    Animated.timing(entranceAnim, {
+      toValue: 0,
+      duration: 450,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
 
   useEffect(() => {
     let isActive = true;
@@ -385,12 +397,13 @@ const PinEntry = ({ navigation }) => {
             />
 
             <View style={styles.desktop}>
-              <Animated.View
+                            <Animated.View
                 style={[
                   styles.window,
-                  { transform: [{ translateX: shakeAnim }] },
+                  { transform: [{ translateX: windowTranslateX }] },
                 ]}
               >
+
                 <View style={styles.titleBar}>
                   <View style={styles.titleLeft}>
                     <View style={styles.windowsIcon}>

@@ -423,7 +423,6 @@ const AdminPin = ({ navigation }) => {
       if (nextState !== 'active') {
         Keyboard.dismiss();
       } else {
-        // pri navratu z pozadi jen refresh tick, ne cely users re-render
         setNowTick(Date.now());
       }
     });
@@ -1641,9 +1640,8 @@ const AdminPin = ({ navigation }) => {
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
 
-      <KeyboardAvoidingView
+      <View
         style={styles.page}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View style={styles.window}>
           <View style={styles.titleBar}>
@@ -2548,7 +2546,7 @@ const AdminPin = ({ navigation }) => {
             </View>
           </View>
         </Modal>
-      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 };

@@ -236,6 +236,82 @@ const getInitialMessages = (userId) => {
 const getAdminMessageCount=(messages)=>{
 return messages.filter((item)=>item.sender==='admin').length;
 };
+const AnimatedMessageRow = ({ children, style }) => {
+  const rowOpacity = useRef(new Animated.Value(0)).current;
+  const rowTranslateY = useRef(new Animated.Value(16)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(rowOpacity, { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.timing(rowTranslateY, { toValue: 0, duration: 220, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View
+      style={[style, { opacity: rowOpacity, transform: [{ translateY: rowTranslateY }] }]}
+    >
+      {children}
+    </Animated.View>
+  );
+};
+const PulsingDot = ({ active, style }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const loopRef = useRef(null);
+
+  useEffect(() => {
+    if (active) {
+      loopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.6, duration: 550, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 550, useNativeDriver: true }),
+        ])
+      );
+      loopRef.current.start();
+    } else {
+      loopRef.current?.stop?.();
+      pulseAnim.setValue(1);
+    }
+
+    return () => {
+      loopRef.current?.stop?.();
+    };
+  }, [active]);
+
+  return <Animated.View style={[style, { transform: [{ scale: pulseAnim }] }]} />;
+};
+
+const ChatButtonPulseWrapper = ({ active, children, style }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const loopRef = useRef(null);
+
+  useEffect(() => {
+    if (active) {
+      loopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.02, duration: 700, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+        ])
+      );
+      loopRef.current.start();
+    } else {
+      loopRef.current?.stop?.();
+      pulseAnim.setValue(1);
+    }
+
+    return () => {
+      loopRef.current?.stop?.();
+    };
+  }, [active]);
+
+  return (
+    <Animated.View style={[style, { transform: [{ scale: pulseAnim }] }]}>
+      {children}
+    </Animated.View>
+  );
+};
+
+
 const UnreadBadge=({ count })=>{
 const scaleAnim=useRef(new Animated.Value(1)).current;
 const prevCountRef=useRef(count);
@@ -272,8 +348,13 @@ const UzivatelPin=({ navigation,route })=>{
   const screenModeRef = useRef('menu');
   const currentUserId = resolveCurrentUserId(route?.params?.userId);
   const [currentUserName, setCurrentUserName] = useState(getCurrentUserName());
-  const [screenMode, setScreenMode] = useState('menu');
+    const [screenMode, setScreenMode] = useState('menu');
   const [iconModalVisible, setIconModalVisible] = useState(false);
+  const screenSlideAnim = useRef(new Animated.Value(0)).current;
+  const screenFadeAnim = useRef(new Animated.Value(1)).current;
+  const prevScreenModeRef = useRef('menu');
+  const screenWidth = Dimensions.get('window').width;
+
 
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState(getInitialMessages);
@@ -365,14 +446,38 @@ const UzivatelPin=({ navigation,route })=>{
     })();
   }, []);
 
-  useEffect(() => {
+   useEffect(() => {
     screenModeRef.current = screenMode;
     if (screenMode === 'chat') {
       globalThis.CUSIIK_ACTIVE_USER_CHAT_ID = String(currentUserId);
     } else if (String(globalThis.CUSIIK_ACTIVE_USER_CHAT_ID || '') === String(currentUserId)) {
       globalThis.CUSIIK_ACTIVE_USER_CHAT_ID = null;
     }
+
+    const goingToChat = screenMode === 'chat' && prevScreenModeRef.current === 'menu';
+    const goingToMenu = screenMode === 'menu' && prevScreenModeRef.current === 'chat';
+
+    if (goingToChat || goingToMenu) {
+      screenSlideAnim.setValue(goingToChat ? screenWidth : -screenWidth);
+      screenFadeAnim.setValue(0.4);
+
+      Animated.parallel([
+        Animated.timing(screenSlideAnim, {
+          toValue: 0,
+          duration: 320,
+          useNativeDriver: true,
+        }),
+        Animated.timing(screenFadeAnim, {
+          toValue: 1,
+          duration: 320,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+
+    prevScreenModeRef.current = screenMode;
   }, [screenMode]);
+
 
   const isSecretMuted = Boolean(secretMutedUsers[currentUserId]);
 
@@ -809,8 +914,18 @@ const UzivatelPin=({ navigation,route })=>{
     setIconModalVisible(false);
   };
 
+    const sendButtonScale = useRef(new Animated.Value(1)).current;
+
+  const playSendButtonFeedback = () => {
+    Animated.sequence([
+      Animated.timing(sendButtonScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
+      Animated.timing(sendButtonScale, { toValue: 1, duration: 100, useNativeDriver: true }),
+    ]).start();
+  };
+
   const sendMessage = () => {
     const trimmedMessage = message.trim();
+
 
     if (isMuted) {
       setBlockedInfo(`Nemůžeš psát. Jsi umlčený ještě na ${muteTimeLeft}.`);
@@ -827,6 +942,8 @@ const UzivatelPin=({ navigation,route })=>{
       text: trimmedMessage,
       createdAt: Date.now(),
     };
+
+        playSendButtonFeedback();
 
     if (socket.connected) {
       socket.emit('chat:send', {
@@ -846,6 +963,7 @@ const UzivatelPin=({ navigation,route })=>{
     setMessage('');
     setBlockedInfo('');
   };
+
 
     const triggerHahaEgg = () => {
     const screenDim = Dimensions.get('window');
@@ -898,18 +1016,15 @@ const UzivatelPin=({ navigation,route })=>{
       goToLogin();
     };
 
-        const handleMinimize = () => {
+          const handleMinimize = () => {
       if (screenMode === 'chat') {
         triggerHahaEgg();
         return;
       }
 
-      if (Platform.OS === 'android') {
-        try {
-          BackHandler.moveTaskToBack();
-        } catch {}
-      }
+      goToLogin();
     };
+
 
     const handleClose = () => {
       if (screenMode === 'chat') {
@@ -933,7 +1048,8 @@ const UzivatelPin=({ navigation,route })=>{
 
           <Text style={styles.titleText}>{title}</Text>
 
-          <View
+                    <PulsingDot
+            active={isAdminOnline}
             style={[
               styles.titleStatusDot,
               isAdminOnline
@@ -998,9 +1114,15 @@ const UzivatelPin=({ navigation,route })=>{
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
 
-        <View style={styles.page}>
-          <View style={styles.window}>
+                <View style={styles.page}>
+          <Animated.View
+            style={[
+              styles.window,
+              { transform: [{ translateX: screenSlideAnim }], opacity: screenFadeAnim },
+            ]}
+          >
             {renderTitleBar('Menu')}
+
 
             <View style={styles.menuBody}>
               <View style={styles.menuTopSection}>
@@ -1057,6 +1179,7 @@ const UzivatelPin=({ navigation,route })=>{
               </View>
 
               <View style={styles.menuBottomSection}>
+<ChatButtonPulseWrapper active={isAdminOnline}>
 <Pressable
 style={({ pressed })=>[
 styles.chatButton,
@@ -1066,6 +1189,7 @@ pressed && styles.sendButtonPressed,
 ]}
 onPress={openChat}
 >
+
 <View style={styles.chatButtonLeft}>
 <View
 style={[
@@ -1096,19 +1220,22 @@ resizeMode="contain"
 </View>
 <Text style={styles.chatButtonArrowText}>→ Chatuj</Text>
 </Pressable>
+</ChatButtonPulseWrapper>
 </View>
+
 
             </View>
 
-            <View style={styles.statusBar}>
+                        <View style={styles.statusBar}>
               <Text style={styles.statusText}>Připojeno jako uživatel</Text>
               <Text style={styles.statusText}>
                 {unreadCount > 0 ? `${unreadCount} nových zpráv` : 'Menu'}
               </Text>
             </View>
-          </View>
+          </Animated.View>
 
           <Modal
+
             visible={iconModalVisible}
             transparent
             animationType="fade"
@@ -1153,24 +1280,32 @@ resizeMode="contain"
                     ))}
                   </View>
                 </View>
-              </View>
-            </View>
+                      </View>
+                       </View>
           </Modal>
         </View>
       </SafeAreaView>
     );
   }
 
+
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
 
-      <KeyboardWrapper
+           <KeyboardWrapper
         style={styles.page}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.window}>
+        <Animated.View
+          style={[
+            styles.window,
+            { transform: [{ translateX: screenSlideAnim }], opacity: screenFadeAnim },
+          ]}
+        >
           {renderTitleBar('Chat s adminem')}
+
 
           {isMuted ? (
             <View style={styles.muteBanner}>
@@ -1192,16 +1327,17 @@ resizeMode="contain"
                 const isSystem = item.sender === 'system';
                 const messageTime = formatMessageTime(item.createdAt);
 
-                if (isSystem) {
+                               if (isSystem) {
                   return (
-                    <View key={item.id} style={styles.systemMessageRow}>
+                    <AnimatedMessageRow key={item.id} style={styles.systemMessageRow}>
                       <View style={styles.systemMessageBox}>
                         <Text style={styles.systemMessageText}>{item.text}</Text>
                         <Text style={styles.systemMessageTime}>{messageTime}</Text>
                       </View>
-                    </View>
+                    </AnimatedMessageRow>
                   );
                 }
+
 
                 const myOutlineColour = userIconColour || '#0b3d91';
                 const myBgColour = userBgColour || '#ece9d8';
@@ -1210,8 +1346,8 @@ resizeMode="contain"
                 const iconOutlineColour = isUser ? myOutlineColour : adminOutlineColour;
                 const iconBgColour = isUser ? myBgColour : adminBgColour;
 
-                return (
-                  <View
+                           return (
+                  <AnimatedMessageRow
                     key={item.id}
                     style={[
                       styles.messageRow,
@@ -1260,9 +1396,10 @@ resizeMode="contain"
 
                       <Text style={styles.messageText}>{item.text}</Text>
                     </View>
-                  </View>
+                  </AnimatedMessageRow>
                 );
               })}
+
             </ScrollView>
           </View>
 
@@ -1320,24 +1457,27 @@ resizeMode="contain"
               editable={!isMuted}
             />
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.sendButton,
-                isMuted && styles.sendButtonDisabled,
-                pressed && !isMuted && styles.sendButtonPressed,
-              ]}
-              onPress={sendMessage}
-              disabled={isMuted}
-            >
-              <Text
-                style={[
-                  styles.sendButtonText,
-                  isMuted && styles.sendButtonTextDisabled,
+                        <Animated.View style={{ transform: [{ scale: sendButtonScale }] }}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.sendButton,
+                  isMuted && styles.sendButtonDisabled,
+                  pressed && !isMuted && styles.sendButtonPressed,
                 ]}
+                onPress={sendMessage}
+                disabled={isMuted}
               >
-                Odeslat
-              </Text>
-            </Pressable>
+                <Text
+                  style={[
+                    styles.sendButtonText,
+                    isMuted && styles.sendButtonTextDisabled,
+                  ]}
+                >
+                  Odeslat
+                </Text>
+              </Pressable>
+            </Animated.View>
+
           </View>
 
           <View style={styles.statusBar}>
@@ -1349,10 +1489,11 @@ resizeMode="contain"
               {isMuted
                 ? `Umlčeno: ${muteTimeLeft}`
                 : `Admin: ${getAdminStatusText()}`}
-            </Text>
+                      </Text>
           </View>
-        </View>
+        </Animated.View>
             </KeyboardWrapper>
+
 
       <Modal
         visible={eggImages.length > 0 || eggMessageVisible}

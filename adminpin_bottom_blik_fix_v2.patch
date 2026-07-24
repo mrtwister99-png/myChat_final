@@ -1,0 +1,84 @@
+--- a/src/screens/AdminPin.js
++++ b/src/screens/AdminPin.js
+@@ -3,8 +3,10 @@
+ import React, { useEffect, useRef, useState } from 'react';
+ import {
+   Animated,
++  AppState,
+   BackHandler,
+   Image,
++  Keyboard,
+   KeyboardAvoidingView,
+   Modal,
+   Platform,
+@@ -284,11 +286,13 @@
+     const current = a[index];
+     const next = b[index];
+ 
++    const lastSeenDiff = Math.abs((current.lastSeenAt || 0) - (next.lastSeenAt || 0));
++
+     if (
+       current.id !== next.id ||
+       current.name !== next.name ||
+       current.online !== next.online ||
+-      current.lastSeenAt !== next.lastSeenAt ||
++      lastSeenDiff > 60000 ||
+       current.silhouetteColour !== next.silhouetteColour ||
+       current.bgColour !== next.bgColour ||
+       current.avatarIcon !== next.avatarIcon
+@@ -412,6 +416,20 @@
+     }, 15000);
+ 
+     return () => clearInterval(interval);
++  }, []);
++
++  useEffect(() => {
++    const sub = AppState.addEventListener('change', (nextState) => {
++      if (nextState !== 'active') {
++        Keyboard.dismiss();
++      } else {
++        setNowTick(Date.now());
++      }
++    });
++
++    return () => {
++      sub.remove();
++    };
+   }, []);
+ 
+   useEffect(() => {
+@@ -1616,9 +1634,8 @@
+     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
+ 
+-      <KeyboardAvoidingView
++      <View
+         style={styles.page}
+-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+       >
+         <View style={styles.window}>
+           <View style={styles.titleBar}>
+@@ -2523,7 +2540,7 @@
+             </View>
+           </View>
+         </Modal>
+-      </KeyboardAvoidingView>
++      </View>
+     </SafeAreaView>
+   );
+ };
+@@ -2533,12 +2550,12 @@
+ const styles = StyleSheet.create({
+   safeArea: {
+     flex: 1,
+-    backgroundColor: '#0058d8',
++    backgroundColor: '#ece9d8',
+   },
+ 
+   page: {
+     flex: 1,
+-    backgroundColor: '#1f7a7a',
++    backgroundColor: '#ece9d8',
+   },
+ 
+   window: {

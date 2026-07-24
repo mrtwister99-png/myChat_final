@@ -1,0 +1,101 @@
+--- a/src/screens/AdminChat.js
++++ b/src/screens/AdminChat.js
+@@ -430,23 +430,29 @@
+   const muteUser = (option) => {
+-    const mutedUsers = getGlobalMutedUsers();
++    const mutedUsers = { ...getGlobalMutedUsers() };
+     const secretMutedUsersMap = {
+       ...secretMutedUsers,
+     };
+     const muteUntilTime = Date.now() + option.milliseconds;
+ 
+     delete secretMutedUsersMap[userId];
++    delete secretMutedUsersMap[String(userId)];
+     setSecretMutedUsers(secretMutedUsersMap);
+     globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsersMap;
+ 
+     mutedUsers[userId] = muteUntilTime;
++    mutedUsers[String(userId)] = muteUntilTime;
+     globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+ 
+     setServerMutedUsers({
+       ...serverMutedUsers,
+       [userId]: muteUntilTime,
++      [String(userId)]: muteUntilTime,
+     });
++    setNowTick(Date.now());
+ 
+     if (socket.connected) {
+       socket.emit('admin:secretMuteUser', {
+         userId,
+         enabled: false,
+       });
+@@ -465,19 +471,25 @@
+   };
+ 
+   const unmuteUser = () => {
+-    const mutedUsers = getGlobalMutedUsers();
++    const mutedUsers = { ...getGlobalMutedUsers() };
+ 
+     delete mutedUsers[userId];
++    delete mutedUsers[String(userId)];
++    globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+ 
+     const nextServerMutedUsers = {
+       ...serverMutedUsers,
+     };
+ 
+     delete nextServerMutedUsers[userId];
++    delete nextServerMutedUsers[String(userId)];
+ 
+     setServerMutedUsers(nextServerMutedUsers);
++    setNowTick(Date.now());
+ 
+     if (socket.connected) {
+       socket.emit('admin:unmuteUser', {
+         userId,
+       });
+     }
+@@ -542,13 +554,16 @@
+   const toggleSecretMute = () => {
+     const nextValue = !isSecretMuted;
+     const nextSecretMutedUsers = {
+       ...secretMutedUsers,
+     };
++    const uidStr = String(userId);
+ 
+     if (nextValue) {
+       nextSecretMutedUsers[userId] = true;
++      nextSecretMutedUsers[uidStr] = true;
+     } else {
+       delete nextSecretMutedUsers[userId];
++      delete nextSecretMutedUsers[uidStr];
+     }
+ 
+     setSecretMutedUsers(nextSecretMutedUsers);
+     globalThis.CUSIIK_SECRET_MUTED_USERS = nextSecretMutedUsers;
++    setNowTick(Date.now());
+ 
+     if (socket.connected) {
+       socket.emit('admin:secretMuteUser', {
+@@ -562,16 +577,19 @@
+       }
+     }
+ 
+     if (nextValue) {
+-      const mutedUsers = getGlobalMutedUsers();
++      const mutedUsers = { ...getGlobalMutedUsers() };
+       delete mutedUsers[userId];
++      delete mutedUsers[uidStr];
++      globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+ 
+       const nextServerMutedUsers = {
+         ...serverMutedUsers,
+       };
+ 
+       delete nextServerMutedUsers[userId];
++      delete nextServerMutedUsers[uidStr];
+       setServerMutedUsers(nextServerMutedUsers);
++      setNowTick(Date.now());
+     }
+   };

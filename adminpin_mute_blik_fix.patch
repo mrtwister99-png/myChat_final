@@ -1,0 +1,68 @@
+--- a/src/screens/AdminPin.js
++++ b/src/screens/AdminPin.js
+@@ -933,17 +933,21 @@
+   const muteUser = (user, option) => {
+     if (!user) {
+       return;
+     }
+ 
+-    const mutedUsers = getGlobalMutedUsers();
+-    const secretMutedUsersMap = getGlobalSecretMutedUsers();
++    const mutedUsers = { ...getGlobalMutedUsers() };
++    const secretMutedUsersMap = { ...getGlobalSecretMutedUsers() };
+     const muteUntilTime = Date.now() + option.milliseconds;
+ 
+     delete secretMutedUsersMap[user.id];
++    delete secretMutedUsersMap[String(user.id)];
+     globalThis.CUSIIK_SECRET_MUTED_USERS = secretMutedUsersMap;
+ 
+     mutedUsers[user.id] = muteUntilTime;
++    mutedUsers[String(user.id)] = muteUntilTime;
+     globalThis.CUSIIK_MUTED_USERS = mutedUsers;
+ 
+     setSecretMutedUsers({ ...secretMutedUsersMap });
++    setNowTick(Date.now());
+ 
+     if (socket.connected) {
+       socket.emit('admin:secretMuteUser', {
+@@ -973,9 +977,13 @@
+       return;
+     }
+ 
+-    const mutedUsers = getGlobalMutedUsers();
++    const mutedUsers = { ...getGlobalMutedUsers() };
+     delete mutedUsers[user.id];
++    delete mutedUsers[String(user.id)];
+     globalThis.CUSIIK_MUTED_USERS = mutedUsers;
++    setNowTick(Date.now());
+ 
+     if (socket.connected) {
+       socket.emit('admin:unmuteUser', {
+@@ -1009,15 +1017,15 @@
+       return;
+     }
+ 
+-    const secretMutedMap = getGlobalSecretMutedUsers();
++    const secretMutedMap = { ...getGlobalSecretMutedUsers() };
+     const uid = String(user.id);
+     const nextValue = !(secretMutedMap[user.id] || secretMutedMap[uid]);
+-    const mutedUsersMap = getGlobalMutedUsers();
++    const mutedUsersMap = { ...getGlobalMutedUsers() };
+ 
+     if (nextValue) {
+       secretMutedMap[user.id] = true;
+       secretMutedMap[uid] = true;
+     } else {
+       delete secretMutedMap[user.id];
+       delete secretMutedMap[uid];
+     }
+@@ -1042,8 +1050,9 @@
+       }
+     }
+ 
+     setSecretMutedUsers({ ...secretMutedMap });
++    setNowTick(Date.now());
+     setLastActionText(
+       nextValue
+         ? `Uživatel ${user.name} byl umlčen potají.`
+         : `Tajné umlčení uživatele ${user.name} bylo zrušeno.`
