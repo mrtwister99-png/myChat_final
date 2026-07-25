@@ -20,6 +20,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
+import { playInAppMessageSound } from '../utils/inAppSound';
+
 
 const EYE_ICON = require('../assets/icons/oko.png');
 const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
@@ -330,8 +332,39 @@ const PulsingAdminDot = ({ active, style }) => {
   return <Animated.View style={[style, { transform: [{ scale: pulseAnim }] }]} />;
 };
 
+const OnlineCountText = ({ count, style }) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const prevCountRef = useRef(count);
+
+  useEffect(() => {
+    if (prevCountRef.current !== count) {
+      prevCountRef.current = count;
+
+      Animated.sequence([
+        Animated.timing(scaleAnim, {
+          toValue: 1.35,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [count]);
+
+  return (
+    <Animated.Text style={[style, { transform: [{ scale: scaleAnim }] }]}>
+      {count} online
+    </Animated.Text>
+  );
+};
 
 const UnreadBadge = ({ count, isSecret }) => {
+
+
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const prevCountRef = useRef(count);
 
@@ -368,6 +401,8 @@ const AdminPin = ({ navigation }) => {
   ]);
 
   const [nowTick, setNowTick] = useState(Date.now());
+  const lastKnownMessageCountsRef = useRef({});
+
 
   const [currentUserPin, setCurrentUserPin] = useState(DEFAULT_USER_PIN);
   const [currentAdminPin, setCurrentAdminPin] = useState(DEFAULT_ADMIN_PIN);
@@ -1761,9 +1796,11 @@ const AdminPin = ({ navigation }) => {
             <View style={styles.usersPanel}>
               <View style={styles.panelTitleBar}>
                 <Text style={styles.panelTitleText}>Uživatelé v roomce</Text>
-                <Text style={styles.panelCountText}>
-                  {users.filter((user) => user.online).length} online
-                </Text>
+                <OnlineCountText
+  count={users.filter((user) => user.online).length}
+  style={styles.panelCountText}
+/>
+
               </View>
 
               <ScrollView

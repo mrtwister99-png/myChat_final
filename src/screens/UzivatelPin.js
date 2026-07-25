@@ -26,6 +26,8 @@ import { socket } from '../socket';
 import {
   showLocalMessageNotification,
 } from '../notifications';
+import { playInAppMessageSound } from '../utils/inAppSound';
+
 
 const resolveCurrentUserId = (routeUserId) => {
   const cleanRouteUserId = String(routeUserId || '').trim();
@@ -715,6 +717,7 @@ const UzivatelPin=({ navigation,route })=>{
         if (screenModeRef.current === 'chat' || isActiveInThisChat) {
           markMessagesAsRead(safeMessages);
         } else if (nextUnread > previousUnread) {
+          playInAppMessageSound();
           showLocalMessageNotification({
             title: 'Nová zpráva od admina',
             body: 'Máte novou zprávu v chatu.',
@@ -727,12 +730,13 @@ const UzivatelPin=({ navigation,route })=>{
         return;
       }
 
-      const shouldNotify =
+            const shouldNotify =
         !isActiveInThisChat &&
         screenModeRef.current !== 'chat' &&
         nextUnread > previousUnread;
 
       if (shouldNotify) {
+        playInAppMessageSound();
         showLocalMessageNotification({
           title: 'Nová zpráva od admina',
           body: 'Máte novou zprávu v chatu.',

@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   BackHandler,
   Dimensions,
   Image,
@@ -128,9 +129,45 @@ const AdminChat = ({ navigation, route }) => {
   const userId = route?.params?.userId || 'unknown-user';
   const userName = route?.params?.userName || 'Uživatel';
 
-  const scrollViewRef = useRef(null);
+    const scrollViewRef = useRef(null);
+  const screenWidth = Dimensions.get('window').width;
+  const screenSlideAnim = useRef(new Animated.Value(screenWidth)).current;
+  const screenFadeAnim = useRef(new Animated.Value(0.4)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(screenSlideAnim, {
+        toValue: 0,
+        duration: 320,
+        useNativeDriver: true,
+      }),
+      Animated.timing(screenFadeAnim, {
+        toValue: 1,
+        duration: 320,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const animateOutAndGo = (callback) => {
+    Animated.parallel([
+      Animated.timing(screenSlideAnim, {
+        toValue: screenWidth,
+        duration: 260,
+        useNativeDriver: true,
+      }),
+      Animated.timing(screenFadeAnim, {
+        toValue: 0.4,
+        duration: 260,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      callback();
+    });
+  };
 
   const scrollToBottom = (animated = true) => {
+
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated });
     }, 120);
@@ -493,14 +530,17 @@ useEffect(() => {
     closeMuteModal();
   };
 
-  const goBack = () => {
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-      return;
-    }
+    const goBack = () => {
+    animateOutAndGo(() => {
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+        return;
+      }
 
-    navigation.replace('AdminPin');
+      navigation.replace('AdminPin');
+    });
   };
+
 
   const handleMinimize = () => {
     Keyboard.dismiss();
@@ -604,8 +644,14 @@ useEffect(() => {
         style={styles.page}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.window}>
+              <Animated.View
+          style={[
+            styles.window,
+            { transform: [{ translateX: screenSlideAnim }], opacity: screenFadeAnim },
+          ]}
+        >
           <View style={styles.titleBar}>
+
             <View style={styles.titleLeft}>
               <View style={styles.windowsIcon}>
                 <View style={[styles.winSquare, { backgroundColor: '#f35325' }]} />
@@ -815,11 +861,12 @@ useEffect(() => {
                   ? `Mute: ${muteTimeLeft}`
                   : connectionText}
             </Text>
-          </View>
-        </View>
+                    </View>
+        </Animated.View>
 
         <Modal
           visible={muteModalVisible}
+
           transparent
           animationType="fade"
           onRequestClose={closeMuteModal}

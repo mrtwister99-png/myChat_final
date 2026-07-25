@@ -1,9 +1,11 @@
-
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 const NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000;
+
+const NOTIFICATION_SOUND_NAME = Platform.OS === 'ios' ? 'notification.caf' : 'notification.mp3';
 
 const getNotificationCooldownMap = () => {
   if (!globalThis.CUSIIK_NOTIFICATION_COOLDOWNS || typeof globalThis.CUSIIK_NOTIFICATION_COOLDOWNS !== 'object') {
@@ -42,7 +44,7 @@ export const registerForPushNotificationsAsync = async () => {
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#0b3d91',
-    sound: 'default',
+    sound: 'notification.mp3',
   });
 
   const existingPermission = await Notifications.getPermissionsAsync();
@@ -81,10 +83,13 @@ export const showLocalMessageNotification = async ({ title, body, data = {}, coo
     content: {
       title,
       body,
-      sound: true,
+      sound: NOTIFICATION_SOUND_NAME,
       data: data || {},
     },
-    trigger: null,
+    trigger: {
+      seconds: 1,
+      channelId: 'default',
+    },
   });
 
   setLastNotificationAt(safeCooldownKey, now);
