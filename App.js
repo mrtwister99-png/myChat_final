@@ -202,7 +202,15 @@ const App = () => {
 
   return (
     <NavigationContainer ref={navigationRef}>
-      <Stack.Navigator initialRouteName="PinEntry" screenOptions={{ headerShown: false }}>
+            <Stack.Navigator
+        initialRouteName="PinEntry"
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationTypeForReplace: 'push',
+        }}
+      >
+
         <Stack.Screen name="PinEntry" component={PinEntry} />
         <Stack.Screen name="UzivatelPin" component={UzivatelPin} />
         <Stack.Screen name="AdminPin" component={AdminPin} />

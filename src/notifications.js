@@ -6,6 +6,7 @@ import { Platform } from 'react-native';
 const NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000;
 
 const NOTIFICATION_SOUND_NAME = Platform.OS === 'ios' ? 'notification.caf' : 'notification.mp3';
+const NOTIFICATION_CHANNEL_ID = 'default-v2';
 
 const getNotificationCooldownMap = () => {
   if (!globalThis.CUSIIK_NOTIFICATION_COOLDOWNS || typeof globalThis.CUSIIK_NOTIFICATION_COOLDOWNS !== 'object') {
@@ -39,12 +40,12 @@ export const registerForPushNotificationsAsync = async () => {
     return null;
   }
 
-  await Notifications.setNotificationChannelAsync('default', {
-    name: 'default',
+  await Notifications.setNotificationChannelAsync(NOTIFICATION_CHANNEL_ID, {
+    name: NOTIFICATION_CHANNEL_ID,
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#0b3d91',
-    sound: 'notification.mp3',
+    sound: NOTIFICATION_SOUND_NAME,
   });
 
   const existingPermission = await Notifications.getPermissionsAsync();
@@ -87,8 +88,10 @@ export const showLocalMessageNotification = async ({ title, body, data = {}, coo
       data: data || {},
     },
     trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds: 1,
-      channelId: 'default',
+      channelId: NOTIFICATION_CHANNEL_ID,
+      repeats: false,
     },
   });
 

@@ -306,7 +306,129 @@ const areUsersEqual = (a, b) => {
 
   return true;
 };
+
+const STATUS_ICON_SOURCES = {
+  ringA: require('../assets/icons/ring-a.png'),
+  arrowA: require('../assets/icons/arrow-a.png'),
+  ringB: require('../assets/icons/ring-b.png'),
+  arrowB: require('../assets/icons/arrow-b.png'),
+  ringC: require('../assets/icons/ring-c.png'),
+  arrowC: require('../assets/icons/arrow-c.png'),
+};
+
+const SpinningRing = ({ source, size = 34, duration = 1600 }) => {
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(rotateAnim, {
+        toValue: 1,
+        duration,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+
+    return () => loop.stop();
+  }, []);
+
+  const rotate = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  return (
+    <Animated.Image
+      source={source}
+      style={{
+        width: size,
+        height: size,
+        transform: [{ rotate }],
+      }}
+      resizeMode="contain"
+    />
+  );
+};
+
+const SlidingArrow = ({
+  source,
+  direction = 'vertical',
+  size = 16,
+  travel = 6,
+  duration = 700,
+}) => {
+  const moveAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(moveAnim, {
+          toValue: 1,
+          duration,
+          useNativeDriver: true,
+        }),
+        Animated.timing(moveAnim, {
+          toValue: 0,
+          duration,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+
+    return () => loop.stop();
+  }, []);
+
+  const translate = moveAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-travel, travel],
+  });
+
+  const transformStyle =
+    direction === 'horizontal'
+      ? { transform: [{ translateX: translate }] }
+      : { transform: [{ translateY: translate }] };
+
+  return (
+    <Animated.Image
+      source={source}
+      style={[
+        {
+          width: size,
+          height: size,
+          position: 'absolute',
+        },
+        transformStyle,
+      ]}
+      resizeMode="contain"
+    />
+  );
+};
+
+const StatusSpinner = ({
+  ringSource,
+  arrowSource,
+  direction = 'vertical',
+  size = 34,
+}) => {
+  const arrowOffset =
+    direction === 'horizontal'
+      ? { right: -4, top: size / 2 - 8 }
+      : { bottom: -4, left: size / 2 - 8 };
+
+  return (
+    <View style={{ width: size, height: size }}>
+      <SpinningRing source={ringSource} size={size} />
+
+      <View style={[{ position: 'absolute' }, arrowOffset]}>
+        <SlidingArrow source={arrowSource} direction={direction} />
+      </View>
+    </View>
+  );
+};
+
 const PulsingAdminDot = ({ active, style }) => {
+
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const loopRef = useRef(null);
 
@@ -595,6 +717,20 @@ const AdminPin = ({ navigation }) => {
       const isSecretMuted = Boolean(secretMutedUsers[cleanUserId] || secretMutedUsers[String(cleanUserId)]);
 
       chats[cleanUserId] = safeMessages;
+      
+      const previousMessageCount = lastKnownMessageCountsRef.current[cleanUserId] || 0;
+      const isNewMessageArrived = userMessagesCount > previousMessageCount;
+      const isInitialLoadDone = Boolean(globalThis.CUSIIK_INITIAL_LOAD_DONE);
+      const isAdminViewingThisChat = activeAdminChatUserId === cleanUserId;
+
+      lastKnownMessageCountsRef.current[cleanUserId] = userMessagesCount;
+
+  
+      if (isNewMessageArrived && isInitialLoadDone && !isAdminViewingThisChat && !isSecretMuted) {
+        playInAppMessageSound();
+      }
+
+
 
       const nextReadCounts = { ...getGlobalReadCounts() };
 
@@ -1722,7 +1858,8 @@ const AdminPin = ({ navigation }) => {
                 <View style={[styles.winSquare, { backgroundColor: '#ffba08' }]} />
               </View>
 
-              <Text style={styles.titleText}>Admin panel</Text>
+             <Text style={styles.titleText}>{`room${currentUserPin}`}</Text>
+
             </View>
 
             <View style={styles.windowButtons}>
@@ -1747,51 +1884,74 @@ const AdminPin = ({ navigation }) => {
           </View>
 
           <View style={styles.body}>
-            <View style={styles.topInfoPanel}>
-              <View style={styles.topInfoLeftColumn}>
-                <Text style={styles.topInfoText}>
-                  Uživatelský PIN: <Text style={styles.pinText}>{currentUserPin}</Text>
-                </Text>
+          <View style={styles.topInfoPanel}>
+  <View style={styles.topInfoLeftColumn}>
+    <View
+      style={[
+        styles.adminStatusBadge,
+        isAdminOnline
+          ? styles.statusOptionOn
+          : isAdminJob
+            ? styles.statusOptionJob
+            : styles.statusOptionOff,
+      ]}
+    >
+      <PulsingAdminDot
+        active={isAdminOnline}
+        style={[
+          styles.adminStatusDotBig,
+          isAdminOnline
+            ? styles.statusDotOn
+            : isAdminJob
+              ? styles.statusDotJob
+              : styles.statusDotOff,
+        ]}
+      />
+            <Text style={styles.adminStatusBadgeText}>
+        Admin status: {getAdminStatusLabel()}
+      </Text>
+    </View>
 
-                                <View style={styles.adminStatusRow}>
-                  <PulsingAdminDot
-                    active={isAdminOnline}
-                    style={[
-                      styles.adminStatusDot,
-                      isAdminOnline
-                        ? styles.statusDotOn
-                        : isAdminJob
-                          ? styles.statusDotJob
-                          : styles.statusDotOff,
-                    ]}
-                  />
-                  <Text style={styles.topInfoText}>
-                    Admin status:{' '}
-                    <Text style={styles.pinText}>{getAdminStatusLabel()}</Text>
-                  </Text>
-                </View>
+    <View style={{ flexDirection: 'row', gap: 16, marginTop: 10 }}>
+      <StatusSpinner
+        ringSource={STATUS_ICON_SOURCES.ringA}
+        arrowSource={STATUS_ICON_SOURCES.arrowA}
+        direction="horizontal"
+      />
+      <StatusSpinner
+        ringSource={STATUS_ICON_SOURCES.ringB}
+        arrowSource={STATUS_ICON_SOURCES.arrowB}
+        direction="vertical"
+      />
+      <StatusSpinner
+        ringSource={STATUS_ICON_SOURCES.ringC}
+        arrowSource={STATUS_ICON_SOURCES.arrowC}
+        direction="vertical"
+      />
+    </View>
+  </View>
 
-              </View>
 
-              <View
-                style={[
-                  styles.topAdminIconBox,
-                  {
-                    backgroundColor: adminProfile?.bgColour || '#ece9d8',
-                    borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
-                    borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
-                    borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
-                    borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
-                  },
-                ]}
-              >
-                <Image
-                  source={getAdminIconSource(adminProfile?.icon || 'admin')}
-                  style={styles.topAdminIconImage}
-                  resizeMode="contain"
-                />
-              </View>
-            </View>
+  <View
+    style={[
+      styles.topAdminIconBox,
+      {
+        backgroundColor: adminProfile?.bgColour || '#ece9d8',
+        borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
+        borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
+        borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
+        borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
+      },
+    ]}
+  >
+    <Image
+      source={getAdminIconSource(adminProfile?.icon || 'admin')}
+      style={styles.topAdminIconImage}
+      resizeMode="contain"
+    />
+  </View>
+</View>
+
 
             <View style={styles.usersPanel}>
               <View style={styles.panelTitleBar}>
@@ -3685,4 +3845,29 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'center',
   },
+  adminStatusBadge: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#ece9d8',
+  borderWidth: 3,
+  paddingVertical: 8,
+  paddingHorizontal: 12,
+  alignSelf: 'flex-start',
+},
+
+adminStatusDotBig: {
+  width: 14,
+  height: 14,
+  borderRadius: 7,
+  borderWidth: 1,
+  borderColor: '#ffffff',
+  marginRight: 8,
+},
+
+adminStatusBadgeText: {
+  color: '#000000',
+  fontSize: 15,
+  fontWeight: '900',
+},
+
 });
