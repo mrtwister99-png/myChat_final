@@ -573,13 +573,6 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (cleanLastId && specialPinForLastId && cleanPin !== specialPinForLastId) {
-      socket.emit('auth:error', {
-        message: `Pro tento účet musíš použít PIN ${specialPinForLastId}.`,
-      });
-      return;
-    }
-
     if (isRoomPinLogin || isSpecialPinLogin) {
       socket.leave('admins');
 
