@@ -332,26 +332,15 @@ const OFF_FRAME_SOURCES = [
   require('../assets/anima/off6.png'),
 ];
 
-const FrameAnimation = ({
-  size = 34,
-  stepDuration = 250,
-  frames = ON_FRAME_SOURCES,
-  loop = true,
-  pulseAtEnd = false,
-}) => {
+const OnLoopAnimation = ({ size = 34, stepDuration = 200 }) => {
   const [frameIndex, setFrameIndex] = useState(0);
-  const scale = useRef(new Animated.Value(1)).current;
   const timeoutRef = useRef(null);
-  const pulseLoopRef = useRef(null);
 
   useEffect(() => {
     let isCancelled = false;
-
     setFrameIndex(0);
-    scale.setValue(1);
 
-    const lastFrameIndex = frames.length - 1;
-    const beforePulseIndex = lastFrameIndex - 1;
+    const totalFrames = ON_FRAME_SOURCES.length;
 
     const scheduleNext = (index) => {
       timeoutRef.current = setTimeout(() => {
@@ -359,39 +348,7 @@ const FrameAnimation = ({
           return;
         }
 
-        if (pulseAtEnd && index === beforePulseIndex) {
-          setFrameIndex(lastFrameIndex);
-
-          pulseLoopRef.current = Animated.loop(
-            Animated.sequence([
-              Animated.timing(scale, {
-                toValue: 1.18,
-                duration: 500,
-                easing: Easing.inOut(Easing.ease),
-                useNativeDriver: true,
-              }),
-              Animated.timing(scale, {
-                toValue: 1,
-                duration: 500,
-                easing: Easing.inOut(Easing.ease),
-                useNativeDriver: true,
-              }),
-            ])
-          );
-
-          pulseLoopRef.current.start();
-          return;
-        }
-
-        if (index === lastFrameIndex) {
-          if (loop) {
-            setFrameIndex(0);
-            scheduleNext(0);
-          }
-          return;
-        }
-
-        const nextIndex = index + 1;
+        const nextIndex = index === totalFrames - 1 ? 0 : index + 1;
         setFrameIndex(nextIndex);
         scheduleNext(nextIndex);
       }, stepDuration);
@@ -404,15 +361,109 @@ const FrameAnimation = ({
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
+    };
+  }, [stepDuration]);
+
+  return (
+    <Image
+      source={ON_FRAME_SOURCES[frameIndex]}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
+  );
+};
+
+const OffPulseAnimation = ({ size = 34, stepDuration = 200 }) => {
+  const [frameIndex, setFrameIndex] = useState(0);
+  const scale = useRef(new Animated.Value(1)).current;
+  const timersRef = useRef([]);
+  const pulseLoopRef = useRef(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+    setFrameIndex(0);
+    scale.setValue(1);
+
+    const lastRisingIndex = 5; // off0 .. off5
+    const finalIndex = 6; // off6
+
+    const scheduleNext = (index) => {
+      const timer = setTimeout(() => {
+        if (isCancelled) {
+          return;
+        }
+
+        if (index === lastRisingIndex) {
+          // HOLD 500ms na off5
+          const holdTimer = setTimeout(() => {
+            if (isCancelled) {
+              return;
+            }
+
+            setFrameIndex(finalIndex);
+
+            // HOLD 250ms na off6, pak start pulzu
+            const secondHoldTimer = setTimeout(() => {
+              if (isCancelled) {
+                return;
+              }
+
+              pulseLoopRef.current = Animated.loop(
+                Animated.sequence([
+                  Animated.timing(scale, {
+                    toValue: 0.6,
+                    duration: 150,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                  }),
+                  Animated.timing(scale, {
+                    toValue: 1.25,
+                    duration: 200,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                  }),
+                  Animated.timing(scale, {
+                    toValue: 1,
+                    duration: 150,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                  }),
+                ])
+              );
+
+              pulseLoopRef.current.start();
+            }, 250);
+
+            timersRef.current.push(secondHoldTimer);
+          }, 500);
+
+          timersRef.current.push(holdTimer);
+          return;
+        }
+
+        const nextIndex = index + 1;
+        setFrameIndex(nextIndex);
+        scheduleNext(nextIndex);
+      }, stepDuration);
+
+      timersRef.current.push(timer);
+    };
+
+    scheduleNext(0);
+
+    return () => {
+      isCancelled = true;
+      timersRef.current.forEach((timer) => clearTimeout(timer));
+      timersRef.current = [];
       if (pulseLoopRef.current) {
         pulseLoopRef.current.stop();
       }
     };
-  }, [frames, stepDuration, loop, pulseAtEnd]);
+  }, [stepDuration]);
 
   return (
     <Animated.Image
-      source={frames[frameIndex]}
+      source={OFF_FRAME_SOURCES[frameIndex]}
       style={{ width: size, height: size, transform: [{ scale }] }}
       resizeMode="contain"
     />
@@ -590,6 +641,8 @@ const AdminPin = ({ navigation }) => {
     const [currentAdminPw, setCurrentAdminPw] = useState(globalThis.CUSIIK_ADMIN_PW || '');
   const [actionHistory, setActionHistory] = useState([]);
   const [actionHistoryExpanded, setActionHistoryExpanded] = useState(false);
+  const [helpModalVisible, setHelpModalVisible] = useState(false);
+
 
 
   const [connectionText, setConnectionText] = useState(
@@ -646,9 +699,13 @@ const AdminPin = ({ navigation }) => {
   }, []);
 
   useEffect(() => {
+    globalThis.CUSIIK_INITIAL_LOAD_DONE = false;
+    lastKnownMessageCountsRef.current = {};
+
     const handleConnect = () => {
       setConnectionText('Server online');
       socket.emit('state:get');
+
       const pushToken = globalThis.CUSIIK_EXPO_PUSH_TOKEN;
       if (pushToken) {
         socket.emit('notifications:registerToken', {
@@ -1451,29 +1508,20 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
 
                         <Text style={styles.titleText}>{`room${currentUserPin}`}</Text>
 
-                             <View style={styles.titleStatusAnimWrap}>
+                        <View style={styles.titleStatusAnimWrap}>
                {isAdminOnline ? (
-                 <FrameAnimation size={22} stepDuration={200} frames={ON_FRAME_SOURCES} loop />
+                 <OnLoopAnimation size={22} stepDuration={200} />
                ) : isAdminJob ? (
                  <View style={[styles.titleStatusDot, styles.statusDotJob]} />
                ) : (
-                 <FrameAnimation
-                   size={22}
-                   stepDuration={200}
-                   frames={OFF_FRAME_SOURCES}
-                   loop={false}
-                   pulseAtEnd
-                 />
+                 <OffPulseAnimation size={22} stepDuration={200} />
                )}
              </View>
-
-
-
 
             </View>
 
 
-            <View style={styles.windowButtons}>
+                      <View style={styles.windowButtons}>
               <View style={styles.windowButton}>
                 <Pressable style={styles.closePressable} onPress={goToPinEntry}>
                   <Text style={styles.windowButtonText}>←</Text>
@@ -1481,6 +1529,12 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
               </View>
 
               <View style={styles.windowButton}>
+                <Pressable style={styles.closePressable} onPress={() => setHelpModalVisible(true)}>
+                  <Text style={styles.windowButtonText}>?</Text>
+                </Pressable>
+              </View>
+
+              <View style={[styles.windowButton, styles.windowButtonGapLeft]}>
                 <Pressable style={styles.closePressable} onPress={goToPinEntry}>
                   <Text style={styles.windowButtonText}>_</Text>
                 </Pressable>
@@ -1492,6 +1546,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 </Pressable>
               </View>
             </View>
+
           </View>
 
            <View style={styles.body}>
@@ -1604,9 +1659,17 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                               : null,
                         ]}
                       >
-                                             <View style={styles.userInfo}>
-                          <Pressable
-                            style={({ pressed }) => [
+                                                          <Pressable
+                          style={({ pressed }) => [
+                            styles.userInfo,
+                            pressed && styles.userInfoPressed,
+                          ]}
+                          onPress={() => openAdminChat(user)}
+                          onLongPress={() => openUserMenu(user)}
+                          delayLongPress={260}
+                        >
+                          <View
+                            style={[
                               styles.userIconBox,
                               {
                                 backgroundColor: user.bgColour || '#dceaff',
@@ -1615,57 +1678,48 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                                 borderRightColor: user.silhouetteColour || '#0b3d91',
                                 borderBottomColor: user.silhouetteColour || '#0b3d91',
                               },
-                              pressed && styles.xpButtonPressed,
                             ]}
-                            onPress={() => openUserMenu(user)}
                           >
                             <Image
                               source={getUserIconSource(user.avatarIcon)}
                               style={styles.userIconImage}
                               resizeMode="contain"
                             />
-                          </Pressable>
+                          </View>
 
-                          <Pressable
-                            style={({ pressed }) => [
-                              styles.userTextPressable,
-                              pressed && styles.userInfoPressed,
-                            ]}
-                            onPress={() => openAdminChat(user)}
-                          >
-                                                    <View style={styles.userTextBox}>
-                              <View style={styles.userNameRow}>
-                                {renderUserNameWithMute(user, styles.userName)}
-                                {renderMuteTag(user)}
-                                <UnreadBadge count={unreadCount} isSecret={isUserSecretMuted} />
-                              </View>
-
-                              <View style={styles.userStatusRow}>
-                                <Text
-                                  style={[
-                                    styles.userStatus,
-                                    user.online ? styles.userStatusOnline : null,
-                                  ]}
-                                >
-                                  {formatLastSeen(user, nowTick)}
-                                </Text>
-                              </View>
+                          <View style={styles.userTextBox}>
+                            <View style={styles.userNameRow}>
+                              {renderUserNameWithMute(user, styles.userName)}
+                              {renderMuteTag(user)}
+                              <UnreadBadge count={unreadCount} isSecret={isUserSecretMuted} />
                             </View>
-                          </Pressable>
 
-                        </View>
+                            <View style={styles.userStatusRow}>
+                              <Text
+                                style={[
+                                  styles.userStatus,
+                                  user.online ? styles.userStatusOnline : null,
+                                ]}
+                              >
+                                {formatLastSeen(user, nowTick)}
+                              </Text>
+                            </View>
+                          </View>
+                        </Pressable>
 
-                        <Pressable
+
+                                              <Pressable
                           style={({ pressed }) => [
                             styles.eyeToggleButton,
                             pressed && styles.xpButtonPressed,
                             isUserSecretMuted && styles.eyeToggleButtonActive,
                             !isUserSecretMuted && isUserMuted && styles.eyeToggleButtonMuted,
                           ]}
-                          onPress={() => toggleSecretMute(user)}
-                          onLongPress={() => openMuteModalForUser(user)}
+                          onPress={() => openMuteModalForUser(user)}
+                          onLongPress={() => toggleSecretMute(user)}
                           delayLongPress={260}
                         >
+
                           <Image
                             source={isUserSecretMuted ? EYE_SECRET_ICON : (isUserMuted ? EYE_SLASH_ICON : EYE_ICON)}
                             style={styles.eyeToggleIcon}
@@ -1757,30 +1811,22 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 ]}
                 onPress={toggleAdminStatus}
               >
-                <View style={styles.statusOptionTop}>
+                              <View style={styles.statusOptionTop}>
                   {isAdminOnline ? (
                     <View style={styles.adminStatusAnimWrap}>
-                      <FrameAnimation size={18} stepDuration={200} frames={ON_FRAME_SOURCES} loop />
+                      <OnLoopAnimation size={18} stepDuration={200} />
                     </View>
                   ) : isAdminJob ? (
                     <View style={[styles.statusDot, styles.statusDotJob]} />
                   ) : (
                     <View style={styles.adminStatusAnimWrap}>
-                      <FrameAnimation
-                        size={18}
-                        stepDuration={200}
-                        frames={OFF_FRAME_SOURCES}
-                        loop={false}
-                        pulseAtEnd
-                      />
+                      <OffPulseAnimation size={18} stepDuration={200} />
                     </View>
                   )}
                   <Text style={styles.bigActionButtonTitle}>
                     Admin status: {getAdminStatusLabel()}
                   </Text>
                 </View>
-
-
 
               </Pressable>
             </View>
@@ -2611,12 +2657,65 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
             </View>
           </View>
         </Modal>
+        <Modal
+          visible={helpModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setHelpModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Nápověda</Text>
 
+                <Pressable style={styles.modalCloseButton} onPress={() => setHelpModalVisible(false)}>
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <ScrollView style={styles.modalBody}>
+                <Text style={styles.settingsOptionTitle}>Tlačítka vpravo nahoře</Text>
+                <Text style={styles.settingsOptionText}>
+                  ← návrat na přihlašovací obrazovku. ? tato nápověda. _ minimalizace/odhlášení. × zavření aplikace.
+                </Text>
+
+                <View style={{ height: 12 }} />
+
+                <Text style={styles.settingsOptionTitle}>Nastavení admina</Text>
+                <Text style={styles.settingsOptionText}>
+                  Klepnutím na ikonku admina vlevo nahoře otevřeš nastavení: ikonka, obrys, Admin PIN a Admin PW.
+                </Text>
+
+                <View style={{ height: 12 }} />
+
+                <Text style={styles.settingsOptionTitle}>Nastavení uživatele</Text>
+                <Text style={styles.settingsOptionText}>
+                  Klepnutí na záznam uživatele otevře chat. Podržení záznamu otevře nastavení uživatele (přejmenování, barvy, kick).
+                </Text>
+
+                <View style={{ height: 12 }} />
+
+                <Text style={styles.settingsOptionTitle}>Tlačítka u uživatele (vpravo)</Text>
+                <Text style={styles.settingsOptionText}>
+                  Oko: klepnutí umlčí uživatele, podržení skryje umlčení potají. Fucker ikonka: uzamkne uživateli avatar. Stop ikonka: kick z roomky.
+                </Text>
+
+                <View style={{ height: 12 }} />
+
+                <Text style={styles.settingsOptionTitle}>Tlačítka dole</Text>
+                <Text style={styles.settingsOptionText}>
+                  HARD ROOM RESET vymaže roomku a nastaví nový PIN. Admin status přepíná ON / JOB / OFF.
+                </Text>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
 
                  </View>
     </SafeAreaView>
   );
 };
+
 
 
 export default AdminPin;
@@ -2689,7 +2788,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
-  windowButton: {
+    windowButton: {
     width: 22,
     height: 22,
     marginLeft: 4,
@@ -2702,6 +2801,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  windowButtonGapLeft: {
+    marginLeft: 16,
+  },
+
 
   closeButton: {
     backgroundColor: '#e04b31',
