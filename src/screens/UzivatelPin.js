@@ -89,11 +89,10 @@ const getCurrentUserName = () => {
   return getRandomLocalUserName();
 };
 
-const HELPER_MESSAGES = [
-  'Server laguje, můžeš zkusit zvýšit rate na 0,5?',
-  'Mám teď 1200 ms, dá se s tím něco dělat?',
-  'Může mě teleportovat na souřadnice [2,0]?',
-];
+const HELPER_MESSAGE_TICKET = 'Dal sem do aukce item za 10000g na 12 hodin a zmizel, v logu nic.';
+const HELPER_MESSAGE_GM = 'GM sem lvl 80 a spadl sem pod texturu na 49.2 62.8 v Dalaranu, portni me pls.';
+
+;
 
 const MESSAGE_REACTIONS = [
   { key: 'happy', emoji: '😄', colour: '#35c759' },
@@ -403,7 +402,6 @@ const UzivatelPin=({ navigation,route })=>{
   const [adminStatus, setAdminStatus] = useState(getAdminStatus());
   const [nowTick, setNowTick] = useState(Date.now());
   const [blockedInfo, setBlockedInfo] = useState('');
-  const [helperMessageIndex, setHelperMessageIndex] = useState(0);
   const [serverMutedUsers, setServerMutedUsers] = useState(getGlobalMutedUsers());
   const [secretMutedUsers, setSecretMutedUsers] = useState(getGlobalSecretMutedUsers());
   const [adminProfile, setAdminProfile] = useState(
@@ -426,11 +424,11 @@ const UzivatelPin=({ navigation,route })=>{
    const [readAdminCount, setReadAdminCount] = useState(
     getGlobalUserReadCounts()[currentUserId] || 0
   );
-
   const [eggImages, setEggImages] = useState([]);
   const [eggMessageVisible, setEggMessageVisible] = useState(false);
 
-
+  const [ticketModalVisible, setTicketModalVisible] = useState(false);
+  const [ticketText, setTicketText] = useState('');
 
   const [eggVisible, setEggVisible] = useState(false);
   const [eggPos, setEggPos] = useState({ top: 100, left: 50 });
@@ -550,7 +548,6 @@ const UzivatelPin=({ navigation,route })=>{
 
     return 'offline';
   };
-  const currentHelperMessage = HELPER_MESSAGES[helperMessageIndex];
   const KeyboardWrapper = KeyboardAvoidingView;
 
 
@@ -839,15 +836,7 @@ const UzivatelPin=({ navigation,route })=>{
     };
   }, [currentUserId]);
 
-  useEffect(() => {
-    const helperInterval = setInterval(() => {
-      setHelperMessageIndex((currentIndex) => {
-        return (currentIndex + 1) % HELPER_MESSAGES.length;
-      });
-    }, 7500);
 
-    return () => clearInterval(helperInterval);
-  }, []);
 
   useEffect(() => {
     if (!navigation?.addListener) {
@@ -954,16 +943,55 @@ const UzivatelPin=({ navigation,route })=>{
     setReactingMessageId(null);
   };
 
+  const openTicketModal = () => {
+    closeReactionPicker();
+    setTicketText('');
+    setTicketModalVisible(true);
+  };
 
-  const useHelperMessage = () => {
+  const closeTicketModal = () => {
+    setTicketModalVisible(false);
+    setTicketText('');
+  };
+
+  const sendTicket = () => {
+    const trimmedTicket = ticketText.trim();
+
+    if (!trimmedTicket) {
+      return;
+    }
+
+    if (socket.connected) {
+      socket.emit('ticket:send', {
+        userId: currentUserId,
+        text: trimmedTicket,
+      });
+    }
+
+    closeTicketModal();
+    setBlockedInfo('Tiket byl odeslán GM, přečte si ho jakmile bude online.');
+    setTimeout(() => {
+      setBlockedInfo((current) => {
+        if (current && current.includes('Tiket byl odeslán')) {
+          return '';
+        }
+        return current;
+      });
+    }, 5000);
+  };
+
+  const insertHelperMessage = (text) => {
+    closeReactionPicker();
+
     if (isMuted) {
       setBlockedInfo(`Nemůžeš psát. Jsi umlčený ještě na ${muteTimeLeft}.`);
       return;
     }
 
     setBlockedInfo('');
-    setMessage(currentHelperMessage);
+    setMessage(text);
   };
+
 
   const changeUserAvatarIcon = (iconKey) => {
     if (isAvatarLocked) {
@@ -1202,7 +1230,7 @@ const UzivatelPin=({ navigation,route })=>{
             </Pressable>
           </View>
 
-          <ScrollView style={styles.modalBody}>
+                  <ScrollView style={styles.modalBody}>
             <Text style={styles.modalLabel}>Tlačítka vpravo nahoře</Text>
             <Text style={styles.helperBubbleText}>
               ← návrat (z chatu do menu, z menu odhlášení). ? tato nápověda. _ a X v chatu spustí vtípek, v menu odhlásí.
@@ -1210,18 +1238,26 @@ const UzivatelPin=({ navigation,route })=>{
 
             <View style={{ height: 12 }} />
 
-            <Text style={styles.modalLabel}>Chat s adminem</Text>
+            <Text style={styles.modalLabel}>Chat s GM</Text>
             <Text style={styles.helperBubbleText}>
               Podržením zprávy v chatu na ni můžeš přidat rychlou reakci (smajlík).
             </Text>
 
             <View style={{ height: 12 }} />
 
-            <Text style={styles.modalLabel}>Status admina</Text>
+            <Text style={styles.modalLabel}>Status GM</Text>
             <Text style={styles.helperBubbleText}>
-              ON = admin je online a může reagovat. JOB = je zaneprázdněný. OFF = není dostupný.
+              ON = GM je online a může reagovat. JOB = je zaneprázdněný. OFF = není dostupný.
+            </Text>
+
+            <View style={{ height: 12 }} />
+
+            <Text style={styles.modalLabel}>Tlačítko T</Text>
+            <Text style={styles.helperBubbleText}>
+              Otevře tiket pro GM – zprávu si přečte, i když je zrovna offline.
             </Text>
           </ScrollView>
+
         </View>
       </View>
     </Modal>
@@ -1245,39 +1281,42 @@ const UzivatelPin=({ navigation,route })=>{
 
                         <View style={styles.menuBody}>
                                       <View style={styles.menuTopSection}>
-                           <View style={styles.menuTopRow}>
+                                      <View style={styles.menuTopRow}>
                               <Pressable
                     style={styles.tButton}
-                    onPress={() => {
-                      // Placeholder – funkce tlačítka T doplníme podle dalšího zadání.
-                    }}
+                    onPress={openTicketModal}
                   >
                     <Image source={TBUTTON_ICON} style={styles.tButtonIcon} resizeMode="contain" />
                   </Pressable>
 
                   <View style={{ flex: 1 }} />
 
-                  <Text style={styles.menuAdminStatusLabel}>
-                    Admin - {getAdminStatusLabel().toUpperCase()}
-                  </Text>
+                  <Image source={BUBBLE_ICON} style={styles.menuTopBubbleImage} resizeMode="contain" />
 
-                  <View
-                    style={[
-                      styles.menuAdminIconBox,
-                      {
-                        backgroundColor: adminProfile?.bgColour || '#ece9d8',
-                        borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
-                        borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
-                        borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
-                        borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
-                      },
-                    ]}
-                  >
-                    <Image
-                      source={getIconSource(adminProfile?.icon || 'admin')}
-                      style={styles.menuAdminIconImage}
-                      resizeMode="contain"
-                    />
+                  <View style={styles.menuAdminIconColumn}>
+                    <View
+                      style={[
+                        styles.menuAdminIconBox,
+                        {
+                          backgroundColor: adminProfile?.bgColour || '#ece9d8',
+                          borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
+                          borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
+                          borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
+                          borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
+                        },
+                      ]}
+                    >
+                      <Image
+                        source={getIconSource(adminProfile?.icon || 'admin')}
+                        style={styles.menuAdminIconImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+
+                    <Text style={styles.menuAdminGmLabel}>GM</Text>
+                    <Text style={styles.menuAdminGmStatus}>
+                      {isAdminOnline ? '-ON-' : isAdminJob ? '(JOB)' : '(OFF)'}
+                    </Text>
                   </View>
                 </View>
 
@@ -1401,12 +1440,59 @@ const UzivatelPin=({ navigation,route })=>{
                        </View>
           </Modal>
 
+              <Modal
+            visible={ticketModalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={closeTicketModal}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalWindow}>
+                <View style={styles.modalTitleBar}>
+                  <Text style={styles.modalTitleText}>Tiket pro GM</Text>
+
+                  <Pressable style={styles.modalCloseButton} onPress={closeTicketModal}>
+                    <Text style={styles.modalCloseButtonText}>x</Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.modalBody}>
+                  <Text style={styles.modalLabel}>
+                    Napiš zprávu přímo pro GM. Přečte si ji, jakmile bude online.
+                  </Text>
+
+                  <TextInput
+                    value={ticketText}
+                    onChangeText={setTicketText}
+                    style={[styles.input, { marginBottom: 12 }]}
+                    placeholder="Popiš svůj problém..."
+                    placeholderTextColor="#666666"
+                    multiline
+                    maxLength={500}
+                  />
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.sendButton,
+                      { alignSelf: 'flex-end' },
+                      pressed && styles.sendButtonPressed,
+                    ]}
+                    onPress={sendTicket}
+                  >
+                    <Text style={styles.sendButtonText}>Odeslat tiket</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
           {renderHelpModal()}
         </View>
       </SafeAreaView>
     );
   }
   return (
+
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
 
@@ -1422,7 +1508,8 @@ const UzivatelPin=({ navigation,route })=>{
             { transform: [{ translateX: screenSlideAnim }], opacity: screenFadeAnim },
           ]}
         >
-          {renderTitleBar('Chat s adminem')}
+                    {renderTitleBar('Chat s GM')}
+
 
 
           {isMuted ? (
@@ -1497,7 +1584,7 @@ const UzivatelPin=({ navigation,route })=>{
                       >
                         <View style={styles.messageAuthorRow}>
                           <Text style={styles.messageAuthor}>
-                            {isUser ? 'Já' : 'Admin'}
+                            {isUser ? 'Já' : 'GM'}
                           </Text>
 
                           {!isUser ? (
@@ -1577,13 +1664,13 @@ const UzivatelPin=({ navigation,route })=>{
             </View>
           ) : null}
 
-          <Pressable
+                   <Pressable
             style={({ pressed }) => [
               styles.helperBubble,
               pressed && styles.helperBubblePressed,
               isMuted && styles.helperBubbleDisabled,
             ]}
-            onPress={useHelperMessage}
+            onPress={() => insertHelperMessage(HELPER_MESSAGE_TICKET)}
           >
             <Text
               style={[
@@ -1591,7 +1678,7 @@ const UzivatelPin=({ navigation,route })=>{
                 isMuted && styles.helperBubbleTextDisabled,
               ]}
             >
-              Pomocná včta:
+              Pomocná věta:
             </Text>
 
             <Text
@@ -1600,22 +1687,53 @@ const UzivatelPin=({ navigation,route })=>{
                 isMuted && styles.helperBubbleTextDisabled,
               ]}
             >
-              {currentHelperMessage}
+              {HELPER_MESSAGE_TICKET}
             </Text>
           </Pressable>
 
+          <Pressable
+            style={({ pressed }) => [
+              styles.helperBubble,
+              pressed && styles.helperBubblePressed,
+              isMuted && styles.helperBubbleDisabled,
+            ]}
+            onPress={() => insertHelperMessage(HELPER_MESSAGE_GM)}
+          >
+            <Text
+              style={[
+                styles.helperBubbleLabel,
+                isMuted && styles.helperBubbleTextDisabled,
+              ]}
+            >
+              Pomocná věta:
+            </Text>
+
+            <Text
+              style={[
+                styles.helperBubbleText,
+                isMuted && styles.helperBubbleTextDisabled,
+              ]}
+            >
+              {HELPER_MESSAGE_GM}
+            </Text>
+          </Pressable>
+
+
           <View style={styles.inputPanel}>
-            <TextInput
+                               <TextInput
               value={message}
+              onFocus={closeReactionPicker}
               onChangeText={(value) => {
                 setBlockedInfo('');
                 setMessage(value);
               }}
               placeholder={
+
                 isMuted
                   ? `Umlčeno ještě na ${muteTimeLeft}`
-                  : 'Napiš zprávu adminovi...'
+                  : 'Napiš zprávu GM...'
               }
+
               placeholderTextColor="#666666"
               style={[styles.input, isMuted && styles.inputDisabled]}
               multiline
@@ -1652,12 +1770,12 @@ const UzivatelPin=({ navigation,route })=>{
             <Pressable onPress={() => setScreenMode('menu')}>
               <Text style={styles.statusText}>Zpět do menu</Text>
             </Pressable>
-
             <Text style={styles.statusText}>
               {isMuted
                 ? `Umlčeno: ${muteTimeLeft}`
-                : `Admin: ${getAdminStatusText()}`}
+                : `GM: ${getAdminStatusText()}`}
                       </Text>
+
           </View>
         </Animated.View>
             </KeyboardWrapper>
@@ -1941,11 +2059,28 @@ const styles = StyleSheet.create({
     height: 18,
   },
 
-  menuAdminStatusLabel: {
-    color: '#000000',
-    fontSize: 13,
-    fontWeight: '900',
+  menuTopBubbleImage: {
+    width: 34,
+    height: 34,
     marginRight: 8,
+  },
+
+  menuAdminIconColumn: {
+    alignItems: 'center',
+  },
+
+  menuAdminGmLabel: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+
+  menuAdminGmStatus: {
+    color: '#333333',
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 1,
   },
 
   menuGrayPanel: {

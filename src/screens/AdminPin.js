@@ -26,10 +26,14 @@ import { playInAppMessageSound } from '../utils/inAppSound';
 
 
 const EYE_ICON = require('../assets/icons/oko.png');
-const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
 const EYE_SECRET_ICON = require('../assets/icons/okopotaji.png');
 const FUCKER_ICON = require('../assets/icons/fuckerr.png');
-const KICK_ICON_PLACEHOLDER = require('../assets/icons/stop.png');
+const KICK_ICON = require('../assets/icons/kick.png');
+const BACK_ICON = require('../assets/icons/backsipka.png');
+const HELP_ICON = require('../assets/icons/otaznik.png');
+const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
+const EXIT_ICON = require('../assets/icons/exit.png');
+
 
 
 const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
@@ -267,7 +271,7 @@ const getUserMessageCount = (userId) => {
 
   return messages.filter((message) => {
     const sender = String(message?.sender || '').toLowerCase();
-    return sender === 'user';
+    return sender === 'user' || sender === 'ticket';
   }).length;
 };
 
@@ -332,29 +336,48 @@ const OFF_FRAME_SOURCES = [
   require('../assets/anima/off6.png'),
 ];
 
+const JOB_FRAME_SOURCES = [
+  require('../assets/anima/job-0.png'),
+  require('../assets/anima/job-1.png'),
+  require('../assets/anima/job-2.png'),
+  require('../assets/anima/job-3.png'),
+  require('../assets/anima/job-4.png'),
+  require('../assets/anima/job-5.png'),
+  require('../assets/anima/job-6.png'),
+  require('../assets/anima/job-7.png'),
+];
+
+// Sdílený "epoch" pro synchronizaci všech instancí ON animace napříč obrazovkou.
+const ON_ANIM_EPOCH = Date.now();
+
 const OnLoopAnimation = ({ size = 34, stepDuration = 200 }) => {
-  const [frameIndex, setFrameIndex] = useState(0);
-  const timeoutRef = useRef(null);
+  const totalFrames = ON_FRAME_SOURCES.length;
+  const getSyncedFrameIndex = () => {
+    const elapsed = Date.now() - ON_ANIM_EPOCH;
+    return Math.floor(elapsed / stepDuration) % totalFrames;
+  };
+
+  const [frameIndex, setFrameIndex] = useState(getSyncedFrameIndex);
 
   useEffect(() => {
     let isCancelled = false;
-    setFrameIndex(0);
+    setFrameIndex(getSyncedFrameIndex());
 
-    const totalFrames = ON_FRAME_SOURCES.length;
+    const tick = () => {
+      if (isCancelled) {
+        return;
+      }
 
-    const scheduleNext = (index) => {
-      timeoutRef.current = setTimeout(() => {
-        if (isCancelled) {
-          return;
-        }
+      setFrameIndex(getSyncedFrameIndex());
 
-        const nextIndex = index === totalFrames - 1 ? 0 : index + 1;
-        setFrameIndex(nextIndex);
-        scheduleNext(nextIndex);
-      }, stepDuration);
+      const elapsed = Date.now() - ON_ANIM_EPOCH;
+      const msToNextStep = stepDuration - (elapsed % stepDuration);
+
+      timeoutRef.current = setTimeout(tick, msToNextStep);
     };
 
-    scheduleNext(0);
+    const timeoutRef = { current: null };
+    timeoutRef.current = setTimeout(tick, stepDuration - ((Date.now() - ON_ANIM_EPOCH) % stepDuration));
 
     return () => {
       isCancelled = true;
@@ -372,6 +395,7 @@ const OnLoopAnimation = ({ size = 34, stepDuration = 200 }) => {
     />
   );
 };
+
 
 const OffPulseAnimation = ({ size = 34, stepDuration = 200 }) => {
   const [risingFrameIndex, setRisingFrameIndex] = useState(0);
@@ -484,7 +508,75 @@ const OffPulseAnimation = ({ size = 34, stepDuration = 200 }) => {
   );
 };
 
+// Sdílený "epoch" pro synchronizaci všech instancí JOB animace napříč obrazovkou.
+const JOB_ANIM_EPOCH = Date.now();
+
+const getJobSyncedFrameIndex = (stepDuration, holdDuration) => {
+  const introDuration = stepDuration * 4; // 0 -> 1 -> 2 -> 3 -> 4 (4 kroky rychlé fáze)
+  const elapsed = Date.now() - JOB_ANIM_EPOCH;
+
+  if (elapsed < introDuration) {
+    return Math.min(3, Math.floor(elapsed / stepDuration));
+  }
+
+  const slowElapsed = elapsed - introDuration;
+  const slowCycleLength = holdDuration * 4; // 4 -> 5 -> 6 -> 7 -> (zpět na 4)
+  const positionInCycle = slowElapsed % slowCycleLength;
+
+  return 4 + Math.floor(positionInCycle / holdDuration);
+};
+
+const JobPulseAnimation = ({ size = 34, stepDuration = 200, holdDuration = 1000 }) => {
+  const [frameIndex, setFrameIndex] = useState(() =>
+    getJobSyncedFrameIndex(stepDuration, holdDuration)
+  );
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const tick = () => {
+      if (isCancelled) {
+        return;
+      }
+
+      const nextFrame = getJobSyncedFrameIndex(stepDuration, holdDuration);
+      setFrameIndex(nextFrame);
+
+      const elapsed = Date.now() - JOB_ANIM_EPOCH;
+      const introDuration = stepDuration * 4;
+
+      const msToNextStep =
+        elapsed < introDuration
+          ? stepDuration - (elapsed % stepDuration)
+          : holdDuration - ((elapsed - introDuration) % holdDuration);
+
+      timerRef.current = setTimeout(tick, msToNextStep);
+    };
+
+    setFrameIndex(getJobSyncedFrameIndex(stepDuration, holdDuration));
+    tick();
+
+    return () => {
+      isCancelled = true;
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [stepDuration, holdDuration]);
+
+  return (
+    <Image
+      source={JOB_FRAME_SOURCES[frameIndex]}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
+  );
+};
+
+
 const OnlineCountText = ({ count, style }) => {
+
 
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const prevCountRef = useRef(count);
@@ -858,7 +950,7 @@ const AdminPin = ({ navigation }) => {
       });
     };
 
-    const handleHardReset = () => {
+       const handleHardReset = () => {
       clearAllLocalAdminData();
       setReadCounts({});
       setSecretMutedUsers({});
@@ -867,12 +959,47 @@ const AdminPin = ({ navigation }) => {
 
     };
 
+    const handleNewTicket = ({ userId, userName: ticketUserName, text, createdAt }) => {
+      const cleanUserId = String(userId || '').trim();
+
+      if (!cleanUserId || !text) {
+        return;
+      }
+
+      const chats = getGlobalChats();
+      const existingMessages = chats[cleanUserId] || [];
+
+      const ticketMessage = {
+        id: `ticket-${createdAt || Date.now()}`,
+        sender: 'ticket',
+        text,
+        authorName: ticketUserName || '',
+        createdAt: createdAt || Date.now(),
+      };
+
+      chats[cleanUserId] = [...existingMessages, ticketMessage];
+
+      const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
+      const isAdminViewingThisChat = activeAdminChatUserId === cleanUserId;
+      const isSecretMuted = Boolean(secretMutedUsers[cleanUserId] || secretMutedUsers[String(cleanUserId)]);
+
+      if (!isAdminViewingThisChat && !isSecretMuted) {
+        playInAppMessageSound();
+      }
+
+      logAction(`Nový tiket od uživatele${ticketUserName ? ' ' + ticketUserName : ''}.`);
+
+      setNowTick(Date.now());
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
     socket.on('server:state', handleServerState);
     socket.on('chat:messages', handleChatMessages);
     socket.on('room:hardReset', handleHardReset);
+    socket.on('ticket:new', handleNewTicket);
+
 
     if (!socket.connected) {
       socket.connect();
@@ -887,15 +1014,17 @@ const AdminPin = ({ navigation }) => {
       }
     }
 
-    return () => {
+     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
       socket.off('server:state', handleServerState);
       socket.off('chat:messages', handleChatMessages);
       socket.off('room:hardReset');
+      socket.off('ticket:new', handleNewTicket);
     };
   }, []);
+
 
   const renderUserNameWithMute = (user, textStyle) => {
     return (
@@ -1519,44 +1648,46 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
 
                         <Text style={styles.titleText}>{`room${currentUserPin}`}</Text>
 
-                        <View style={styles.titleStatusAnimWrap}>
+                                      <View style={styles.titleStatusAnimWrap}>
                {isAdminOnline ? (
                  <OnLoopAnimation size={22} stepDuration={200} />
                ) : isAdminJob ? (
-                 <View style={[styles.titleStatusDot, styles.statusDotJob]} />
+                 <JobPulseAnimation size={22} stepDuration={200} holdDuration={1000} />
                ) : (
                  <OffPulseAnimation size={22} stepDuration={200} />
                )}
              </View>
 
+
             </View>
 
 
-                      <View style={styles.windowButtons}>
+                             <View style={styles.windowButtons}>
               <View style={styles.windowButton}>
                 <Pressable style={styles.closePressable} onPress={goToPinEntry}>
-                  <Text style={styles.windowButtonText}>←</Text>
+                  <Image source={BACK_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
               <View style={styles.windowButton}>
                 <Pressable style={styles.closePressable} onPress={() => setHelpModalVisible(true)}>
-                  <Text style={styles.windowButtonText}>?</Text>
+                  <Image source={HELP_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
               <View style={[styles.windowButton, styles.windowButtonGapLeft]}>
                 <Pressable style={styles.closePressable} onPress={goToPinEntry}>
-                  <Text style={styles.windowButtonText}>_</Text>
+                  <Image source={MINIMIZE_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
-              <View style={[styles.windowButton, styles.closeButton]}>
+              <View style={styles.windowButton}>
                 <Pressable style={styles.closePressable} onPress={closeApp}>
-                  <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
             </View>
+
 
           </View>
 
@@ -1733,11 +1864,12 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                           delayLongPress={260}
                         >
 
-                          <Image
-                            source={isUserSecretMuted ? EYE_SECRET_ICON : (isUserMuted ? EYE_SLASH_ICON : EYE_ICON)}
+                                               <Image
+                            source={isUserSecretMuted ? EYE_SECRET_ICON : EYE_ICON}
                             style={styles.eyeToggleIcon}
                             resizeMode="contain"
                           />
+
                         </Pressable>
 
                                                <Pressable
@@ -1755,7 +1887,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                           />
                         </Pressable>
 
-                        <Pressable
+                                            <Pressable
                           style={({ pressed }) => [
                             styles.kickButton,
                             pressed && styles.xpButtonPressed,
@@ -1763,11 +1895,12 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                           onPress={() => kickUserById(user, { newPin: '0008' })}
                         >
                           <Image
-                            source={KICK_ICON_PLACEHOLDER}
+                            source={KICK_ICON}
                             style={styles.kickButtonIcon}
                             resizeMode="contain"
                           />
                         </Pressable>
+
                       </View>
 
                     );
@@ -1824,13 +1957,15 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 ]}
                 onPress={toggleAdminStatus}
               >
-                              <View style={styles.statusOptionTop}>
+                                            <View style={styles.statusOptionTop}>
                   {isAdminOnline ? (
                     <View style={styles.adminStatusAnimWrap}>
                       <OnLoopAnimation size={18} stepDuration={200} />
                     </View>
                   ) : isAdminJob ? (
-                    <View style={[styles.statusDot, styles.statusDotJob]} />
+                    <View style={styles.adminStatusAnimWrap}>
+                      <JobPulseAnimation size={18} stepDuration={200} holdDuration={1000} />
+                    </View>
                   ) : (
                     <View style={styles.adminStatusAnimWrap}>
                       <OffPulseAnimation size={18} stepDuration={200} />
@@ -1840,6 +1975,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                     Admin status: {getAdminStatusLabel()}
                   </Text>
                 </View>
+
 
               </Pressable>
             </View>
@@ -2801,16 +2937,10 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
-    windowButton: {
+      windowButton: {
     width: 22,
     height: 22,
     marginLeft: 4,
-    backgroundColor: '#d7e8ff',
-    borderWidth: 1,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#174a9c',
-    borderBottomColor: '#174a9c',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2819,23 +2949,11 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
 
-
-  closeButton: {
-    backgroundColor: '#e04b31',
+  windowButtonIcon: {
+    width: 14,
+    height: 14,
   },
 
-  windowButtonText: {
-    color: '#003c8f',
-    fontSize: 13,
-    fontWeight: '900',
-    lineHeight: 15,
-  },
-
-  closeButtonText: {
-    color: '#ffffff',
-    fontSize: 18,
-    lineHeight: 19,
-  },
 
   closePressable: {
     width: '100%',
@@ -2918,10 +3036,11 @@ const styles = StyleSheet.create({
   },
 
   panelCountText: {
-    color: '#003c9e',
+    color: '#000c59',
     fontSize: 12,
     fontWeight: '900',
   },
+
 
   usersScroll: {
     flex: 1,
@@ -3111,13 +3230,14 @@ const styles = StyleSheet.create({
     borderBottomColor: '#5d1f85',
   },
 
-  eyeToggleButtonMuted: {
+   eyeToggleButtonMuted: {
     backgroundColor: '#ffd7d7',
-    borderTopColor: '#e49b38',
-    borderLeftColor: '#e49b38',
-    borderRightColor: '#8b4700',
-    borderBottomColor: '#8b4700',
+    borderTopColor: '#ff8a8a',
+    borderLeftColor: '#ff8a8a',
+    borderRightColor: '#a80000',
+    borderBottomColor: '#a80000',
   },
+
 
   eyeToggleIcon: {
     width: 20,
