@@ -374,18 +374,19 @@ const OnLoopAnimation = ({ size = 34, stepDuration = 200 }) => {
 };
 
 const OffPulseAnimation = ({ size = 34, stepDuration = 200 }) => {
-  const [frameIndex, setFrameIndex] = useState(0);
-  const scale = useRef(new Animated.Value(1)).current;
+  const [risingFrameIndex, setRisingFrameIndex] = useState(0);
+  const [showOverlay, setShowOverlay] = useState(false);
+  const overlayScale = useRef(new Animated.Value(1)).current;
   const timersRef = useRef([]);
   const pulseLoopRef = useRef(null);
 
   useEffect(() => {
     let isCancelled = false;
-    setFrameIndex(0);
-    scale.setValue(1);
+    setRisingFrameIndex(0);
+    setShowOverlay(false);
+    overlayScale.setValue(1);
 
-    const lastRisingIndex = 5; // off0 .. off5
-    const finalIndex = 6; // off6
+    const lastRisingIndex = 5; // off0 .. off5 - tady animace natrvalo zůstane stát
 
     const scheduleNext = (index) => {
       const timer = setTimeout(() => {
@@ -394,55 +395,49 @@ const OffPulseAnimation = ({ size = 34, stepDuration = 200 }) => {
         }
 
         if (index === lastRisingIndex) {
-          // HOLD 500ms na off5
+          // off5 je od teď navždy vidět (base vrstva se dál nemění)
+
+          // HOLD 700ms na samotném off5, pak navrch přibude off6
           const holdTimer = setTimeout(() => {
             if (isCancelled) {
               return;
             }
 
-            setFrameIndex(finalIndex);
+            setShowOverlay(true);
 
-            // HOLD 250ms na off6, pak start pulzu
-            const secondHoldTimer = setTimeout(() => {
-              if (isCancelled) {
-                return;
-              }
+            // velmi pomalý, dlouhý pulz off6 navrch - nekonečná smyčka
+            pulseLoopRef.current = Animated.loop(
+              Animated.sequence([
+                Animated.timing(overlayScale, {
+                  toValue: 0.7,
+                  duration: 1800,
+                  easing: Easing.inOut(Easing.ease),
+                  useNativeDriver: true,
+                }),
+                Animated.timing(overlayScale, {
+                  toValue: 1.15,
+                  duration: 2200,
+                  easing: Easing.inOut(Easing.ease),
+                  useNativeDriver: true,
+                }),
+                Animated.timing(overlayScale, {
+                  toValue: 1,
+                  duration: 1800,
+                  easing: Easing.inOut(Easing.ease),
+                  useNativeDriver: true,
+                }),
+              ])
+            );
 
-              pulseLoopRef.current = Animated.loop(
-                Animated.sequence([
-                  Animated.timing(scale, {
-                    toValue: 0.6,
-                    duration: 150,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: true,
-                  }),
-                  Animated.timing(scale, {
-                    toValue: 1.25,
-                    duration: 200,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: true,
-                  }),
-                  Animated.timing(scale, {
-                    toValue: 1,
-                    duration: 150,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: true,
-                  }),
-                ])
-              );
-
-              pulseLoopRef.current.start();
-            }, 250);
-
-            timersRef.current.push(secondHoldTimer);
-          }, 500);
+            pulseLoopRef.current.start();
+          }, 700);
 
           timersRef.current.push(holdTimer);
           return;
         }
 
         const nextIndex = index + 1;
-        setFrameIndex(nextIndex);
+        setRisingFrameIndex(nextIndex);
         scheduleNext(nextIndex);
       }, stepDuration);
 
@@ -462,16 +457,32 @@ const OffPulseAnimation = ({ size = 34, stepDuration = 200 }) => {
   }, [stepDuration]);
 
   return (
-    <Animated.Image
-      source={OFF_FRAME_SOURCES[frameIndex]}
-      style={{ width: size, height: size, transform: [{ scale }] }}
-      resizeMode="contain"
-    />
+    <View style={{ width: size, height: size }}>
+      {/* base vrstva - doběhne na off5 a zůstává vidět navždy */}
+      <Image
+        source={OFF_FRAME_SOURCES[risingFrameIndex]}
+        style={{ width: size, height: size, position: 'absolute', top: 0, left: 0 }}
+        resizeMode="contain"
+      />
+
+      {/* overlay vrstva - off6 se přidá navrch a pomalu pulzuje, off5 pod ní je pořád vidět */}
+      {showOverlay ? (
+        <Animated.Image
+          source={OFF_FRAME_SOURCES[6]}
+          style={{
+            width: size,
+            height: size,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            transform: [{ scale: overlayScale }],
+          }}
+          resizeMode="contain"
+        />
+      ) : null}
+    </View>
   );
 };
-
-
-
 
 const OnlineCountText = ({ count, style }) => {
 
@@ -1648,7 +1659,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                     const isUserFuckerLocked = Boolean(user.avatarLocked);
 
                     return (
-                      <View
+                  <View
                         key={user.id}
                         style={[
                           styles.userRow,
@@ -1657,8 +1668,10 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                             : isUserMuted
                               ? styles.userRowMuted
                               : null,
+                          isUserSecretMuted && styles.userRowSecretMutedOpacity,
                         ]}
                       >
+
                                                           <Pressable
                           style={({ pressed }) => [
                             styles.userInfo,
@@ -3531,8 +3544,12 @@ const styles = StyleSheet.create({
     borderColor: '#c46a00',
   },
 
-  userRowSecretMuted: {
+   userRowSecretMuted: {
     borderColor: '#9c4dcc',
+  },
+
+  userRowSecretMutedOpacity: {
+    opacity: 0.5,
   },
 
 
