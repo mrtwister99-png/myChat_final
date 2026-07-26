@@ -7,6 +7,7 @@ const NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000;
 
 const NOTIFICATION_SOUND_NAME = Platform.OS === 'ios' ? 'notification.caf' : 'notification.mp3';
 const NOTIFICATION_CHANNEL_ID = 'default-v2';
+const NOTIFICATION_SILENT_CHANNEL_ID = 'default-v2-silent';
 
 const getNotificationCooldownMap = () => {
   if (!globalThis.CUSIIK_NOTIFICATION_COOLDOWNS || typeof globalThis.CUSIIK_NOTIFICATION_COOLDOWNS !== 'object') {
@@ -27,12 +28,16 @@ const setLastNotificationAt = (cooldownKey, timestamp) => {
 };
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const isSilent = Boolean(notification?.request?.content?.data?.silent);
+
+    return {
+      shouldPlaySound: !isSilent,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    };
+  },
 });
 
 export const registerForPushNotificationsAsync = async () => {
@@ -46,6 +51,14 @@ export const registerForPushNotificationsAsync = async () => {
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#0b3d91',
     sound: NOTIFICATION_SOUND_NAME,
+  });
+
+  await Notifications.setNotificationChannelAsync(NOTIFICATION_SILENT_CHANNEL_ID, {
+    name: NOTIFICATION_SILENT_CHANNEL_ID,
+    importance: Notifications.AndroidImportance.DEFAULT,
+    vibrationPattern: [0, 0],
+    lightColor: '#0b3d91',
+    sound: null,
   });
 
   const existingPermission = await Notifications.getPermissionsAsync();
@@ -71,7 +84,13 @@ export const registerForPushNotificationsAsync = async () => {
   return tokenData.data;
 };
 
-export const showLocalMessageNotification = async ({ title, body, data = {}, cooldownKey = 'global-message' }) => {
+export const showLocalMessageNotification = async ({
+  title,
+  body,
+  data = {},
+  cooldownKey = 'global-message',
+  silent = false,
+}) => {
   const safeCooldownKey = String(cooldownKey || 'global-message');
   const now = Date.now();
   const lastNotificationAt = getLastNotificationAt(safeCooldownKey);
@@ -84,13 +103,16 @@ export const showLocalMessageNotification = async ({ title, body, data = {}, coo
     content: {
       title,
       body,
-      sound: NOTIFICATION_SOUND_NAME,
-      data: data || {},
+      sound: silent ? null : NOTIFICATION_SOUND_NAME,
+      data: {
+        ...(data || {}),
+        silent: Boolean(silent),
+      },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds: 1,
-      channelId: NOTIFICATION_CHANNEL_ID,
+      channelId: silent ? NOTIFICATION_SILENT_CHANNEL_ID : NOTIFICATION_CHANNEL_ID,
       repeats: false,
     },
   });

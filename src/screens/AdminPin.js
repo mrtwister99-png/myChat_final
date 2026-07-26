@@ -5,8 +5,10 @@ import {
   Animated,
   AppState,
   BackHandler,
+  Easing,
   Image,
   Keyboard,
+
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -27,6 +29,8 @@ const EYE_ICON = require('../assets/icons/oko.png');
 const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
 const EYE_SECRET_ICON = require('../assets/icons/okopotaji.png');
 const FUCKER_ICON = require('../assets/icons/fuckerr.png');
+const KICK_ICON_PLACEHOLDER = require('../assets/icons/stop.png');
+
 
 const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
 const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '8831';
@@ -37,11 +41,10 @@ const MUTE_OPTIONS = [
   { label: '10 min', milliseconds: 10 * 60 * 1000 },
   { label: '30 min', milliseconds: 30 * 60 * 1000 },
   { label: '1 hod', milliseconds: 60 * 60 * 1000 },
-  { label: '5 hod', milliseconds: 5 * 60 * 60 * 1000 },
   { label: '12 hod', milliseconds: 12 * 60 * 60 * 1000 },
   { label: '1 den', milliseconds: 24 * 60 * 60 * 1000 },
-  { label: '2 dny', milliseconds: 2 * 24 * 60 * 60 * 1000 },
 ];
+
 
 const USER_COLOURS = [
   { label: 'Zelená', value: '#35c759' },
@@ -307,154 +310,120 @@ const areUsersEqual = (a, b) => {
   return true;
 };
 
-const STATUS_ICON_SOURCES = {
-  ringA: require('../assets/icons/ring-a.png'),
-  arrowA: require('../assets/icons/arrow-a.png'),
-  ringB: require('../assets/icons/ring-b.png'),
-  arrowB: require('../assets/icons/arrow-b.png'),
-  ringC: require('../assets/icons/ring-c.png'),
-  arrowC: require('../assets/icons/arrow-c.png'),
-};
+const ON_FRAME_SOURCES = [
+  require('../assets/anima/stav0.png'),
+  require('../assets/anima/stav1.png'),
+  require('../assets/anima/stav2.png'),
+  require('../assets/anima/stav3.png'),
+  require('../assets/anima/stav4.png'),
+  require('../assets/anima/stav5.png'),
+  require('../assets/anima/stav6.png'),
+  require('../assets/anima/stav7.png'),
+  require('../assets/anima/stav8.png'),
+];
 
-const SpinningRing = ({ source, size = 34, duration = 1600 }) => {
-  const rotateAnim = useRef(new Animated.Value(0)).current;
+const OFF_FRAME_SOURCES = [
+  require('../assets/anima/off0.png'),
+  require('../assets/anima/off1.png'),
+  require('../assets/anima/off2.png'),
+  require('../assets/anima/off3.png'),
+  require('../assets/anima/off4.png'),
+  require('../assets/anima/off5.png'),
+  require('../assets/anima/off6.png'),
+];
 
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.timing(rotateAnim, {
-        toValue: 1,
-        duration,
-        useNativeDriver: true,
-      })
-    );
-    loop.start();
-
-    return () => loop.stop();
-  }, []);
-
-  const rotate = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
-  return (
-    <Animated.Image
-      source={source}
-      style={{
-        width: size,
-        height: size,
-        transform: [{ rotate }],
-      }}
-      resizeMode="contain"
-    />
-  );
-};
-
-const SlidingArrow = ({
-  source,
-  direction = 'vertical',
-  size = 16,
-  travel = 6,
-  duration = 700,
-}) => {
-  const moveAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(moveAnim, {
-          toValue: 1,
-          duration,
-          useNativeDriver: true,
-        }),
-        Animated.timing(moveAnim, {
-          toValue: 0,
-          duration,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    loop.start();
-
-    return () => loop.stop();
-  }, []);
-
-  const translate = moveAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-travel, travel],
-  });
-
-  const transformStyle =
-    direction === 'horizontal'
-      ? { transform: [{ translateX: translate }] }
-      : { transform: [{ translateY: translate }] };
-
-  return (
-    <Animated.Image
-      source={source}
-      style={[
-        {
-          width: size,
-          height: size,
-          position: 'absolute',
-        },
-        transformStyle,
-      ]}
-      resizeMode="contain"
-    />
-  );
-};
-
-const StatusSpinner = ({
-  ringSource,
-  arrowSource,
-  direction = 'vertical',
+const FrameAnimation = ({
   size = 34,
+  stepDuration = 250,
+  frames = ON_FRAME_SOURCES,
+  loop = true,
+  pulseAtEnd = false,
 }) => {
-  const arrowOffset =
-    direction === 'horizontal'
-      ? { right: -4, top: size / 2 - 8 }
-      : { bottom: -4, left: size / 2 - 8 };
-
-  return (
-    <View style={{ width: size, height: size }}>
-      <SpinningRing source={ringSource} size={size} />
-
-      <View style={[{ position: 'absolute' }, arrowOffset]}>
-        <SlidingArrow source={arrowSource} direction={direction} />
-      </View>
-    </View>
-  );
-};
-
-const PulsingAdminDot = ({ active, style }) => {
-
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const loopRef = useRef(null);
+  const [frameIndex, setFrameIndex] = useState(0);
+  const scale = useRef(new Animated.Value(1)).current;
+  const timeoutRef = useRef(null);
+  const pulseLoopRef = useRef(null);
 
   useEffect(() => {
-    if (active) {
-      loopRef.current = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.15, duration: 850, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 750, useNativeDriver: true }),
-        ])
-      );
-      loopRef.current.start();
-    } else {
-      loopRef.current?.stop?.();
-      pulseAnim.setValue(1);
-    }
+    let isCancelled = false;
+
+    setFrameIndex(0);
+    scale.setValue(1);
+
+    const lastFrameIndex = frames.length - 1;
+    const beforePulseIndex = lastFrameIndex - 1;
+
+    const scheduleNext = (index) => {
+      timeoutRef.current = setTimeout(() => {
+        if (isCancelled) {
+          return;
+        }
+
+        if (pulseAtEnd && index === beforePulseIndex) {
+          setFrameIndex(lastFrameIndex);
+
+          pulseLoopRef.current = Animated.loop(
+            Animated.sequence([
+              Animated.timing(scale, {
+                toValue: 1.18,
+                duration: 500,
+                easing: Easing.inOut(Easing.ease),
+                useNativeDriver: true,
+              }),
+              Animated.timing(scale, {
+                toValue: 1,
+                duration: 500,
+                easing: Easing.inOut(Easing.ease),
+                useNativeDriver: true,
+              }),
+            ])
+          );
+
+          pulseLoopRef.current.start();
+          return;
+        }
+
+        if (index === lastFrameIndex) {
+          if (loop) {
+            setFrameIndex(0);
+            scheduleNext(0);
+          }
+          return;
+        }
+
+        const nextIndex = index + 1;
+        setFrameIndex(nextIndex);
+        scheduleNext(nextIndex);
+      }, stepDuration);
+    };
+
+    scheduleNext(0);
 
     return () => {
-      loopRef.current?.stop?.();
+      isCancelled = true;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      if (pulseLoopRef.current) {
+        pulseLoopRef.current.stop();
+      }
     };
-  }, [active]);
+  }, [frames, stepDuration, loop, pulseAtEnd]);
 
-  return <Animated.View style={[style, { transform: [{ scale: pulseAnim }] }]} />;
+  return (
+    <Animated.Image
+      source={frames[frameIndex]}
+      style={{ width: size, height: size, transform: [{ scale }] }}
+      resizeMode="contain"
+    />
+  );
 };
 
+
+
+
 const OnlineCountText = ({ count, style }) => {
+
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const prevCountRef = useRef(count);
 
@@ -517,6 +486,63 @@ const UnreadBadge = ({ count, isSecret }) => {
     </Animated.View>
   );
 };
+const NumericKeypad = ({ value, onChange, maxLength = 4 }) => {
+  const pressDigit = (digit) => {
+    if (value.length >= maxLength) return;
+    onChange(value + digit);
+  };
+
+  const pressBackspace = () => {
+    onChange(value.slice(0, -1));
+  };
+
+  const rows = [
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+    ['⌫', '0', ''],
+  ];
+
+  return (
+    <View style={styles.keypadWrap}>
+      {rows.map((row, rowIndex) => (
+        <View key={rowIndex} style={styles.keypadRow}>
+          {row.map((key, keyIndex) => {
+            if (key === '') {
+              return <View key={`ghost-${keyIndex}`} style={styles.keypadKeyGhost} />;
+            }
+
+            return (
+              <Pressable
+                key={key}
+                style={({ pressed }) => [
+                  styles.keypadKey,
+                  pressed && styles.xpButtonPressed,
+                ]}
+                onPress={() => (key === '⌫' ? pressBackspace() : pressDigit(key))}
+              >
+                <Text style={styles.keypadKeyText}>{key}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+};
+
+const PinDots = ({ length, maxLength = 4 }) => {
+  return (
+    <View style={styles.pinDotsRow}>
+      {Array.from({ length: maxLength }).map((_, index) => (
+        <View
+          key={index}
+          style={[styles.pinDot, index < length && styles.pinDotFilled]}
+        />
+      ))}
+    </View>
+  );
+};
 
 const AdminPin = ({ navigation }) => {
   const [users, setUsers] = useState([
@@ -535,24 +561,21 @@ const AdminPin = ({ navigation }) => {
   const [newUserName, setNewUserName] = useState('');
 
   const [changeModalVisible, setChangeModalVisible] = useState(false);
+  const [hardResetStep, setHardResetStep] = useState('pin'); // 'pin' | 'confirm1' | 'confirm2'
   const [newPin, setNewPin] = useState('');
   const [changeError, setChangeError] = useState('');
-  const [hardResetConfirmStep1Visible, setHardResetConfirmStep1Visible] = useState(false);
-  const [hardResetConfirmStep2Visible, setHardResetConfirmStep2Visible] = useState(false);
   const [pendingHardResetPin, setPendingHardResetPin] = useState('');
 
-  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
-  const [settingsScreen, setSettingsScreen] = useState('menu');
-  const [kickPin, setKickPin] = useState('0008');
-  const [kickPinError, setKickPinError] = useState('');
 
-  const [newAdminPin, setNewAdminPin] = useState('');
+    const [newAdminPin, setNewAdminPin] = useState('');
   const [adminPinError, setAdminPinError] = useState('');
+
 
   const [userMenuVisible, setUserMenuVisible] = useState(false);
   const [actionUser, setActionUser] = useState(null);
   const [muteModalVisible, setMuteModalVisible] = useState(false);
   const [colourModalVisible, setColourModalVisible] = useState(false);
+  const [bgColourModalVisible, setBgColourModalVisible] = useState(false);
 
   const [readCounts, setReadCounts] = useState(getGlobalReadCounts());
   const [secretMutedUsers, setSecretMutedUsers] = useState(getGlobalSecretMutedUsers());
@@ -560,8 +583,15 @@ const AdminPin = ({ navigation }) => {
   const [adminEditModalVisible, setAdminEditModalVisible] = useState(false);
   const [adminIconModalVisible, setAdminIconModalVisible] = useState(false);
   const [adminOutlineModalVisible, setAdminOutlineModalVisible] = useState(false);
-  const [adminBgModalVisible, setAdminBgModalVisible] = useState(false);
-  const [lastActionText, setLastActionText] = useState('');
+  const [adminPinModalVisible, setAdminPinModalVisible] = useState(false);
+  const [adminPwModalVisible, setAdminPwModalVisible] = useState(false);
+  const [newAdminPw, setNewAdminPw] = useState('');
+  const [adminPwError, setAdminPwError] = useState('');
+    const [currentAdminPw, setCurrentAdminPw] = useState(globalThis.CUSIIK_ADMIN_PW || '');
+  const [actionHistory, setActionHistory] = useState([]);
+  const [actionHistoryExpanded, setActionHistoryExpanded] = useState(false);
+
+
   const [connectionText, setConnectionText] = useState(
     socket.connected ? 'Server online' : 'Připojuji server...'
   );
@@ -765,7 +795,8 @@ const AdminPin = ({ navigation }) => {
       setReadCounts({});
       setSecretMutedUsers({});
       setUsers([]);
-      setLastActionText('HARD ROOM RESET přijat ze serveru - lokální data vymazána.');
+      logAction('HARD ROOM RESET přijat ze serveru - lokální data vymazána.');
+
     };
 
     socket.on('connect', handleConnect);
@@ -804,7 +835,7 @@ const AdminPin = ({ navigation }) => {
     );
   };
 
-  const renderMuteTag = (user) => {
+   const renderMuteTag = (user) => {
     const muteText = formatMuteLeft(user.id, nowTick);
     const isSecretMuted = Boolean(secretMutedUsers[user.id]);
 
@@ -813,11 +844,12 @@ const AdminPin = ({ navigation }) => {
     }
 
     return (
-      <Text style={isSecretMuted ? styles.muteTagSecretText : styles.muteTagText}>
+      <Text style={[isSecretMuted ? styles.muteTagSecretText : styles.muteTagText, styles.muteTagInline]}>
         {isSecretMuted ? '(potají)' : `(${muteText})`}
       </Text>
     );
   };
+
 
   const getUnreadCount = (userId) => {
     const userMessageCount = getUserMessageCount(userId);
@@ -878,6 +910,11 @@ const AdminPin = ({ navigation }) => {
     setActionUser(null);
   };
 
+  const logAction = (text) => {
+    setActionHistory((prev) => [text, ...prev].slice(0, 10));
+  };
+
+
   const toggleAdminStatus = () => {
     const nextStatus = getNextAdminStatus();
 
@@ -890,13 +927,14 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setLastActionText(
+    logAction(
       nextStatus === 'on'
         ? 'Status admina byl přepnut na ON.'
         : nextStatus === 'job'
           ? 'Status admina byl přepnut na JOB.'
           : 'Status admina byl přepnut na OFF.'
     );
+
   };
 
   const openRenameModal = (user) => {
@@ -941,13 +979,15 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setLastActionText(`Uživatel byl přejmenován na ${trimmedName}.`);
+  logAction(`Uživatel byl přejmenován na ${trimmedName}.`);
+
     closeRenameModal();
   };
 
-  const openChangeModal = () => {
+   const openChangeModal = () => {
     setNewPin('');
     setChangeError('');
+    setHardResetStep('pin');
     setChangeModalVisible(true);
   };
 
@@ -956,11 +996,10 @@ const AdminPin = ({ navigation }) => {
     setNewPin('');
     setChangeError('');
     setPendingHardResetPin('');
-    setHardResetConfirmStep1Visible(false);
-    setHardResetConfirmStep2Visible(false);
+    setHardResetStep('pin');
   };
 
-    const saveChangeAndKickUsers = () => {
+  const saveChangeAndKickUsers = () => {
     const cleanedPin = newPin.replace(/[^0-9]/g, '').slice(0, 4);
 
     if (cleanedPin.length !== 4) {
@@ -969,76 +1008,51 @@ const AdminPin = ({ navigation }) => {
     }
 
     setPendingHardResetPin(cleanedPin);
-    setChangeModalVisible(false);
-    setHardResetConfirmStep1Visible(true);
+    setHardResetStep('confirm1');
   };
 
-
-    const confirmHardResetStep1 = () => {
-    setHardResetConfirmStep1Visible(false);
-    setHardResetConfirmStep2Visible(true);
+  const confirmHardResetStep1 = () => {
+    setHardResetStep('confirm2');
   };
 
   const goBackFromHardResetStep1 = () => {
-    setHardResetConfirmStep1Visible(false);
-    setChangeModalVisible(true);
+    setHardResetStep('pin');
   };
-
 
   const confirmHardResetFinal = () => {
     const cleanPin = String(pendingHardResetPin || '').replace(/[^0-9]/g, '').slice(0, 4);
 
     if (cleanPin.length !== 4) {
-      setHardResetConfirmStep2Visible(false);
       setChangeError('PIN musí mít přesně 4 číslice.');
+      setHardResetStep('pin');
       return;
     }
 
-    globalThis.CUSIIK_USER_PIN = cleanPin;
-    setCurrentUserPin(cleanPin);
-
-    clearAllLocalAdminData();
-    setReadCounts({});
-    setSecretMutedUsers({});
-    setUsers([]);
-
-    if (socket.connected) {
-      socket.emit('admin:setUserPin', {
-        pin: cleanPin,
-      });
-    }
-
-    setLastActionText(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
-
-    setHardResetConfirmStep2Visible(false);
+    // FIX: modal zavřeme hned, těžké změny stavu (mazání dat) proběhnou
+    // až po dokončení fade-out animace - žádné probliknutí prázdné roomky.
     closeChangeModal();
+
+    setTimeout(() => {
+      globalThis.CUSIIK_USER_PIN = cleanPin;
+      setCurrentUserPin(cleanPin);
+
+      clearAllLocalAdminData();
+      setReadCounts({});
+      setSecretMutedUsers({});
+      setUsers([]);
+
+      if (socket.connected) {
+        socket.emit('admin:setUserPin', {
+          pin: cleanPin,
+        });
+      }
+
+logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
+
+    }, 260);
   };
 
-  const openSettings = () => {
-    setSettingsScreen('menu');
-    setNewAdminPin('');
-    setAdminPinError('');
-    setKickPin('0008');
-    setKickPinError('');
-    setAdminEditModalVisible(false);
-    setAdminIconModalVisible(false);
-    setAdminOutlineModalVisible(false);
-    setSettingsModalVisible(true);
-  };
-
-  const closeSettings = () => {
-    setSettingsModalVisible(false);
-    setSettingsScreen('menu');
-    setNewAdminPin('');
-    setAdminPinError('');
-    setKickPin('0008');
-    setKickPinError('');
-    setAdminEditModalVisible(false);
-    setAdminIconModalVisible(false);
-    setAdminOutlineModalVisible(false);
-  };
-
-  const openAdminProfileEditor = () => {
+   const openAdminProfileEditor = () => {
     setAdminEditModalVisible(true);
   };
 
@@ -1046,7 +1060,22 @@ const AdminPin = ({ navigation }) => {
     setAdminEditModalVisible(false);
     setAdminIconModalVisible(false);
     setAdminOutlineModalVisible(false);
+    setAdminPinModalVisible(false);
+    setAdminPwModalVisible(false);
   };
+
+  const openAdminPinModal = () => {
+    setNewAdminPin('');
+    setAdminPinError('');
+    setAdminPinModalVisible(true);
+  };
+
+  const openAdminPwModal = () => {
+    setNewAdminPw('');
+    setAdminPwError('');
+    setAdminPwModalVisible(true);
+  };
+
 
   const updateAdminIcon = (iconKey) => {
     const normalizedIcon = normalizeAdminIcon(iconKey);
@@ -1064,7 +1093,8 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setLastActionText(`Admin ikonka byla změněna na ${normalizedIcon}.`);
+    logAction(`Admin ikonka byla změněna na ${normalizedIcon}.`);
+
     setAdminIconModalVisible(false);
   };
 
@@ -1083,30 +1113,14 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setLastActionText('Barva obrysu admina byla změněna.');
+  logAction('Barva obrysu admina byla změněna.');
+
     setAdminOutlineModalVisible(false);
   };
 
-  const goBackToSettingsMenu = () => {
-    setSettingsScreen('menu');
-    setNewAdminPin('');
-    setAdminPinError('');
-    setKickPinError('');
-  };
 
-  const chooseUserToKick = (user) => {
-    const cleanedPin = String(kickPin || '').replace(/[^0-9]/g, '').slice(0, 4);
+   const kickUserById = (user, options = {}) => {
 
-    if (cleanedPin.length !== 4) {
-      setKickPinError('PIN pro kick musí mít přesně 4 číslice.');
-      return;
-    }
-
-    kickUserById(user, { newPin: cleanedPin });
-    closeSettings();
-  };
-
-  const kickUserById = (user, options = {}) => {
     if (!user) {
       return;
     }
@@ -1121,13 +1135,14 @@ const AdminPin = ({ navigation }) => {
     }
 
     if (targetPin.length === 4) {
-      setLastActionText(
+      logAction(
         `Uživatel ${user.name} byl kicknut. Jeho speciální PIN je ${targetPin}.`
       );
       return;
     }
 
-    setLastActionText(`Uživatel ${user.name} byl kicknut z roomky.`);
+    logAction(`Uživatel ${user.name} byl kicknut z roomky.`);
+
   };
 
   const saveNewAdminPin = () => {
@@ -1148,19 +1163,46 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setLastActionText(`Admin PIN byl změněn na ${cleanedPin}.`);
+    logAction(`Admin PIN byl změněn na ${cleanedPin}.`);
 
-    goBackToSettingsMenu();
+    setAdminPinModalVisible(false);
   };
 
-  const muteUser = (user, option) => {
+  // FIX: obnovovací heslo admina - zatím jen lokální state + socket stub.
+  // Napojení na EntryPin (reset zapomenutého PINu) doděláme příště.
+  const saveNewAdminPw = () => {
+    const trimmedPw = newAdminPw.trim();
+
+    if (trimmedPw.length < 4) {
+      setAdminPwError('Heslo musí mít alespoň 4 znaky.');
+      return;
+    }
+
+    globalThis.CUSIIK_ADMIN_PW = trimmedPw;
+    setCurrentAdminPw(trimmedPw);
+
+    if (socket.connected) {
+      socket.emit('admin:setAdminPw', {
+        pw: trimmedPw,
+      });
+    }
+
+    logAction('Obnovovací heslo admina bylo nastaveno.');
+
+
+    setAdminPwModalVisible(false);
+  };
+
+
+   const muteUser = (user, option) => {
     if (!user) {
       return;
     }
 
     const mutedUsers = { ...getGlobalMutedUsers() };
     const secretMutedUsersMap = { ...getGlobalSecretMutedUsers() };
-    const muteUntilTime = Date.now() + option.milliseconds;
+    const muteStartTime = Date.now();
+    const muteUntilTime = muteStartTime + option.milliseconds;
 
     delete secretMutedUsersMap[user.id];
     delete secretMutedUsersMap[String(user.id)];
@@ -1171,7 +1213,8 @@ const AdminPin = ({ navigation }) => {
     globalThis.CUSIIK_MUTED_USERS = mutedUsers;
 
     setSecretMutedUsers({ ...secretMutedUsersMap });
-    setNowTick(Date.now());
+    setNowTick(muteStartTime);
+
 
     if (socket.connected) {
       socket.emit('admin:secretMuteUser', {
@@ -1191,12 +1234,12 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setLastActionText(`Uživatel ${user.name} byl umlčen na ${option.label}.`);
+    logAction(`Uživatel ${user.name} byl umlčen na ${option.label}.`);
     setMuteModalVisible(false);
-    closeUserMenu();
   };
 
   const unmuteUser = (user) => {
+
     if (!user) {
       return;
     }
@@ -1219,12 +1262,12 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setLastActionText(`Umlčení uživatele ${user.name} bylo zrušeno.`);
+       logAction(`Umlčení uživatele ${user.name} bylo zrušeno.`);
     setMuteModalVisible(false);
-    closeUserMenu();
   };
 
   const openMuteModalForUser = (user) => {
+
     if (!user) {
       return;
     }
@@ -1274,11 +1317,12 @@ const AdminPin = ({ navigation }) => {
 
     setSecretMutedUsers({ ...secretMutedMap });
     setNowTick(Date.now());
-    setLastActionText(
+    logAction(
       nextValue
         ? `Uživatel ${user.name} byl umlčen potají.`
         : `Tajné umlčení uživatele ${user.name} bylo zrušeno.`
     );
+
 
     closeUserMenu();
   };
@@ -1311,9 +1355,43 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setLastActionText(`Obrys uživatele ${targetUser.name} byl změněn.`);
+      logAction(`Obrys uživatele ${targetUser.name} byl změněn.`);
     setColourModalVisible(false);
   };
+
+
+  const changeUserBgColour = (user, colour) => {
+    const targetUser = user || actionUser;
+
+    if (!targetUser) {
+      return;
+    }
+
+    setUsers((currentUsers) =>
+      currentUsers.map((currentUser) =>
+        currentUser.id === targetUser.id
+          ? {
+              ...currentUser,
+              bgColour: colour,
+            }
+          : currentUser
+      )
+    );
+
+    setActionUser((prev) => (prev && prev.id === targetUser.id ? { ...prev, bgColour: colour } : prev));
+
+    if (socket.connected) {
+      socket.emit('admin:setUserBgColour', {
+        userId: targetUser.id,
+        colour,
+      });
+    }
+
+    logAction(`Pozadí uživatele ${targetUser.name} bylo změněno.`);
+    setBgColourModalVisible(false);
+  };
+
+
 
   const setUserToFuckerAvatar = (user) => {
     if (!user) {
@@ -1341,507 +1419,20 @@ const AdminPin = ({ navigation }) => {
       });
     }
 
-    setLastActionText(
+        logAction(
       nextEnabled
         ? `Uživatel ${user.name} má uzamčenou ikonku na fuckera.`
         : `Uživatel ${user.name} už nemá uzamčenou ikonku na fuckera.`
     );
   };
 
-  const totalUnreadMessages = users.reduce((sum, user) => {
-    return sum + getUnreadCount(user.id);
-  }, 0);
 
-  const getUnreadSummaryText = () => {
-    if (totalUnreadMessages <= 0) {
-      return 'Nemáte nové zprávy';
-    }
-
-    if (totalUnreadMessages === 1) {
-      return 'Máte 1 novou zprávu';
-    }
-
-    if (totalUnreadMessages >= 2 && totalUnreadMessages <= 4) {
-      return `Máte ${totalUnreadMessages} nové zprávy`;
-    }
-
-    return `Máte ${totalUnreadMessages} nových zpráv`;
-  };
-
-  const renderSettingsContent = () => {
-    if (settingsScreen === 'kick') {
-      return (
-        <View style={styles.modalBody}>
-          <Text style={styles.modalLabel}>PIN pro kicknutého uživatele:</Text>
-
-          <TextInput
-            value={kickPin}
-            onChangeText={(value) => {
-              setKickPinError('');
-              setKickPin(value.replace(/[^0-9]/g, '').slice(0, 4));
-            }}
-            style={styles.modalInput}
-            placeholder="Např. 0008"
-            placeholderTextColor="#666666"
-            maxLength={4}
-            keyboardType="number-pad"
-            inputMode="numeric"
-          />
-
-          {kickPinError ? (
-            <Text style={styles.errorText}>{kickPinError}</Text>
-          ) : null}
-
-          <Text style={styles.modalLabel}>Vyber uživatele ke kicku:</Text>
-
-          {users.length === 0 ? (
-            <View style={styles.smallEmptyBox}>
-              <Text style={styles.smallEmptyText}>
-                V roomce teď není žádný uživatel.
-              </Text>
-            </View>
-          ) : (
-            <ScrollView style={styles.settingsList}>
-              {[...users]
-                .sort((a, b) => {
-                  if (a.online !== b.online) {
-                    return a.online ? -1 : 1;
-                  }
-
-                  return (b.lastSeenAt || 0) - (a.lastSeenAt || 0);
-                })
-                .map((user) => (
-                <Pressable
-                  key={user.id}
-                  style={({ pressed }) => [
-                    styles.settingsUserRow,
-                    pressed && styles.xpButtonPressed,
-                  ]}
-                  onPress={() => chooseUserToKick(user)}
-                >
-                  <View
-                    style={[
-                      styles.smallUserIconBox,
-                      {
-                        backgroundColor: user.bgColour || '#dceaff',
-                        borderTopColor: user.silhouetteColour || '#0b3d91',
-                        borderLeftColor: user.silhouetteColour || '#0b3d91',
-                        borderRightColor: user.silhouetteColour || '#0b3d91',
-                        borderBottomColor: user.silhouetteColour || '#0b3d91',
-                      },
-                    ]}
-                  >
-                    <Image
-                      source={getUserIconSource(user.avatarIcon)}
-                      style={styles.smallUserIconImage}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  <View style={styles.settingsUserTextBox}>
-                    {renderUserNameWithMute(user, styles.settingsUserName)}
-                    <Text style={styles.settingsUserSubText}>
-                      Kliknutím vybereš ke kicku
-                    </Text>
-                  </View>
-                </Pressable>
-              ))}
-            </ScrollView>
-          )}
-
-          <View style={styles.modalButtons}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={goBackToSettingsMenu}
-            >
-              <Text style={styles.modalButtonText}>Zpět</Text>
-            </Pressable>
-          </View>
-        </View>
-      );
-    }
-
-    if (settingsScreen === 'userList') {
-      return (
-        <View style={styles.modalBody}>
-          <Text style={styles.modalLabel}>Vyber uživatele k úpravě:</Text>
-
-          {users.length === 0 ? (
-            <View style={styles.smallEmptyBox}>
-              <Text style={styles.smallEmptyText}>
-                V roomce teď není žádný uživatel.
-              </Text>
-            </View>
-          ) : (
-            <ScrollView style={styles.settingsList}>
-              {[...users]
-                .sort((a, b) => {
-                  if (a.online !== b.online) {
-                    return a.online ? -1 : 1;
-                  }
-                  return (b.lastSeenAt || 0) - (a.lastSeenAt || 0);
-                })
-                .map((user) => (
-                  <Pressable
-                    key={user.id}
-                    style={({ pressed }) => [
-                      styles.settingsUserRow,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={() => {
-                      setSelectedUser(user);
-                      setActionUser(user);
-                      setSettingsScreen('userEdit');
-                    }}
-                  >
-                    <View
-                      style={[
-                        styles.smallUserIconBox,
-                        {
-                          backgroundColor: user.bgColour || '#dceaff',
-                          borderTopColor: user.silhouetteColour || '#0b3d91',
-                          borderLeftColor: user.silhouetteColour || '#0b3d91',
-                          borderRightColor: user.silhouetteColour || '#0b3d91',
-                          borderBottomColor: user.silhouetteColour || '#0b3d91',
-                        },
-                      ]}
-                    >
-                      <Image
-                        source={getUserIconSource(user.avatarIcon)}
-                        style={styles.smallUserIconImage}
-                        resizeMode="contain"
-                      />
-                    </View>
-
-                    <View style={styles.settingsUserTextBox}>
-                      {renderUserNameWithMute(user, styles.settingsUserName)}
-                      <Text style={styles.settingsUserSubText}>
-                        Kliknutím upravíš
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))}
-            </ScrollView>
-          )}
-
-          <View style={styles.modalButtons}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={goBackToSettingsMenu}
-            >
-              <Text style={styles.modalButtonText}>Zpět</Text>
-            </Pressable>
-          </View>
-        </View>
-      );
-    }
-
-    if (settingsScreen === 'userEdit') {
-      return (
-        <View style={styles.modalBody}>
-          <Text style={styles.modalLabel}>Nastavení uživatele:</Text>
-          <Text style={styles.selectedUserText}>
-            {selectedUser ? selectedUser.name : actionUser ? actionUser.name : ''}
-          </Text>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.settingsOption,
-              pressed && styles.xpButtonPressed,
-            ]}
-            onPress={() => {
-              if (selectedUser || actionUser) {
-                openRenameModal(selectedUser || actionUser);
-              }
-            }}
-          >
-            <Text style={styles.settingsOptionTitle}>Přejmenovat</Text>
-            <Text style={styles.settingsOptionText}>
-              Změní jméno vybraného uživatele.
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.settingsOption,
-              pressed && styles.xpButtonPressed,
-            ]}
-            onPress={() => {
-              setColourModalVisible(true);
-            }}
-          >
-            <Text style={styles.settingsOptionTitle}>Změna obrysu</Text>
-            <Text style={styles.settingsOptionText}>
-              Změní obrys uživatele, který uvidí admin i uživatel.
-            </Text>
-          </Pressable>
-
-          <View style={styles.modalButtons}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={() => setSettingsScreen('userList')}
-            >
-              <Text style={styles.modalButtonText}>Zpět na výběr</Text>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={goBackToSettingsMenu}
-            >
-              <Text style={styles.modalButtonText}>Menu</Text>
-            </Pressable>
-          </View>
-        </View>
-      );
-    }
-
-    if (settingsScreen === 'editProfile') {
-      return (
-        <View style={styles.modalBody}>
-          <View style={styles.adminPreviewCard}>
-            <View
-              style={[
-                styles.adminPreviewIconBox,
-                {
-                  backgroundColor: adminProfile?.bgColour || '#ece9d8',
-                  borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
-                  borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
-                  borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
-                  borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
-                },
-              ]}
-            >
-              <Image
-                source={getAdminIconSource(adminProfile?.icon || 'admin')}
-                style={styles.adminPreviewIconImage}
-                resizeMode="contain"
-              />
-            </View>
-
-            <View style={styles.settingsUserTextBox}>
-              <Text style={styles.settingsUserName}>
-                Ikonka: {normalizeAdminIcon(adminProfile?.icon || 'admin')}
-              </Text>
-              <Text style={styles.settingsUserSubText}>
-                Obrys: {adminProfile?.silhouetteColour || '#0b3d91'}
-              </Text>
-            </View>
-          </View>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.settingsOption,
-              pressed && styles.xpButtonPressed,
-            ]}
-            onPress={() => setAdminIconModalVisible(true)}
-          >
-            <Text style={styles.settingsOptionTitle}>Nastavit ikonku</Text>
-            <Text style={styles.settingsOptionText}>
-              Ikonka admina se zobrazí uživateli aktivně v chatu.
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.settingsOption,
-              pressed && styles.xpButtonPressed,
-            ]}
-            onPress={() => setAdminOutlineModalVisible(true)}
-          >
-            <Text style={styles.settingsOptionTitle}>Nastavit barvu obrysu</Text>
-            <Text style={styles.settingsOptionText}>
-              Barva obrysu admina se zobrazí uživateli aktivně v chatu.
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.settingsOption,
-              pressed && styles.xpButtonPressed,
-            ]}
-            onPress={() => setSettingsScreen('adminPin')}
-          >
-            <Text style={styles.settingsOptionTitle}>Admin PIN</Text>
-            <Text style={styles.settingsOptionText}>
-              Nastavíš nový PIN pro vstup do admin panelu.
-            </Text>
-          </Pressable>
-
-          <View style={styles.modalButtons}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={goBackToSettingsMenu}
-            >
-              <Text style={styles.modalButtonText}>Zpět</Text>
-            </Pressable>
-          </View>
-        </View>
-      );
-    }
-
-    if (settingsScreen === 'adminPin') {
-      return (
-        <View style={styles.modalBody}>
-          <Text style={styles.modalLabel}>Nastavit nový admin PIN:</Text>
-
-          <TextInput
-            value={newAdminPin}
-            onChangeText={(value) => {
-              setAdminPinError('');
-              setNewAdminPin(value.replace(/[^0-9]/g, '').slice(0, 4));
-            }}
-            style={styles.modalInput}
-            placeholder="Např. 9876"
-            placeholderTextColor="#666666"
-            autoFocus
-            maxLength={4}
-            keyboardType="number-pad"
-            inputMode="numeric"
-          />
-
-          <View style={styles.warningBox}>
-            <Text style={styles.warningText}>
-              Aktuální admin PIN: {currentAdminPin}
-            </Text>
-          </View>
-
-          {adminPinError ? (
-            <Text style={styles.errorText}>{adminPinError}</Text>
-          ) : null}
-
-          <View style={styles.modalButtons}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={saveNewAdminPin}
-            >
-              <Text style={styles.modalButtonText}>Uložit</Text>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.xpButtonPressed,
-              ]}
-              onPress={goBackToSettingsMenu}
-            >
-              <Text style={styles.modalButtonText}>Zpět</Text>
-            </Pressable>
-          </View>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.modalBody}>
-        <Text style={styles.modalLabel}>Vyber akci v nastavení:</Text>
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.statusOption,
-            isAdminOnline
-              ? styles.statusOptionOn
-              : isAdminJob
-                ? styles.statusOptionJob
-                : styles.statusOptionOff,
-            pressed && styles.xpButtonPressed,
-          ]}
-          onPress={toggleAdminStatus}
-        >
-          <View style={styles.statusOptionTop}>
-            <View
-              style={[
-                styles.statusDot,
-                isAdminOnline
-                  ? styles.statusDotOn
-                  : isAdminJob
-                    ? styles.statusDotJob
-                    : styles.statusDotOff,
-              ]}
-            />
-
-            <Text style={styles.statusOptionTitle}>
-              Status admina: {getAdminStatusLabel()}
-            </Text>
-          </View>
-
-          <Text style={styles.statusOptionText}>
-            Kliknutím přepneš stav, který uvidí uživatel v chatu.
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.settingsOption,
-            pressed && styles.xpButtonPressed,
-          ]}
-          onPress={() => setSettingsScreen('kick')}
-        >
-          <Text style={styles.settingsOptionTitle}>Kick uživatele</Text>
-          <Text style={styles.settingsOptionText}>
-            Nastavíš PIN pro vybraného uživatele a pak ho kickneš.
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.settingsOption,
-            pressed && styles.xpButtonPressed,
-          ]}
-          onPress={() => setSettingsScreen('userList')}
-        >
-          <Text style={styles.settingsOptionTitle}>Nastavení uživatele</Text>
-          <Text style={styles.settingsOptionText}>
-            Přejmenování a změna obrysu uživatele.
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.settingsOption,
-            pressed && styles.xpButtonPressed,
-          ]}
-          onPress={() => setSettingsScreen('editProfile')}
-        >
-          <Text style={styles.settingsOptionTitle}>Nastavení admina</Text>
-          <Text style={styles.settingsOptionText}>
-            Nastavíš ikonku a barvu obrysu admina.
-          </Text>
-        </Pressable>
-
-        <View style={styles.modalButtons}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.modalButton,
-              pressed && styles.xpButtonPressed,
-            ]}
-            onPress={closeSettings}
-          >
-            <Text style={styles.modalButtonText}>Zavřít</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  };
+   const unreadUsersPreview = users
+    .filter((user) => getUnreadCount(user.id) > 0)
+    .slice(0, 5);
 
   return (
+
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
 
@@ -1858,9 +1449,29 @@ const AdminPin = ({ navigation }) => {
                 <View style={[styles.winSquare, { backgroundColor: '#ffba08' }]} />
               </View>
 
-             <Text style={styles.titleText}>{`room${currentUserPin}`}</Text>
+                        <Text style={styles.titleText}>{`room${currentUserPin}`}</Text>
+
+                             <View style={styles.titleStatusAnimWrap}>
+               {isAdminOnline ? (
+                 <FrameAnimation size={22} stepDuration={200} frames={ON_FRAME_SOURCES} loop />
+               ) : isAdminJob ? (
+                 <View style={[styles.titleStatusDot, styles.statusDotJob]} />
+               ) : (
+                 <FrameAnimation
+                   size={22}
+                   stepDuration={200}
+                   frames={OFF_FRAME_SOURCES}
+                   loop={false}
+                   pulseAtEnd
+                 />
+               )}
+             </View>
+
+
+
 
             </View>
+
 
             <View style={styles.windowButtons}>
               <View style={styles.windowButton}>
@@ -1883,74 +1494,64 @@ const AdminPin = ({ navigation }) => {
             </View>
           </View>
 
-          <View style={styles.body}>
-          <View style={styles.topInfoPanel}>
-  <View style={styles.topInfoLeftColumn}>
-    <View
-      style={[
-        styles.adminStatusBadge,
-        isAdminOnline
-          ? styles.statusOptionOn
-          : isAdminJob
-            ? styles.statusOptionJob
-            : styles.statusOptionOff,
-      ]}
-    >
-      <PulsingAdminDot
-        active={isAdminOnline}
-        style={[
-          styles.adminStatusDotBig,
-          isAdminOnline
-            ? styles.statusDotOn
-            : isAdminJob
-              ? styles.statusDotJob
-              : styles.statusDotOff,
-        ]}
-      />
-            <Text style={styles.adminStatusBadgeText}>
-        Admin status: {getAdminStatusLabel()}
-      </Text>
-    </View>
+           <View style={styles.body}>
+                <View style={styles.topInfoPanel}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.topAdminIconBox,
+                  {
+                    backgroundColor: adminProfile?.bgColour || '#ece9d8',
+                    borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
+                    borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
+                    borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
+                    borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
+                  },
+                  pressed && styles.xpButtonPressed,
+                ]}
+                onPress={openAdminProfileEditor}
+              >
+                <Image
+                  source={getAdminIconSource(adminProfile?.icon || 'admin')}
+                  style={styles.topAdminIconImage}
+                  resizeMode="contain"
+                />
+              </Pressable>
 
-    <View style={{ flexDirection: 'row', gap: 16, marginTop: 10 }}>
-      <StatusSpinner
-        ringSource={STATUS_ICON_SOURCES.ringA}
-        arrowSource={STATUS_ICON_SOURCES.arrowA}
-        direction="horizontal"
-      />
-      <StatusSpinner
-        ringSource={STATUS_ICON_SOURCES.ringB}
-        arrowSource={STATUS_ICON_SOURCES.arrowB}
-        direction="vertical"
-      />
-      <StatusSpinner
-        ringSource={STATUS_ICON_SOURCES.ringC}
-        arrowSource={STATUS_ICON_SOURCES.arrowC}
-        direction="vertical"
-      />
-    </View>
-  </View>
+              <Text style={styles.topInfoAdminLabel}>Admin</Text>
 
+                          <View style={styles.unreadAvatarsRow}>
+                {unreadUsersPreview.length === 0 ? (
+                  <Text style={styles.noUnreadText}>- žádné nové zprávy -</Text>
+                ) : null}
 
-  <View
-    style={[
-      styles.topAdminIconBox,
-      {
-        backgroundColor: adminProfile?.bgColour || '#ece9d8',
-        borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
-        borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
-        borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
-        borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
-      },
-    ]}
-  >
-    <Image
-      source={getAdminIconSource(adminProfile?.icon || 'admin')}
-      style={styles.topAdminIconImage}
-      resizeMode="contain"
-    />
-  </View>
-</View>
+                {unreadUsersPreview.map((user) => (
+
+                  <Pressable
+                    key={user.id}
+                    style={({ pressed }) => [
+                      styles.unreadAvatarBox,
+                      {
+                        backgroundColor: user.bgColour || '#dceaff',
+                        borderColor: user.silhouetteColour || '#0b3d91',
+                      },
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => openAdminChat(user)}
+                  >
+                    <Image
+                      source={getUserIconSource(user.avatarIcon)}
+                      style={styles.unreadAvatarImage}
+                      resizeMode="contain"
+                    />
+                    <View style={styles.unreadAvatarBadge}>
+                      <Text style={styles.unreadAvatarBadgeText}>
+                        {getUnreadCount(user.id)}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
 
 
             <View style={styles.usersPanel}>
@@ -2003,15 +1604,9 @@ const AdminPin = ({ navigation }) => {
                               : null,
                         ]}
                       >
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.userInfo,
-                            pressed && styles.userInfoPressed,
-                          ]}
-                          onPress={() => openAdminChat(user)}
-                        >
-                          <View
-                            style={[
+                                             <View style={styles.userInfo}>
+                          <Pressable
+                            style={({ pressed }) => [
                               styles.userIconBox,
                               {
                                 backgroundColor: user.bgColour || '#dceaff',
@@ -2020,35 +1615,45 @@ const AdminPin = ({ navigation }) => {
                                 borderRightColor: user.silhouetteColour || '#0b3d91',
                                 borderBottomColor: user.silhouetteColour || '#0b3d91',
                               },
+                              pressed && styles.xpButtonPressed,
                             ]}
+                            onPress={() => openUserMenu(user)}
                           >
                             <Image
                               source={getUserIconSource(user.avatarIcon)}
                               style={styles.userIconImage}
                               resizeMode="contain"
                             />
-                          </View>
+                          </Pressable>
 
-                          <View style={styles.userTextBox}>
-                            <View style={styles.userNameRow}>
-                              {renderUserNameWithMute(user, styles.userName)}
-                              <UnreadBadge count={unreadCount} isSecret={isUserSecretMuted} />
+                          <Pressable
+                            style={({ pressed }) => [
+                              styles.userTextPressable,
+                              pressed && styles.userInfoPressed,
+                            ]}
+                            onPress={() => openAdminChat(user)}
+                          >
+                                                    <View style={styles.userTextBox}>
+                              <View style={styles.userNameRow}>
+                                {renderUserNameWithMute(user, styles.userName)}
+                                {renderMuteTag(user)}
+                                <UnreadBadge count={unreadCount} isSecret={isUserSecretMuted} />
+                              </View>
+
+                              <View style={styles.userStatusRow}>
+                                <Text
+                                  style={[
+                                    styles.userStatus,
+                                    user.online ? styles.userStatusOnline : null,
+                                  ]}
+                                >
+                                  {formatLastSeen(user, nowTick)}
+                                </Text>
+                              </View>
                             </View>
+                          </Pressable>
 
-                            <View style={styles.userStatusRow}>
-                              <Text
-                                style={[
-                                  styles.userStatus,
-                                  user.online ? styles.userStatusOnline : null,
-                                ]}
-                              >
-                                {formatLastSeen(user, nowTick)}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {renderMuteTag(user)}
-                        </Pressable>
+                        </View>
 
                         <Pressable
                           style={({ pressed }) => [
@@ -2068,7 +1673,7 @@ const AdminPin = ({ navigation }) => {
                           />
                         </Pressable>
 
-                        <Pressable
+                                               <Pressable
                           style={({ pressed }) => [
                             styles.fuckerButton,
                             isUserFuckerLocked && styles.fuckerButtonActive,
@@ -2082,42 +1687,105 @@ const AdminPin = ({ navigation }) => {
                             resizeMode="contain"
                           />
                         </Pressable>
+
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.kickButton,
+                            pressed && styles.xpButtonPressed,
+                          ]}
+                          onPress={() => kickUserById(user, { newPin: '0008' })}
+                        >
+                          <Image
+                            source={KICK_ICON_PLACEHOLDER}
+                            style={styles.kickButtonIcon}
+                            resizeMode="contain"
+                          />
+                        </Pressable>
                       </View>
+
                     );
                   })
                 )}
               </ScrollView>
             </View>
 
-            {lastActionText ? (
-              <View style={styles.actionBox}>
-                <Text style={styles.actionText}>{lastActionText}</Text>
-              </View>
-            ) : null}
+                     <Pressable
+              style={({ pressed }) => [
+                styles.actionBox,
+                pressed && styles.xpButtonPressed,
+              ]}
+              onPress={() => setActionHistoryExpanded((prev) => !prev)}
+            >
+              <Text style={styles.actionText}>
+                {actionHistory.length > 0
+                  ? actionHistory[0]
+                  : `Status: ${getAdminStatusLabel()}`}
+              </Text>
 
-            <View style={styles.bottomButtons}>
-              <Pressable
+              {actionHistoryExpanded && actionHistory.length > 1 ? (
+                <View style={styles.actionHistoryList}>
+                  {actionHistory.slice(1, 10).map((entry, index) => (
+                    <Text key={index} style={styles.actionHistoryItem}>
+                      {entry}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+            </Pressable>
+
+
+                      <View style={styles.bottomButtons}>
+                           <Pressable
                 style={({ pressed }) => [
-                  styles.bottomButton,
+                  styles.bigActionButton,
                   pressed && styles.xpButtonPressed,
                 ]}
                 onPress={openChangeModal}
               >
-                <Text style={styles.bottomButtonText}>HARD ROOM RESET</Text>
+                <Text style={styles.bigActionButtonTitle}>HARD ROOM RESET</Text>
               </Pressable>
 
               <Pressable
                 style={({ pressed }) => [
-                  styles.bottomButton,
+                  styles.bigActionButton,
+                  isAdminOnline
+                    ? styles.statusOptionOn
+                    : isAdminJob
+                      ? styles.statusOptionJob
+                      : styles.statusOptionOff,
                   pressed && styles.xpButtonPressed,
                 ]}
-                onPress={openSettings}
+                onPress={toggleAdminStatus}
               >
-                <Text style={styles.bottomButtonText}>Nastavení</Text>
+                <View style={styles.statusOptionTop}>
+                  {isAdminOnline ? (
+                    <View style={styles.adminStatusAnimWrap}>
+                      <FrameAnimation size={18} stepDuration={200} frames={ON_FRAME_SOURCES} loop />
+                    </View>
+                  ) : isAdminJob ? (
+                    <View style={[styles.statusDot, styles.statusDotJob]} />
+                  ) : (
+                    <View style={styles.adminStatusAnimWrap}>
+                      <FrameAnimation
+                        size={18}
+                        stepDuration={200}
+                        frames={OFF_FRAME_SOURCES}
+                        loop={false}
+                        pulseAtEnd
+                      />
+                    </View>
+                  )}
+                  <Text style={styles.bigActionButtonTitle}>
+                    Admin status: {getAdminStatusLabel()}
+                  </Text>
+                </View>
+
+
+
               </Pressable>
-
-
             </View>
+
+
           </View>
 
           <View style={styles.statusBar}>
@@ -2162,6 +1830,22 @@ const AdminPin = ({ navigation }) => {
                   </Text>
                 </Pressable>
 
+                               <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => {
+                    setBgColourModalVisible(true);
+                    setUserMenuVisible(false);
+                  }}
+                >
+                  <Text style={styles.settingsOptionTitle}>BG (pozadí)</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Změní barvu pozadí ikonky uživatele.
+                  </Text>
+                </Pressable>
+
                 <Pressable
                   style={({ pressed }) => [
                     styles.settingsOption,
@@ -2172,7 +1856,7 @@ const AdminPin = ({ navigation }) => {
                     setUserMenuVisible(false);
                   }}
                 >
-                  <Text style={styles.settingsOptionTitle}>Změna obrysu</Text>
+                  <Text style={styles.settingsOptionTitle}>Obrys</Text>
                   <Text style={styles.settingsOptionText}>
                     Změní obrys uživatele, který uvidí admin i uživatel.
                   </Text>
@@ -2188,6 +1872,7 @@ const AdminPin = ({ navigation }) => {
                     closeUserMenu();
                   }}
                 >
+
                   <Text style={styles.settingsOptionTitle}>Kick</Text>
                   <Text style={styles.settingsOptionText}>
                     Vyhodí uživatele z roomky a nastaví PIN 0008.
@@ -2217,16 +1902,17 @@ const AdminPin = ({ navigation }) => {
           </View>
         </Modal>
 
-        <Modal
+         <Modal
           visible={muteModalVisible}
           transparent
           animationType="fade"
           onRequestClose={() => setMuteModalVisible(false)}
         >
-          <View style={styles.modalOverlay}>
+          <View style={[styles.modalOverlay, styles.muteModalOverlay]}>
             <View style={styles.modalWindow}>
               <View style={styles.modalTitleBar}>
                 <Text style={styles.modalTitleText}>Umlčet uživatele</Text>
+
 
                 <Pressable
                   style={styles.modalCloseButton}
@@ -2321,7 +2007,7 @@ const AdminPin = ({ navigation }) => {
                   {actionUser ? actionUser.name : ''}
                 </Text>
 
-                <View style={styles.colourGrid}>
+                             <View style={styles.colourGrid}>
                   {USER_COLOURS.map((colour) => (
                     <Pressable
                       key={colour.value}
@@ -2347,7 +2033,58 @@ const AdminPin = ({ navigation }) => {
         </Modal>
 
         <Modal
+          visible={bgColourModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setBgColourModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Změna pozadí (BG)</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setBgColourModalVisible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Vyber barvu pozadí pro uživatele:</Text>
+                <Text style={styles.selectedUserText}>
+                  {actionUser ? actionUser.name : ''}
+                </Text>
+
+                <View style={styles.colourGrid}>
+                  {USER_COLOURS.map((colour) => (
+                    <Pressable
+                      key={colour.value}
+                      style={({ pressed }) => [
+                        styles.colourButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => changeUserBgColour(actionUser, colour.value)}
+                    >
+                      <View
+                        style={[
+                          styles.colourPreview,
+                          { backgroundColor: colour.value },
+                        ]}
+                      />
+                      <Text style={styles.colourButtonText}>{colour.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
           visible={renameModalVisible}
+
           transparent
           animationType="fade"
           onRequestClose={closeRenameModal}
@@ -2403,7 +2140,7 @@ const AdminPin = ({ navigation }) => {
           </View>
         </Modal>
 
-        <Modal
+                <Modal
           visible={adminEditModalVisible}
           transparent
           animationType="fade"
@@ -2412,7 +2149,7 @@ const AdminPin = ({ navigation }) => {
           <View style={styles.modalOverlay}>
             <View style={styles.modalWindow}>
               <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>Upravit profil admina</Text>
+                <Text style={styles.modalTitleText}>Nastavení admina</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeAdminProfileEditor}>
                   <Text style={styles.modalCloseButtonText}>×</Text>
@@ -2420,32 +2157,6 @@ const AdminPin = ({ navigation }) => {
               </View>
 
               <View style={styles.modalBody}>
-                <View style={styles.adminPreviewCard}>
-                  <View
-                    style={[
-                      styles.adminPreviewIconBox,
-                      {
-                        backgroundColor: adminProfile?.bgColour || '#ece9d8',
-                        borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
-                        borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
-                        borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
-                        borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
-                      },
-                    ]}
-                  >
-                    <Image
-                      source={getAdminIconSource(adminProfile?.icon || 'admin')}
-                      style={styles.adminPreviewIconImage}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  <View style={styles.settingsUserTextBox}>
-                    <Text style={styles.settingsUserName}>Aktuální ikonka: {normalizeAdminIcon(adminProfile?.icon || 'admin')}</Text>
-                    <Text style={styles.settingsUserSubText}>Obrys: {adminProfile?.silhouetteColour || '#0b3d91'}</Text>
-                  </View>
-                </View>
-
                 <Pressable
                   style={({ pressed }) => [
                     styles.settingsOption,
@@ -2453,9 +2164,9 @@ const AdminPin = ({ navigation }) => {
                   ]}
                   onPress={() => setAdminIconModalVisible(true)}
                 >
-                  <Text style={styles.settingsOptionTitle}>Vybrat ikonku</Text>
+                  <Text style={styles.settingsOptionTitle}>Ikonka</Text>
                   <Text style={styles.settingsOptionText}>
-                    Možnosti: admin, admin1, admin2, admin3, admin4, admin5.
+                    Vyber si ikonku, kterou uvidí uživatel v chatu.
                   </Text>
                 </Pressable>
 
@@ -2466,9 +2177,35 @@ const AdminPin = ({ navigation }) => {
                   ]}
                   onPress={() => setAdminOutlineModalVisible(true)}
                 >
-                  <Text style={styles.settingsOptionTitle}>Vybrat barvu obrysu</Text>
+                  <Text style={styles.settingsOptionTitle}>Obrys</Text>
                   <Text style={styles.settingsOptionText}>
-                    20 barev (o 10 více než uživatel).
+                    Barva obrysu tvé ikonky (20 barev na výběr).
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={openAdminPinModal}
+                >
+                  <Text style={styles.settingsOptionTitle}>Admin PIN</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Nastavíš PIN pro vstup do admin panelu.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={openAdminPwModal}
+                >
+                  <Text style={styles.settingsOptionTitle}>Admin PW</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Obnovovací heslo pro případ zapomenutého PINu.
                   </Text>
                 </Pressable>
 
@@ -2487,6 +2224,161 @@ const AdminPin = ({ navigation }) => {
             </View>
           </View>
         </Modal>
+
+        <Modal
+          visible={adminPinModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAdminPinModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Admin PIN</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setAdminPinModalVisible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Nastavit nový admin PIN:</Text>
+
+                <PinDots length={newAdminPin.length} />
+
+                <NumericKeypad
+                  value={newAdminPin}
+                  onChange={(value) => {
+                    setAdminPinError('');
+                    setNewAdminPin(value);
+                  }}
+                />
+
+                <View style={styles.warningBox}>
+                  <Text style={styles.warningText}>
+                    Aktuální admin PIN: {currentAdminPin}
+                  </Text>
+                </View>
+
+                {adminPinError ? (
+                  <Text style={styles.errorText}>{adminPinError}</Text>
+                ) : null}
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={saveNewAdminPin}
+                  >
+                    <Text style={styles.modalButtonText}>Uložit</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => setAdminPinModalVisible(false)}
+                  >
+                    <Text style={styles.modalButtonText}>Zpět</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={adminPwModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAdminPwModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Admin PW (obnovovací heslo)</Text>
+
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setAdminPwModalVisible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>
+                  Nastav heslo, kterým se dostaneš zpět do admin panelu, pokud zapomeneš PIN:
+                </Text>
+
+                <TextInput
+                  value={newAdminPw}
+                  onChangeText={(value) => {
+                    setAdminPwError('');
+                    setNewAdminPw(value);
+                  }}
+                  style={styles.modalInput}
+                  placeholder="Zadej obnovovací heslo"
+                  placeholderTextColor="#666666"
+                  autoFocus
+                  secureTextEntry
+                  maxLength={40}
+                />
+
+                     {currentAdminPw ? (
+                  <View style={styles.warningBox}>
+                    <Text style={styles.warningText}>
+                      Obnovovací heslo je již nastaveno.
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.warningBox}>
+                  <Text style={styles.warningText}>
+                    PASSWORD SI ZAPAMATUJ! Bude po tobě chtít ověření.
+                  </Text>
+                  <Text style={styles.warningText}>
+                    Když zapomeneš PIN, pomocí základního 8831 začneš znovu.
+                  </Text>
+                </View>
+
+                {adminPwError ? (
+                  <Text style={styles.errorText}>{adminPwError}</Text>
+                ) : null}
+
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={saveNewAdminPw}
+                  >
+                    <Text style={styles.modalButtonText}>Uložit</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => setAdminPwModalVisible(false)}
+                  >
+                    <Text style={styles.modalButtonText}>Zpět</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
 
         <Modal
           visible={adminIconModalVisible}
@@ -2579,7 +2471,7 @@ const AdminPin = ({ navigation }) => {
           </View>
         </Modal>
 
-        <Modal
+               <Modal
           visible={changeModalVisible}
           transparent
           animationType="fade"
@@ -2588,202 +2480,144 @@ const AdminPin = ({ navigation }) => {
           <View style={styles.modalOverlay}>
             <View style={[styles.modalWindow, styles.modalWindowDangerDouble]}>
               <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>HARD ROOM RESET</Text>
+                <Text style={styles.modalTitleText}>
+                  {hardResetStep === 'pin' && 'HARD ROOM RESET'}
+                  {hardResetStep === 'confirm1' && 'HARD ROOM RESET - potvrzení 1/2'}
+                  {hardResetStep === 'confirm2' && 'HARD ROOM RESET - finální potvrzení'}
+                </Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeChangeModal}>
                   <Text style={styles.modalCloseButtonText}>×</Text>
                 </Pressable>
               </View>
 
-              <View style={styles.modalBody}>
-                <Text style={styles.modalLabel}>Nový 4místný PIN pro uživatele:</Text>
+              {hardResetStep === 'pin' ? (
+                <View style={styles.modalBody}>
+                  <Text style={styles.modalLabel}>Nový 4místný PIN pro uživatele:</Text>
 
-                <TextInput
-                  value={newPin}
-                  onChangeText={(value) => {
-                    setChangeError('');
-                    setNewPin(value.replace(/[^0-9]/g, '').slice(0, 4));
-                  }}
-                  style={styles.modalInput}
-                  placeholder="Např. 4582"
-                  placeholderTextColor="#666666"
-                  autoFocus
-                  maxLength={4}
-                  keyboardType="number-pad"
-                  inputMode="numeric"
-                />
+                  <PinDots length={newPin.length} />
 
-                <View style={styles.warningBox}>
-                  <Text style={styles.warningText}>
-                    Po potvrzení se nastaví nový PIN pro všechny uživatele, všichni uživatelé budou kicknuti z roomky a smazáni!
-                  </Text>
-                  <Text style={styles.warningText}>Opravdu chceš toto udělat?</Text>
-                  <Text style={styles.warningText}>
-                    Informoval jsi všechny důležité o novém PINu?
-                  </Text>
+                  <NumericKeypad
+                    value={newPin}
+                    onChange={(value) => {
+                      setChangeError('');
+                      setNewPin(value);
+                    }}
+                  />
+
+                  <View style={styles.warningBox}>
+                    <Text style={styles.warningText}>
+                      Po potvrzení se nastaví nový PIN pro všechny uživatele, všichni uživatelé budou kicknuti z roomky a smazáni!
+                    </Text>
+                    <Text style={styles.warningText}>Opravdu chceš toto udělat?</Text>
+                    <Text style={styles.warningText}>
+                      Informoval jsi všechny důležité o novém PINu?
+                    </Text>
+                  </View>
+
+                  {changeError ? (
+                    <Text style={styles.errorText}>{changeError}</Text>
+                  ) : null}
+
+                  <View style={styles.modalButtons}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.modalButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={saveChangeAndKickUsers}
+                    >
+                      <Text style={styles.modalButtonText}>Potvrdit HARD ROOM RESET</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.modalButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={closeChangeModal}
+                    >
+                      <Text style={styles.modalButtonText}>Zrušit</Text>
+                    </Pressable>
+                  </View>
                 </View>
+              ) : null}
 
-                {changeError ? (
-                  <Text style={styles.errorText}>{changeError}</Text>
-                ) : null}
+              {hardResetStep === 'confirm1' ? (
+                <View style={styles.modalBody}>
+                  <View style={styles.warningBox}>
+                    <Text style={styles.warningText}>
+                      Po potvrzení se nastaví nový PIN: {pendingHardResetPin || '----'}
+                    </Text>
+                    <Text style={styles.warningText}>
+                      Všichni uživatelé budou kicknuti a roomka se resetuje.
+                    </Text>
+                  </View>
 
-                <View style={styles.modalButtons}>
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={saveChangeAndKickUsers}
-                  >
-                    <Text style={styles.modalButtonText}>Potvrdit HARD ROOM RESET</Text>
-                  </Pressable>
+                  <View style={styles.modalButtons}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.modalButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={confirmHardResetStep1}
+                    >
+                      <Text style={styles.modalButtonText}>Pokračovat</Text>
+                    </Pressable>
 
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={closeChangeModal}
-                  >
-                    <Text style={styles.modalButtonText}>Zrušit</Text>
-                  </Pressable>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.modalButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={goBackFromHardResetStep1}
+                    >
+                      <Text style={styles.modalButtonText}>Zpět</Text>
+                    </Pressable>
+                  </View>
                 </View>
-              </View>
+              ) : null}
+
+              {hardResetStep === 'confirm2' ? (
+                <View style={styles.modalBody}>
+                  <View style={styles.warningBox}>
+                    <Text style={styles.warningText}>Tento krok je nevratný.</Text>
+                    <Text style={styles.warningText}>Opravdu potvrdit HARD ROOM RESET?</Text>
+                  </View>
+
+                  <View style={styles.modalButtons}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.modalButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={confirmHardResetFinal}
+                    >
+                      <Text style={styles.modalButtonText}>ANO, potvrdit</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.modalButton,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => setHardResetStep('confirm1')}
+                    >
+                      <Text style={styles.modalButtonText}>NE</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
             </View>
           </View>
         </Modal>
 
-        <Modal
-          visible={hardResetConfirmStep1Visible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setHardResetConfirmStep1Visible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalWindow, styles.modalWindowDangerSingle]}>
-              <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>HARD ROOM RESET - potvrzení 1/2</Text>
 
-                <Pressable
-                  style={styles.modalCloseButton}
-                  onPress={() => setHardResetConfirmStep1Visible(false)}
-                >
-                  <Text style={styles.modalCloseButtonText}>×</Text>
-                </Pressable>
-              </View>
-
-              <View style={styles.modalBody}>
-                <View style={styles.warningBox}>
-                  <Text style={styles.warningText}>
-                    Po potvrzení se nastaví nový PIN: {pendingHardResetPin || '----'}
-                  </Text>
-                  <Text style={styles.warningText}>
-                    Všichni uživatelé budou kicknuti a roomka se resetuje.
-                  </Text>
-                </View>
-
-                <View style={styles.modalButtons}>
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={confirmHardResetStep1}
-                  >
-                    <Text style={styles.modalButtonText}>Pokračovat</Text>
-                  </Pressable>
-
-                                    <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={goBackFromHardResetStep1}
-                  >
-                    <Text style={styles.modalButtonText}>Zpět</Text>
-                  </Pressable>
-
-                </View>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        <Modal
-          visible={hardResetConfirmStep2Visible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setHardResetConfirmStep2Visible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalWindow, styles.modalWindowDangerSingle]}>
-              <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>HARD ROOM RESET - finální potvrzení</Text>
-
-                <Pressable
-                  style={styles.modalCloseButton}
-                  onPress={() => setHardResetConfirmStep2Visible(false)}
-                >
-                  <Text style={styles.modalCloseButtonText}>×</Text>
-                </Pressable>
-              </View>
-
-              <View style={styles.modalBody}>
-                <View style={styles.warningBox}>
-                  <Text style={styles.warningText}>Tento krok je nevratný.</Text>
-                  <Text style={styles.warningText}>Opravdu potvrdit HARD ROOM RESET?</Text>
-                </View>
-
-                <View style={styles.modalButtons}>
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={confirmHardResetFinal}
-                  >
-                    <Text style={styles.modalButtonText}>ANO, potvrdit</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={() => setHardResetConfirmStep2Visible(false)}
-                  >
-                    <Text style={styles.modalButtonText}>NE</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        <Modal
-          visible={settingsModalVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={closeSettings}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalWindow}>
-              <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>Nastavení</Text>
-
-                <Pressable style={styles.modalCloseButton} onPress={closeSettings}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
-                </Pressable>
-              </View>
-
-              {renderSettingsContent()}
-            </View>
-          </View>
-        </Modal>
-      </View>
+                 </View>
     </SafeAreaView>
   );
 };
+
 
 export default AdminPin;
 
@@ -2982,15 +2816,12 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  userRow: {
+   userRow: {
     width: '100%',
     minHeight: 66,
     backgroundColor: '#ece9d8',
     borderWidth: 2,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#777777',
-    borderBottomColor: '#777777',
+    borderColor: '#000000',
     marginBottom: 10,
     paddingVertical: 8,
     paddingHorizontal: 8,
@@ -2998,6 +2829,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+
 
   userInfo: {
     flex: 1,
@@ -3121,6 +2953,11 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginRight: 6,
   },
+
+  muteTagInline: {
+    marginLeft: 6,
+  },
+
 
   gearButton: {
     width: 38,
@@ -3305,6 +3142,12 @@ const styles = StyleSheet.create({
     padding: 18,
   },
 
+  muteModalOverlay: {
+    justifyContent: 'flex-start',
+    paddingTop: 160,
+  },
+
+
   modalWindow: {
     width: '100%',
     maxWidth: 410,
@@ -3458,17 +3301,49 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  statusOptionOn: {
-    borderColor: '#28c840',
+    statusOptionOn: {
+    borderTopColor: '#9af5a8',
+    borderLeftColor: '#9af5a8',
+    borderRightColor: '#1d7f2c',
+    borderBottomColor: '#1d7f2c',
   },
 
   statusOptionJob: {
-    borderColor: '#f5a623',
+    borderTopColor: '#ffd699',
+    borderLeftColor: '#ffd699',
+    borderRightColor: '#a85c00',
+    borderBottomColor: '#a85c00',
   },
 
   statusOptionOff: {
-    borderColor: '#ff3b30',
+    borderTopColor: '#ff8a8a',
+    borderLeftColor: '#ff8a8a',
+    borderRightColor: '#a80000',
+    borderBottomColor: '#a80000',
   },
+
+  bigActionButton: {
+    flex: 1,
+    minHeight: 54,
+    backgroundColor: '#ece9d8',
+    borderWidth: 3,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#6b6b6b',
+    borderBottomColor: '#6b6b6b',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 4,
+    paddingHorizontal: 8,
+  },
+
+  bigActionButtonTitle: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
 
   statusOptionTop: {
     flexDirection: 'row',
@@ -3549,18 +3424,13 @@ const styles = StyleSheet.create({
   },
 
   userRowMuted: {
-    borderTopColor: '#c46a00',
-    borderLeftColor: '#c46a00',
-    borderRightColor: '#8b4700',
-    borderBottomColor: '#8b4700',
+    borderColor: '#c46a00',
   },
 
   userRowSecretMuted: {
-    borderTopColor: '#9c4dcc',
-    borderLeftColor: '#9c4dcc',
-    borderRightColor: '#5d1f85',
-    borderBottomColor: '#5d1f85',
+    borderColor: '#9c4dcc',
   },
+
 
   settingsList: {
     maxHeight: 360,
@@ -3864,10 +3734,172 @@ adminStatusDotBig: {
   marginRight: 8,
 },
 
+adminStatusAnimWrap: {
+  marginRight: 8,
+},
+
+
 adminStatusBadgeText: {
   color: '#000000',
   fontSize: 15,
   fontWeight: '900',
+},
+
+keypadWrap: {
+  marginBottom: 12,
+},
+
+keypadRow: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  marginBottom: 8,
+},
+
+keypadKey: {
+  width: '31%',
+  height: 46,
+  backgroundColor: '#ece9d8',
+  borderWidth: 2,
+  borderTopColor: '#ffffff',
+  borderLeftColor: '#ffffff',
+  borderRightColor: '#777777',
+  borderBottomColor: '#777777',
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+
+keypadKeyGhost: {
+  width: '31%',
+  height: 46,
+},
+
+keypadKeyText: {
+  color: '#000000',
+  fontSize: 18,
+  fontWeight: '900',
+},
+
+pinDotsRow: {
+  flexDirection: 'row',
+  justifyContent: 'center',
+  marginBottom: 14,
+},
+
+pinDot: {
+  width: 16,
+  height: 16,
+  borderRadius: 8,
+  borderWidth: 2,
+  borderColor: '#003c9e',
+  marginHorizontal: 6,
+},
+
+pinDotFilled: {
+  backgroundColor: '#003c9e',
+},
+
+titleStatusAnimWrap: {
+  marginLeft: 8,
+},
+
+titleStatusDot: {
+  width: 14,
+  height: 14,
+  borderRadius: 7,
+  borderWidth: 1,
+  borderColor: '#ffffff',
+},
+
+topInfoAdminLabel: {
+  color: '#000000',
+  fontSize: 15,
+  fontWeight: '900',
+  marginLeft: 10,
+  marginRight: 10,
+},
+
+noUnreadText: {
+  color: '#666666',
+  fontSize: 12,
+  fontWeight: '700',
+  fontStyle: 'italic',
+},
+
+
+unreadAvatarsRow: {
+  flex: 1,
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+},
+
+unreadAvatarBox: {
+  width: 34,
+  height: 34,
+  borderRadius: 17,
+  borderWidth: 2,
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginLeft: 6,
+},
+
+unreadAvatarImage: {
+  width: 20,
+  height: 20,
+},
+
+unreadAvatarBadge: {
+  position: 'absolute',
+  top: -4,
+  right: -4,
+  minWidth: 16,
+  height: 16,
+  borderRadius: 8,
+  backgroundColor: '#ff3b30',
+  borderWidth: 1,
+  borderColor: '#a80000',
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingHorizontal: 3,
+},
+
+unreadAvatarBadgeText: {
+  color: '#ffffff',
+  fontSize: 9,
+  fontWeight: '900',
+},
+
+actionHistoryList: {
+  marginTop: 8,
+  borderTopWidth: 1,
+  borderTopColor: '#b9a85c',
+  paddingTop: 8,
+},
+
+actionHistoryItem: {
+  color: '#3a3200',
+  fontSize: 11,
+  fontWeight: '600',
+  textAlign: 'center',
+  marginBottom: 4,
+},
+
+kickButton: {
+  width: 38,
+  height: 34,
+  backgroundColor: '#ece9d8',
+  borderWidth: 2,
+  borderTopColor: '#ff8a8a',
+  borderLeftColor: '#ff8a8a',
+  borderRightColor: '#a80000',
+  borderBottomColor: '#a80000',
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+
+kickButtonIcon: {
+  width: 20,
+  height: 20,
 },
 
 });

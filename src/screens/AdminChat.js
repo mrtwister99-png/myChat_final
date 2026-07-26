@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -148,23 +147,6 @@ const AdminChat = ({ navigation, route }) => {
       }),
     ]).start();
   }, []);
-
-  const animateOutAndGo = (callback) => {
-    Animated.parallel([
-      Animated.timing(screenSlideAnim, {
-        toValue: screenWidth,
-        duration: 260,
-        useNativeDriver: true,
-      }),
-      Animated.timing(screenFadeAnim, {
-        toValue: 0.4,
-        duration: 260,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      callback();
-    });
-  };
 
   const scrollToBottom = (animated = true) => {
 
@@ -530,20 +512,22 @@ useEffect(() => {
     closeMuteModal();
   };
 
-    const goBack = () => {
-    animateOutAndGo(() => {
-      if (navigation.canGoBack()) {
-        navigation.goBack();
-        return;
-      }
+  const goBack = () => {
+    Keyboard.dismiss();
 
-      navigation.replace('AdminPin');
-    });
+    // FIX: žádná ruční exit animace - necháváme čistě na vestavěné navigační
+    // animaci (App.js má animation: 'slide_from_right'), která při goBack()
+    // automaticky přehraje zrcadlový přechod (na druhou stranu, logicky).
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    navigation.replace('AdminPin');
   };
 
 
   const handleMinimize = () => {
-    Keyboard.dismiss();
     goBack();
   };
 
@@ -800,17 +784,22 @@ useEffect(() => {
                         resizeMode="contain"
                       />
                     </View>
-                    <Pressable
+                                        <Pressable
                       onLongPress={() => onMessageLongPress(item.id)}
                       onPress={() => onMessagePress(item.id)}
                       delayLongPress={250}
                       style={({ pressed }) => [
                         styles.messageBubble,
                         isAdmin ? styles.userBubble : styles.adminBubble,
+                        !isSelected && {
+                          borderRightColor: iconOutlineColour,
+                          borderBottomColor: iconOutlineColour,
+                        },
                         isSelected && styles.selectedMessageBubble,
                         pressed && { opacity: 0.85 },
                       ]}
                     >
+
                       <View style={styles.messageHeaderRow}>
                         <Text style={styles.messageAuthor}>
                           {isAdmin ? 'Admin' : userName}
@@ -877,7 +866,7 @@ useEffect(() => {
                 <Text style={styles.modalTitleText}>Umlčet uživatele</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeMuteModal}>
-                  <Text style={styles.modalCloseButtonText}>Ă—</Text>
+                  <Text style={styles.modalCloseButtonText}>×</Text>
                 </Pressable>
               </View>
 
@@ -1251,9 +1240,9 @@ const styles = StyleSheet.create({
   },
 
   miniIconWrapper: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#ece9d8',
     borderWidth: 1,
     borderColor: '#aaa793',
@@ -1265,8 +1254,8 @@ const styles = StyleSheet.create({
   },
 
   miniIconImage: {
-    width: 20,
-    height: 20,
+    width: 30,
+    height: 30,
   },
 
   messageRowUser: {
@@ -1616,7 +1605,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-
-
-
-

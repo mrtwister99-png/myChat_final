@@ -91,6 +91,10 @@ const App = () => {
       if (serverState?.secretMutedUsers && typeof serverState.secretMutedUsers === 'object') {
         secretMutedUsersById = serverState.secretMutedUsers;
       }
+
+      if (serverState?.adminStatus) {
+        globalThis.CUSIIK_ADMIN_STATUS = serverState.adminStatus;
+      }
     };
 
     const handleChatMessages = ({ userId, messages }) => {
@@ -103,31 +107,50 @@ const App = () => {
         return;
       }
 
-      const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
-      if (activeAdminChatUserId && activeAdminChatUserId === cleanUserId) {
-        return;
-      }
-
-      if (secretMutedUsersById[cleanUserId]) {
-        return;
-      }
-
       const safeMessages = Array.isArray(messages) ? messages : [];
       const nextUserCount = safeMessages.filter((item) => item?.sender === 'user').length;
       const hasPrevious = Object.prototype.hasOwnProperty.call(lastUserMessageCounts, cleanUserId);
-      const previousUserCount = hasPrevious ? lastUserMessageCounts[cleanUserId] : 0;
+      const previousUserCount = hasPrevious ? lastUserMessageCounts[cleanUserId] : nextUserCount;
 
+      // FIX: počet se aktualizuje VŽDY, i když admin právě chat sleduje nebo je initial load.
+      // Díky tomu se po odchodu z chatu / po přihlášení nevyhodnotí staré zprávy jako nové.
       lastUserMessageCounts[cleanUserId] = nextUserCount;
 
-      if (nextUserCount > previousUserCount) {
-        const senderName = userNamesById[cleanUserId] || `Uživatel ${cleanUserId}`;
+      const isInitialLoadDone = Boolean(globalThis.CUSIIK_INITIAL_LOAD_DONE);
 
-        showLocalMessageNotification({
-          title: `Nová zpráva od ${senderName}`,
-          body: 'Otevři admin chat.',
-          cooldownKey: `admin-user-${cleanUserId}`,
-        });
+      // FIX: dokud neproběhl initial load, nikdy neposílat notifikaci (jen nastavit baseline).
+      if (!isInitialLoadDone) {
+        return;
       }
+
+      // FIX: pokud jsme tuhle konverzaci ještě nikdy neviděli, jen si zapamatujeme
+      // aktuální stav jako výchozí bod a notifikaci nespouštíme (řeší "notifikace hned po loginu").
+      if (!hasPrevious) {
+        return;
+      }
+
+      if (nextUserCount <= previousUserCount) {
+        return;
+      }
+
+      const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
+      const isAdminViewingThisChat = activeAdminChatUserId === cleanUserId;
+      const isSecretMuted = Boolean(secretMutedUsersById[cleanUserId]);
+
+      if (isAdminViewingThisChat || isSecretMuted) {
+        return;
+      }
+
+      const senderName = userNamesById[cleanUserId] || `Uživatel ${cleanUserId}`;
+      const adminStatus = globalThis.CUSIIK_ADMIN_STATUS || 'off';
+      const isSilent = adminStatus === 'off' || adminStatus === 'job';
+
+      showLocalMessageNotification({
+        title: `Nová zpráva od ${senderName}`,
+        body: 'Otevři admin chat.',
+        cooldownKey: `admin-user-${cleanUserId}`,
+        silent: isSilent,
+      });
     };
 
     socket.on('server:state', handleServerState);
