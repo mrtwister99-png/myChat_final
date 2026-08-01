@@ -28,7 +28,7 @@ import { playInAppMessageSound } from '../utils/inAppSound';
 const EYE_ICON = require('../assets/icons/oko.png');
 const EYE_SECRET_ICON = require('../assets/icons/okopotaji.png');
 const FUCKER_ICON = require('../assets/icons/fuckerr.png');
-const KICK_ICON = require('../assets/icons/kick.png');
+const KICK_ICON = require('../assets/icons/stop.png');
 const BACK_ICON = require('../assets/icons/backsipka.png');
 const HELP_ICON = require('../assets/icons/otaznik.png');
 const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
@@ -898,10 +898,10 @@ const AdminPin = ({ navigation }) => {
       }
 
       const chats = getGlobalChats();
-      const safeMessages = messages || [];
+            const safeMessages = messages || [];
       const userMessagesCount = safeMessages.filter((item) => {
         const s = String(item?.sender || '').toLowerCase();
-        return s === 'user';
+        return s === 'user' || s === 'ticket';
       }).length;
       const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
       const isSecretMuted = Boolean(secretMutedUsers[cleanUserId] || secretMutedUsers[String(cleanUserId)]);
@@ -959,38 +959,48 @@ const AdminPin = ({ navigation }) => {
 
     };
 
-    const handleNewTicket = ({ userId, userName: ticketUserName, text, createdAt }) => {
+             const handleNewTicket = ({ userId, userName: ticketUserName, text, createdAt }) => {
       const cleanUserId = String(userId || '').trim();
-
-      if (!cleanUserId || !text) {
-        return;
-      }
+      if (!cleanUserId ||!text) return;
 
       const chats = getGlobalChats();
       const existingMessages = chats[cleanUserId] || [];
+      const ticketCreatedAt = createdAt || Date.now();
+      const alreadyExists = existingMessages.some(m => String(m.createdAt) === String(ticketCreatedAt) && String(m.text) === String(text));
 
-      const ticketMessage = {
-        id: `ticket-${createdAt || Date.now()}`,
-        sender: 'ticket',
-        text,
-        authorName: ticketUserName || '',
-        createdAt: createdAt || Date.now(),
-      };
-
-      chats[cleanUserId] = [...existingMessages, ticketMessage];
+      if (!alreadyExists) {
+        const ticketMessage = {
+          id: `ticket-${ticketCreatedAt}`,
+          sender: 'ticket',
+          text,
+          authorName: ticketUserName || '',
+          createdAt: ticketCreatedAt,
+        };
+        chats[cleanUserId] = [...existingMessages, ticketMessage];
+      }
 
       const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
       const isAdminViewingThisChat = activeAdminChatUserId === cleanUserId;
       const isSecretMuted = Boolean(secretMutedUsers[cleanUserId] || secretMutedUsers[String(cleanUserId)]);
 
-      if (!isAdminViewingThisChat && !isSecretMuted) {
+      if (!isSecretMuted &&!isAdminViewingThisChat) {
         playInAppMessageSound();
+        setReadCounts(prev => ({...prev })); // TOTO UDELÁ +1 - neoznačí jako přečtené
+        setNowTick(Date.now());
+        logAction(`Nový tiket od ${ticketUserName || ''} - +1`);
+        return;
       }
 
-      logAction(`Nový tiket od uživatele${ticketUserName ? ' ' + ticketUserName : ''}.`);
-
+      const nextReadCounts = {
+      ...getGlobalReadCounts(),
+        [cleanUserId]: getUserMessageCount(cleanUserId),
+      };
+      persistReadCounts(nextReadCounts);
+      setReadCounts(nextReadCounts);
+      logAction(`Nový tiket od uživatele${ticketUserName? ' ' + ticketUserName : ''}.`);
       setNowTick(Date.now());
     };
+    
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
@@ -1316,30 +1326,26 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
   };
 
 
-   const kickUserById = (user, options = {}) => {
-
+     const kickUserById = (user, options = {}) => {
     if (!user) {
       return;
     }
 
-    const targetPin = String(options.newPin || '').replace(/[^0-9]/g, '').slice(0, 4);
+    const targetPin = String(options.newPin || '').replace(/[^0-9]/g, '').slice(0, 4) || '0008';
 
     if (socket.connected) {
       socket.emit('admin:kickUser', {
         userId: user.id,
-        newPin: targetPin || undefined,
+        newPin: targetPin,
+        specialPin: targetPin,
+        preserveIdentity: true,
       });
     }
 
-    if (targetPin.length === 4) {
-      logAction(
-        `Uživatel ${user.name} byl kicknut. Jeho speciální PIN je ${targetPin}.`
-      );
-      return;
-    }
+    // hned ho zmiz z listu, necekas na server
+    setUsers((currentUsers) => currentUsers.filter((u) => u.id !== user.id));
 
-    logAction(`Uživatel ${user.name} byl kicknut z roomky.`);
-
+    logAction(`Uživatel ${user.name} byl kicknut. Jeho speciální PIN je ${targetPin}.`);
   };
 
   const saveNewAdminPin = () => {

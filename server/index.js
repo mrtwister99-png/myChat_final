@@ -1066,6 +1066,53 @@ io.on('connection', (socket) => {
     emitState();
   });
 
+  socket.on('ticket:send', ({ userId, text }) => {
+    const cleanUserId = String(userId || '').trim();
+    const trimmedText = String(text || '').trim();
+    if (!cleanUserId || !trimmedText) return;
+
+    const user = getUserById(cleanUserId);
+    const userName = user?.name || `Uzivatel ${cleanUserId}`;
+
+    if (!state.chats[cleanUserId]) state.chats[cleanUserId] = [];
+
+    const ticketMessage = {
+      id: `ticket-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      sender: 'ticket',
+      text: trimmedText,
+      authorName: userName,
+      createdAt: Date.now(),
+    };
+
+    state.chats[cleanUserId].push(ticketMessage);
+
+    // FIX: posli vsem - io.emit zajisti ze to dojde i kdyz admin neni zrovna v 'admins' roomce
+    io.emit('chat:messages', {
+      userId: cleanUserId,
+      messages: state.chats[cleanUserId],
+    });
+
+    io.to('admins').emit('ticket:new', {
+      userId: cleanUserId,
+      userName,
+      text: trimmedText,
+      createdAt: ticketMessage.createdAt,
+    });
+
+    // push notifikace pro admina
+    if (!state.secretMutedUsers[cleanUserId]) {
+      const adminTokens = Array.from(state.adminPushTokens);
+      if (adminTokens.length > 0 && shouldSendPushWithCooldown(`push-ticket-${cleanUserId}`)) {
+        sendExpoPushAsync({
+          to: adminTokens,
+          title: `Nový tiket od ${userName}`,
+          body: trimmedText.slice(0, 120),
+          data: { userId: cleanUserId, action: 'openChat' },
+        }).catch(()=>{});
+      }
+    }
+  });
+
   socket.on('admin:setUserColour', ({ userId, colour }) => {
     if (socket.data.role !== 'admin') {
       return;

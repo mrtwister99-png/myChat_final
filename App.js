@@ -108,7 +108,10 @@ const App = () => {
       }
 
       const safeMessages = Array.isArray(messages) ? messages : [];
-      const nextUserCount = safeMessages.filter((item) => item?.sender === 'user').length;
+ const nextUserCount = safeMessages.filter((item) => {
+  const s = String(item?.sender || '').toLowerCase();
+  return s === 'user' || s === 'ticket';
+}).length;
       const hasPrevious = Object.prototype.hasOwnProperty.call(lastUserMessageCounts, cleanUserId);
       const previousUserCount = hasPrevious ? lastUserMessageCounts[cleanUserId] : nextUserCount;
 
