@@ -8,6 +8,10 @@ const DEFAULT_USER_PIN = '1111';
 const DEFAULT_ADMIN_PIN = '8831';
 const USER_SCREEN = 'UzivatelPin';
 const ADMIN_SCREEN = 'AdminPin';
+const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
+const MAXIMIZE_ICON = require('../assets/icons/maximalize.png');
+const EXIT_ICON = require('../assets/icons/exit.png');
+const LOGO_ICON = require('../assets/icons/logoxp.png');
 
 const LOCAL_RANDOM_USER_NAMES = [
   'Jiří', 'Jan', 'Petr', 'Josef', 'Pavel', 'Martin', 'Tomáš', 'Jaroslav', 'Miroslav', 'Zdeněk',
@@ -406,12 +410,7 @@ const PinEntry = ({ navigation }) => {
 
                 <View style={styles.titleBar}>
                   <View style={styles.titleLeft}>
-                    <View style={styles.windowsIcon}>
-                      <View style={[styles.winSquare, { backgroundColor: '#f35325' }]} />
-                      <View style={[styles.winSquare, { backgroundColor: '#81bc06' }]} />
-                      <View style={[styles.winSquare, { backgroundColor: '#05a6f0' }]} />
-                      <View style={[styles.winSquare, { backgroundColor: '#ffba08' }]} />
-                    </View>
+                    <Image source={LOGO_ICON} style={styles.titleLogoImage} resizeMode="contain" />
 
                     <Text style={styles.titleText}>Blbej server - Přihlášení</Text>
                   </View>
@@ -419,19 +418,19 @@ const PinEntry = ({ navigation }) => {
                   <View style={styles.windowButtons}>
                     <View style={styles.windowButton}>
                       <Pressable style={styles.closePressable} onPress={handleMinimize}>
-                        <Text style={styles.windowButtonText}>_</Text>
+                        <Image source={MINIMIZE_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                       </Pressable>
                     </View>
 
                     <View style={styles.windowButton}>
                       <Pressable style={styles.closePressable} onPress={startEasterEgg}>
-                        <Text style={styles.windowButtonText}>□</Text>
+                        <Image source={MAXIMIZE_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                       </Pressable>
                     </View>
 
                     <View style={[styles.windowButton, styles.closeButton]}>
                       <Pressable style={styles.closePressable} onPress={handleCloseApp}>
-                        <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
+                        <Image source={EXIT_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                       </Pressable>
                     </View>
                   </View>
@@ -575,36 +574,23 @@ const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1 },
   desktop: { flex: 1, backgroundColor: '#1f7a7a', paddingTop: 24, paddingHorizontal: 16, paddingBottom: 22, alignItems: 'center', justifyContent: 'flex-start' },
   hiddenInput: { position: 'absolute', width: 1, height: 1, opacity: 0, color: 'transparent' },
-  window: { width: '94%', maxWidth: 430, backgroundColor: '#ece9d8', borderWidth: 3, borderTopColor: '#ffffff', borderLeftColor: '#ffffff', borderRightColor: '#003c9e', borderBottomColor: '#003c9e', shadowColor: '#000000', shadowOffset: { width: 6, height: 6 }, shadowOpacity: 0.3, shadowRadius: 0, elevation: 10 },
-  titleBar: { height: 36, backgroundColor: '#0058d8', borderBottomWidth: 2, borderBottomColor: '#003f9e', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 8, paddingRight: 5 },
+  window: { width: '94%', maxWidth: 430, backgroundColor: '#ece9d8', borderWidth: 3, borderColor: '#0754d8', shadowColor: '#000000', shadowOffset: { width: 6, height: 6 }, shadowOpacity: 0.3, shadowRadius: 0, elevation: 10 },
+  titleBar: { height: 36, backgroundColor: '#0a5be7', borderBottomWidth: 2, borderBottomColor: '#003f9e', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 8, paddingRight: 5 },
   titleLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  windowsIcon: { width: 18, height: 18, flexDirection: 'row', flexWrap: 'wrap', marginRight: 7 },
-  winSquare: { width: 8, height: 8, margin: 0.5 },
+  titleLogoImage: { width: 20, height: 20, marginRight: 7 },
   titleText: { color: '#ffffff', fontSize: 14, fontWeight: '800', flexShrink: 1, textShadowColor: '#00245c', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 1 },
   windowButtons: { flexDirection: 'row', marginLeft: 8 },
   windowButton: {
-    width: 30,
-    height: 28,
+    width: 22,
+    height: 22,
     marginLeft: 4,
-    backgroundColor: '#ece9d8',
-    borderWidth: 2,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#7a7a7a',
-    borderBottomColor: '#7a7a7a',
     alignItems: 'center',
     justifyContent: 'center',
-    // realistický XP stín
-    shadowColor: '#000',
-    shadowOffset: { width: 1, height: 1 },
-    shadowOpacity: 0.25,
-    shadowRadius: 0,
-    elevation: 2,
   },
 
   windowButtonIcon: {
-    width: 20,
-    height: 20,
+    width: 25,
+    height: 25,
   },
 
   closePressable: {
@@ -613,11 +599,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeButton: { backgroundColor: '#e84631',
-    borderTopColor: '#ff9a8a',
-    borderLeftColor: '#ff9a8a',
-    borderRightColor: '#8f1d10',
-    borderBottomColor: '#8f1d10', },
+  closeButton: { marginLeft: 4 },
   windowButtonText: { color: '#003c8f', fontSize: 13, fontWeight: '900', lineHeight: 15 },
   closeButtonText: { color: '#ffffff', fontSize: 18, lineHeight: 19 },
   closePressable: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },

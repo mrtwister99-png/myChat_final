@@ -33,12 +33,14 @@ const BACK_ICON = require('../assets/icons/backsipka.png');
 const HELP_ICON = require('../assets/icons/otaznik.png');
 const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
 const EXIT_ICON = require('../assets/icons/exit.png');
+const LOGO_ICON = require('../assets/icons/logoxp.png');
 
 
 
 const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
 const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '8831';
 const DEFAULT_ADMIN_STATUS = globalThis.CUSIIK_ADMIN_STATUS || 'off';
+const ANNOUNCEMENT_PREFIX = '[[ANNOUNCEMENT]]';
 
 const MUTE_OPTIONS = [
   { label: '5 min', milliseconds: 5 * 60 * 1000 },
@@ -640,6 +642,26 @@ const UnreadBadge = ({ count, isSecret }) => {
     </Animated.View>
   );
 };
+
+const UnreadAvatarPulse = ({ count, children }) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    scaleAnim.setValue(0.65);
+    Animated.sequence([
+      Animated.timing(scaleAnim, { toValue: 1.3, duration: 160, useNativeDriver: true }),
+      Animated.timing(scaleAnim, { toValue: 0.92, duration: 100, useNativeDriver: true }),
+      Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
+    ]).start();
+  }, [count]);
+
+  return (
+    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+      {children}
+    </Animated.View>
+  );
+};
+
 const NumericKeypad = ({ value, onChange, maxLength = 4 }) => {
   const pressDigit = (digit) => {
     if (value.length >= maxLength) return;
@@ -719,6 +741,17 @@ const AdminPin = ({ navigation }) => {
   const [newPin, setNewPin] = useState('');
   const [changeError, setChangeError] = useState('');
   const [pendingHardResetPin, setPendingHardResetPin] = useState('');
+  const [broadcastModalVisible, setBroadcastModalVisible] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [broadcastError, setBroadcastError] = useState('');
+  const [announcementModalVisible, setAnnouncementModalVisible] = useState(false);
+  const [announcementMessage, setAnnouncementMessage] = useState('');
+  const [announcementTarget, setAnnouncementTarget] = useState('all');
+  const [announcementUserIds, setAnnouncementUserIds] = useState([]);
+  const [announcementError, setAnnouncementError] = useState('');
+  const [kickPinModalVisible, setKickPinModalVisible] = useState(false);
+  const [kickPin, setKickPin] = useState('0008');
+  const [kickPinError, setKickPinError] = useState('');
 
 
     const [newAdminPin, setNewAdminPin] = useState('');
@@ -904,7 +937,8 @@ const AdminPin = ({ navigation }) => {
         return s === 'user' || s === 'ticket';
       }).length;
       const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
-      const isSecretMuted = Boolean(secretMutedUsers[cleanUserId] || secretMutedUsers[String(cleanUserId)]);
+      const secretMutedMap = getGlobalSecretMutedUsers();
+      const isSecretMuted = Boolean(secretMutedMap[cleanUserId]);
 
       chats[cleanUserId] = safeMessages;
       
@@ -916,7 +950,7 @@ const AdminPin = ({ navigation }) => {
       lastKnownMessageCountsRef.current[cleanUserId] = userMessagesCount;
 
   
-      if (isNewMessageArrived && isInitialLoadDone && !isAdminViewingThisChat && !isSecretMuted) {
+      if (isNewMessageArrived && isInitialLoadDone && !isSecretMuted) {
         playInAppMessageSound();
       }
 
@@ -981,23 +1015,17 @@ const AdminPin = ({ navigation }) => {
 
       const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
       const isAdminViewingThisChat = activeAdminChatUserId === cleanUserId;
-      const isSecretMuted = Boolean(secretMutedUsers[cleanUserId] || secretMutedUsers[String(cleanUserId)]);
+      const isSecretMuted = Boolean(getGlobalSecretMutedUsers()[cleanUserId]);
 
-      if (!isSecretMuted &&!isAdminViewingThisChat) {
-        playInAppMessageSound();
-        setReadCounts(prev => ({...prev })); // TOTO UDELÁ +1 - neoznačí jako přečtené
-        setNowTick(Date.now());
-        logAction(`Nový tiket od ${ticketUserName || ''} - +1`);
-        return;
+      if (isSecretMuted) {
+        const nextReadCounts = {
+          ...getGlobalReadCounts(),
+          [cleanUserId]: getUserMessageCount(cleanUserId),
+        };
+        persistReadCounts(nextReadCounts);
+        setReadCounts(nextReadCounts);
       }
 
-      const nextReadCounts = {
-      ...getGlobalReadCounts(),
-        [cleanUserId]: getUserMessageCount(cleanUserId),
-      };
-      persistReadCounts(nextReadCounts);
-      setReadCounts(nextReadCounts);
-      logAction(`Nový tiket od uživatele${ticketUserName? ' ' + ticketUserName : ''}.`);
       setNowTick(Date.now());
     };
     
@@ -1102,6 +1130,15 @@ const AdminPin = ({ navigation }) => {
     navigation.replace('PinEntry');
   };
 
+  useEffect(() => {
+    const backSubscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      goToPinEntry();
+      return true;
+    });
+
+    return () => backSubscription.remove();
+  }, [navigation]);
+
   const closeApp = () => {
     try {
       if (Platform.OS === 'android') {
@@ -1204,6 +1241,131 @@ const AdminPin = ({ navigation }) => {
     setChangeError('');
     setPendingHardResetPin('');
     setHardResetStep('pin');
+  };
+
+  const openBroadcastModal = () => {
+    setBroadcastMessage('');
+    setBroadcastError('');
+    setBroadcastModalVisible(true);
+  };
+
+  const closeBroadcastModal = () => {
+    setBroadcastModalVisible(false);
+    setBroadcastMessage('');
+    setBroadcastError('');
+  };
+
+  const sendBroadcastMessage = () => {
+    const trimmedMessage = broadcastMessage.trim();
+
+    if (!trimmedMessage) {
+      setBroadcastError('Napiš zprávu, kterou chceš odeslat.');
+      return;
+    }
+
+    if (!socket.connected) {
+      setBroadcastError('Server je offline. Zprávu nyní nelze odeslat.');
+      return;
+    }
+
+    users.forEach((user) => {
+      socket.emit('chat:send', {
+        userId: user.id,
+        sender: 'admin',
+        text: trimmedMessage,
+      });
+    });
+
+    logAction(`Zpráva všem byla odeslána ${users.length} uživatelům.`);
+    closeBroadcastModal();
+  };
+
+  const openAnnouncementModal = () => {
+    setAnnouncementMessage('');
+    setAnnouncementTarget('all');
+    setAnnouncementUserIds([]);
+    setAnnouncementError('');
+    setAnnouncementModalVisible(true);
+  };
+
+  const closeAnnouncementModal = () => {
+    setAnnouncementModalVisible(false);
+    setAnnouncementMessage('');
+    setAnnouncementUserIds([]);
+    setAnnouncementError('');
+  };
+
+  const toggleAnnouncementUser = (userId) => {
+    const cleanUserId = String(userId);
+    setAnnouncementError('');
+    setAnnouncementUserIds((currentIds) =>
+      currentIds.includes(cleanUserId)
+        ? currentIds.filter((currentId) => currentId !== cleanUserId)
+        : [...currentIds, cleanUserId]
+    );
+  };
+
+  const sendAnnouncement = () => {
+    const trimmedMessage = announcementMessage.trim();
+    const targetUsers = announcementTarget === 'all'
+      ? users
+      : users.filter((user) => announcementUserIds.includes(String(user.id)));
+
+    if (!trimmedMessage) {
+      setAnnouncementError('Napiš text oznámení.');
+      return;
+    }
+
+    if (targetUsers.length === 0) {
+      setAnnouncementError('Vyber alespoň jednoho uživatele.');
+      return;
+    }
+
+    if (!socket.connected) {
+      setAnnouncementError('Server je offline. Oznámení nyní nelze odeslat.');
+      return;
+    }
+
+    targetUsers.forEach((user) => {
+      socket.emit('chat:send', {
+        userId: user.id,
+        sender: 'system',
+        text: `${ANNOUNCEMENT_PREFIX}${trimmedMessage}`,
+      });
+    });
+
+    logAction(`Oznámení bylo odesláno ${targetUsers.length} uživatelům.`);
+    closeAnnouncementModal();
+  };
+
+  const openKickPinModal = (user) => {
+    if (!user) {
+      return;
+    }
+
+    setActionUser(user);
+    setKickPin('0008');
+    setKickPinError('');
+    setUserMenuVisible(false);
+    setKickPinModalVisible(true);
+  };
+
+  const closeKickPinModal = () => {
+    setKickPinModalVisible(false);
+    setKickPin('0008');
+    setKickPinError('');
+  };
+
+  const confirmKickUser = () => {
+    const cleanedPin = kickPin.replace(/[^0-9]/g, '').slice(0, 4);
+
+    if (cleanedPin.length !== 4) {
+      setKickPinError('PIN musí mít přesně 4 číslice.');
+      return;
+    }
+
+    kickUserById(actionUser, { newPin: cleanedPin });
+    closeKickPinModal();
   };
 
   const saveChangeAndKickUsers = () => {
@@ -1519,6 +1681,16 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     }
 
     setSecretMutedUsers({ ...secretMutedMap });
+
+    if (nextValue) {
+      const nextReadCounts = {
+        ...getGlobalReadCounts(),
+        [uid]: getUserMessageCount(uid),
+      };
+      persistReadCounts(nextReadCounts);
+      setReadCounts(nextReadCounts);
+    }
+
     setNowTick(Date.now());
     logAction(
       nextValue
@@ -1631,7 +1803,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
 
 
    const unreadUsersPreview = users
-    .filter((user) => getUnreadCount(user.id) > 0)
+    .filter((user) => !secretMutedUsers[String(user.id)] && getUnreadCount(user.id) > 0)
     .slice(0, 5);
 
   return (
@@ -1645,12 +1817,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
         <View style={styles.window}>
           <View style={styles.titleBar}>
             <View style={styles.titleLeft}>
-              <View style={styles.windowsIcon}>
-                <View style={[styles.winSquare, { backgroundColor: '#f35325' }]} />
-                <View style={[styles.winSquare, { backgroundColor: '#81bc06' }]} />
-                <View style={[styles.winSquare, { backgroundColor: '#05a6f0' }]} />
-                <View style={[styles.winSquare, { backgroundColor: '#ffba08' }]} />
-              </View>
+              <Image source={LOGO_ICON} style={styles.titleLogoImage} resizeMode="contain" />
 
                         <Text style={styles.titleText}>{`room${currentUserPin}`}</Text>
 
@@ -1727,10 +1894,12 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   <Text style={styles.noUnreadText}>- žádné nové zprávy -</Text>
                 ) : null}
 
-                {unreadUsersPreview.map((user) => (
+                {unreadUsersPreview.map((user) => {
+                  const unreadCount = getUnreadCount(user.id);
 
+                  return (
+                  <UnreadAvatarPulse key={user.id} count={unreadCount}>
                   <Pressable
-                    key={user.id}
                     style={({ pressed }) => [
                       styles.unreadAvatarBox,
                       {
@@ -1748,11 +1917,13 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                     />
                     <View style={styles.unreadAvatarBadge}>
                       <Text style={styles.unreadAvatarBadgeText}>
-                        {getUnreadCount(user.id)}
+                        {unreadCount}
                       </Text>
                     </View>
                   </Pressable>
-                ))}
+                  </UnreadAvatarPulse>
+                  );
+                })}
               </View>
             </View>
 
@@ -1805,7 +1976,11 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                             : isUserMuted
                               ? styles.userRowMuted
                               : null,
-                          isUserSecretMuted && styles.userRowSecretMutedOpacity,
+                          isUserSecretMuted
+                            ? styles.userRowSecretMutedOpacity
+                            : !user.online
+                              ? styles.userRowOfflineOpacity
+                              : null,
                         ]}
                       >
 
@@ -1898,7 +2073,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                             styles.kickButton,
                             pressed && styles.xpButtonPressed,
                           ]}
-                          onPress={() => kickUserById(user, { newPin: '0008' })}
+                          onPress={() => openKickPinModal(user)}
                         >
                           <Image
                             source={KICK_ICON}
@@ -1939,6 +2114,28 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
               ) : null}
             </Pressable>
 
+
+            <View style={styles.broadcastButtonsRow}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.broadcastButton,
+                  pressed && styles.xpButtonPressed,
+                ]}
+                onPress={openBroadcastModal}
+              >
+                <Text style={styles.bigActionButtonTitle}>Zpráva všem</Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.broadcastButton,
+                  pressed && styles.xpButtonPressed,
+                ]}
+                onPress={openAnnouncementModal}
+              >
+                <Text style={styles.bigActionButtonTitle}>Oznámení</Text>
+              </Pressable>
+            </View>
 
                       <View style={styles.bottomButtons}>
                            <Pressable
@@ -1994,6 +2191,227 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
             <Text style={styles.statusText}>{connectionText}</Text>
           </View>
         </View>
+
+        <Modal
+          visible={broadcastModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeBroadcastModal}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalOverlay}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Zpráva všem uživatelům</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closeBroadcastModal}>
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Zpráva pro všechny uživatele v roomce:</Text>
+
+                <TextInput
+                  value={broadcastMessage}
+                  onChangeText={(value) => {
+                    setBroadcastError('');
+                    setBroadcastMessage(value);
+                  }}
+                  style={[styles.modalInput, styles.broadcastInput]}
+                  placeholder="Napiš zprávu všem..."
+                  placeholderTextColor="#666666"
+                  autoFocus
+                  multiline
+                  maxLength={500}
+                  textAlignVertical="top"
+                />
+
+                {broadcastError ? (
+                  <Text style={styles.errorText}>{broadcastError}</Text>
+                ) : null}
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={sendBroadcastMessage}
+                  >
+                    <Text style={styles.modalButtonText}>Odeslat všem</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={closeBroadcastModal}
+                  >
+                    <Text style={styles.modalButtonText}>Zrušit</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        <Modal
+          visible={announcementModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeAnnouncementModal}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalOverlay}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Oznámení nahoře v okně</Text>
+                <Pressable style={styles.modalCloseButton} onPress={closeAnnouncementModal}>
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Komu se má oznámení zobrazit:</Text>
+
+                <View style={styles.announcementTargetRow}>
+                  {[
+                    { key: 'all', label: 'Všem v roomce' },
+                    { key: 'selected', label: 'Jen vybraným' },
+                  ].map((option) => (
+                    <Pressable
+                      key={option.key}
+                      style={({ pressed }) => [
+                        styles.announcementTargetButton,
+                        announcementTarget === option.key && styles.announcementTargetButtonActive,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => {
+                        setAnnouncementTarget(option.key);
+                        setAnnouncementError('');
+                      }}
+                    >
+                      <Text style={styles.modalButtonText}>{option.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                {announcementTarget === 'selected' ? (
+                  <ScrollView style={styles.announcementUsersList} nestedScrollEnabled>
+                    {users.map((user) => {
+                      const checked = announcementUserIds.includes(String(user.id));
+                      return (
+                        <Pressable
+                          key={user.id}
+                          style={({ pressed }) => [
+                            styles.announcementUserRow,
+                            pressed && styles.xpButtonPressed,
+                          ]}
+                          onPress={() => toggleAnnouncementUser(user.id)}
+                        >
+                          <View style={[styles.announcementCheckbox, checked && styles.announcementCheckboxChecked]}>
+                            <Text style={styles.announcementCheckmark}>{checked ? '✓' : ''}</Text>
+                          </View>
+                          <Text style={styles.announcementUserName}>{user.name}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                ) : null}
+
+                <TextInput
+                  value={announcementMessage}
+                  onChangeText={(value) => {
+                    setAnnouncementError('');
+                    setAnnouncementMessage(value);
+                  }}
+                  style={[styles.modalInput, styles.broadcastInput]}
+                  placeholder="Napiš oznámení..."
+                  placeholderTextColor="#666666"
+                  multiline
+                  maxLength={300}
+                  textAlignVertical="top"
+                />
+
+                {announcementError ? <Text style={styles.errorText}>{announcementError}</Text> : null}
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [styles.modalButton, pressed && styles.xpButtonPressed]}
+                    onPress={sendAnnouncement}
+                  >
+                    <Text style={styles.modalButtonText}>Zobrazit oznámení</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.modalButton, pressed && styles.xpButtonPressed]}
+                    onPress={closeAnnouncementModal}
+                  >
+                    <Text style={styles.modalButtonText}>Zrušit</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        <Modal
+          visible={kickPinModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeKickPinModal}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Kick uživatele</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closeKickPinModal}>
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>
+                  Nový PIN pro {actionUser?.name || 'uživatele'}:
+                </Text>
+
+                <PinDots length={kickPin.length} />
+
+                <NumericKeypad
+                  value={kickPin}
+                  onChange={(value) => {
+                    setKickPinError('');
+                    setKickPin(value);
+                  }}
+                />
+
+                {kickPinError ? <Text style={styles.errorText}>{kickPinError}</Text> : null}
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [styles.modalButton, pressed && styles.xpButtonPressed]}
+                    onPress={confirmKickUser}
+                  >
+                    <Text style={styles.modalButtonText}>Kicknout a nastavit PIN</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [styles.modalButton, pressed && styles.xpButtonPressed]}
+                    onPress={closeKickPinModal}
+                  >
+                    <Text style={styles.modalButtonText}>Zrušit</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         <Modal
           visible={userMenuVisible}
@@ -2068,15 +2486,12 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                     styles.settingsOption,
                     pressed && styles.xpButtonPressed,
                   ]}
-                  onPress={() => {
-                    kickUserById(actionUser, { newPin: '0008' });
-                    closeUserMenu();
-                  }}
+                    onPress={() => openKickPinModal(actionUser)}
                 >
 
                   <Text style={styles.settingsOptionTitle}>Kick</Text>
                   <Text style={styles.settingsOptionText}>
-                    Vyhodí uživatele z roomky a nastaví PIN 0008.
+                    Vyhodí uživatele z roomky a nabídne nový PIN (výchozí 0008).
                   </Text>
                 </Pressable>
 
@@ -2890,15 +3305,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ece9d8',
     borderWidth: 3,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#003c9e',
-    borderBottomColor: '#003c9e',
+    borderColor: '#0754d8',
   },
 
   titleBar: {
     height: 38,
-    backgroundColor: '#0058d8',
+    backgroundColor: '#0a5be7',
     borderBottomWidth: 2,
     borderBottomColor: '#003f9e',
     flexDirection: 'row',
@@ -2914,18 +3326,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  windowsIcon: {
-    width: 18,
-    height: 18,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  titleLogoImage: {
+    width: 20,
+    height: 20,
     marginRight: 7,
-  },
-
-  winSquare: {
-    width: 8,
-    height: 8,
-    margin: 0.5,
   },
 
   titleText: {
@@ -2956,8 +3360,8 @@ const styles = StyleSheet.create({
   },
 
   windowButtonIcon: {
-    width: 14,
-    height: 14,
+    width: 25,
+    height: 25,
   },
 
 
@@ -3333,6 +3737,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
 
+  broadcastButtonsRow: {
+    flexDirection: 'row',
+    paddingTop: 10,
+  },
+
+  broadcastButton: {
+    flex: 1,
+    minHeight: 46,
+    marginHorizontal: 4,
+    backgroundColor: '#ece9d8',
+    borderWidth: 3,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#6b6b6b',
+    borderBottomColor: '#6b6b6b',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+
   bottomButton: {
     flex: 1,
     height: 42,
@@ -3484,6 +3908,87 @@ const styles = StyleSheet.create({
     borderRightColor: '#ffffff',
     borderBottomColor: '#ffffff',
     marginBottom: 12,
+  },
+
+  broadcastInput: {
+    height: 110,
+    paddingTop: 10,
+  },
+
+  announcementTargetRow: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+
+  announcementTargetButton: {
+    flex: 1,
+    minHeight: 38,
+    marginHorizontal: 3,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+
+  announcementTargetButtonActive: {
+    backgroundColor: '#dceaff',
+    borderColor: '#245aa8',
+  },
+
+  announcementUsersList: {
+    maxHeight: 180,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderTopColor: '#777777',
+    borderLeftColor: '#777777',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+    backgroundColor: '#ffffff',
+  },
+
+  announcementUserRow: {
+    minHeight: 42,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#d6d3c3',
+  },
+
+  announcementCheckbox: {
+    width: 22,
+    height: 22,
+    marginRight: 9,
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderTopColor: '#777777',
+    borderLeftColor: '#777777',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  announcementCheckboxChecked: {
+    backgroundColor: '#dceaff',
+  },
+
+  announcementCheckmark: {
+    color: '#003c9e',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
+  announcementUserName: {
+    flex: 1,
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
   },
 
   warningBox: {
@@ -3675,7 +4180,11 @@ const styles = StyleSheet.create({
   },
 
   userRowSecretMutedOpacity: {
-    opacity: 0.5,
+    opacity: 0.9,
+  },
+
+  userRowOfflineOpacity: {
+    opacity: 0.6,
   },
 
 

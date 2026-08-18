@@ -25,6 +25,51 @@ const KeyboardWrapper = Platform.OS === 'ios' ? KeyboardAvoidingView : View;
 const EYE_ICON = require('../assets/icons/oko.png');
 const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
 const EYE_SECRET_MUTED_ICON = require('../assets/icons/okopotaji.png');
+const BACK_ICON = require('../assets/icons/backsipka.png');
+const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
+const EXIT_ICON = require('../assets/icons/exit.png');
+const LOGO_ICON = require('../assets/icons/logoxp.png');
+const ANNOUNCEMENT_PREFIX = '[[ANNOUNCEMENT]]';
+
+const MESSAGE_REACTIONS = [
+  { key: 'happy', emoji: '😄', colour: '#35c759' },
+  { key: 'love', emoji: '❤️', colour: '#ff6fb7' },
+  { key: 'wow', emoji: '😮', colour: '#ffcc00' },
+  { key: 'sad', emoji: '😢', colour: '#4f9eff' },
+  { key: 'angry', emoji: '😡', colour: '#ff3b30' },
+];
+
+const getReactionByKey = (key) => {
+  return MESSAGE_REACTIONS.find((item) => item.key === key) || null;
+};
+
+const getMessageReactions = (message) => {
+  if (message?.reactions && typeof message.reactions === 'object') {
+    return {
+      user: message.reactions.user || null,
+      admin: message.reactions.admin || null,
+    };
+  }
+
+  return {
+    user: message?.reaction || null,
+    admin: null,
+  };
+};
+
+const hexToRgba = (hex, alpha = 0.24) => {
+  const cleanHex = String(hex || '').replace('#', '');
+
+  if (cleanHex.length !== 6) {
+    return `rgba(0,0,0,${alpha})`;
+  }
+
+  const red = parseInt(cleanHex.slice(0, 2), 16);
+  const green = parseInt(cleanHex.slice(2, 4), 16);
+  const blue = parseInt(cleanHex.slice(4, 6), 16);
+
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+};
 
 const USER_ICON_SOURCES = {
   uzivatel: require('../assets/icons/uzivatel.png'),
@@ -129,6 +174,8 @@ const AdminChat = ({ navigation, route }) => {
   const userName = route?.params?.userName || 'Uživatel';
 
     const scrollViewRef = useRef(null);
+  const lastMessageTapRef = useRef({ messageId: null, timestamp: 0 });
+  const suppressNextMessagePressRef = useRef(false);
   const screenWidth = Dimensions.get('window').width;
   const screenSlideAnim = useRef(new Animated.Value(screenWidth)).current;
   const screenFadeAnim = useRef(new Animated.Value(0.4)).current;
@@ -159,6 +206,7 @@ const AdminChat = ({ navigation, route }) => {
   const [muteModalVisible, setMuteModalVisible] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState([]);
+  const [reactingMessageId, setReactingMessageId] = useState(null);
   const [nowTick, setNowTick] = useState(Date.now());
   const [serverMutedUsers, setServerMutedUsers] = useState(getGlobalMutedUsers());
   const [secretMutedUsers, setSecretMutedUsers] = useState(
@@ -185,10 +233,13 @@ const AdminChat = ({ navigation, route }) => {
       ];
     }
 
-    return chats[userId];
+    return chats[userId].filter(
+      (item) => !String(item?.text || '').startsWith(ANNOUNCEMENT_PREFIX)
+    );
   };
 
   const [messages, setMessages] = useState(getInitialMessages);
+  const [userReadAt, setUserReadAt] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -274,13 +325,15 @@ useEffect(() => {
       }
     };
 
-    const handleChatMessages = ({ userId: incomingUserId, messages: nextMessages }) => {
+    const handleChatMessages = ({ userId: incomingUserId, messages: nextMessages, readAt }) => {
       if (incomingUserId !== userId) {
         return;
       }
 
       const chats = getGlobalChats();
-      const safeMessages = nextMessages || [];
+      const safeMessages = (nextMessages || []).filter(
+        (item) => !String(item?.text || '').startsWith(ANNOUNCEMENT_PREFIX)
+      );
       const userMessageCount = safeMessages.filter((item) => item?.sender === 'user').length;
       const nextReadCounts = {
         ...getGlobalAdminReadCounts(),
@@ -289,7 +342,18 @@ useEffect(() => {
 
       chats[userId] = safeMessages;
       globalThis.CUSIIK_ADMIN_READ_COUNTS = nextReadCounts;
+      if (Number.isFinite(Number(readAt))) {
+        setUserReadAt(Number(readAt));
+      }
       setMessages(safeMessages);
+    };
+
+    const handleChatRead = ({ userId: incomingUserId, readAt }) => {
+      if (String(incomingUserId) !== String(userId)) {
+        return;
+      }
+
+      setUserReadAt(Number(readAt || 0));
     };
 
     socket.on('connect', handleConnect);
@@ -297,6 +361,7 @@ useEffect(() => {
     socket.on('connect_error', handleConnectError);
     socket.on('server:state', handleServerState);
     socket.on('chat:messages', handleChatMessages);
+    socket.on('chat:read', handleChatRead);
 
     if (!socket.connected) {
       socket.connect();
@@ -310,13 +375,18 @@ useEffect(() => {
       socket.off('connect_error', handleConnectError);
       socket.off('server:state', handleServerState);
       socket.off('chat:messages', handleChatMessages);
+      socket.off('chat:read', handleChatRead);
     };
   }, [userId]);
 
   useEffect(() => {
     const chats = getGlobalChats();
 
-    setMessages(chats[userId] || getInitialMessages());
+    setMessages(
+      (chats[userId] || getInitialMessages()).filter(
+        (item) => !String(item?.text || '').startsWith(ANNOUNCEMENT_PREFIX)
+      )
+    );
 
     if (socket.connected) {
       socket.emit('chat:get', {
@@ -526,6 +596,15 @@ useEffect(() => {
     navigation.replace('AdminPin');
   };
 
+  useEffect(() => {
+    const backSubscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      goBack();
+      return true;
+    });
+
+    return () => backSubscription.remove();
+  }, [navigation]);
+
 
   const handleMinimize = () => {
     goBack();
@@ -558,17 +637,72 @@ useEffect(() => {
     });
   };
 
-  const onMessageLongPress = (messageId) => {
-    setSelectionMode(true);
-    toggleMessageSelection(messageId);
+  const setMessageReaction = (messageId, reactionKey) => {
+    const targetMessage = messages.find((item) => String(item.id) === String(messageId));
+    const currentReactions = getMessageReactions(targetMessage);
+    const nextReaction = currentReactions.admin === reactionKey ? null : reactionKey;
+    const nextMessages = messages.map((item) =>
+      String(item.id) === String(messageId)
+        ? {
+            ...item,
+            reaction: undefined,
+            reactions: { ...getMessageReactions(item), admin: nextReaction },
+          }
+        : item
+    );
+
+    saveMessages(nextMessages);
+    setReactingMessageId(null);
+
+    if (socket.connected) {
+      socket.emit('chat:react', {
+        userId,
+        messageId,
+        reaction: nextReaction,
+      });
+    }
   };
 
-  const onMessagePress = (messageId) => {
-    if (!selectionMode) {
+  const onMessageLongPress = (messageId) => {
+    suppressNextMessagePressRef.current = true;
+
+    if (selectionMode) {
+      toggleMessageSelection(messageId);
       return;
     }
 
-    toggleMessageSelection(messageId);
+    setReactingMessageId((currentId) =>
+      String(currentId) === String(messageId) ? null : messageId
+    );
+  };
+
+  const onMessagePress = (messageId) => {
+    if (suppressNextMessagePressRef.current) {
+      suppressNextMessagePressRef.current = false;
+      return;
+    }
+
+    if (selectionMode) {
+      toggleMessageSelection(messageId);
+      return;
+    }
+
+    const now = Date.now();
+    const cleanMessageId = String(messageId);
+    const previousTap = lastMessageTapRef.current;
+    const isDoubleTap =
+      previousTap.messageId === cleanMessageId &&
+      now - previousTap.timestamp <= 320;
+
+    lastMessageTapRef.current = isDoubleTap
+      ? { messageId: null, timestamp: 0 }
+      : { messageId: cleanMessageId, timestamp: now };
+    setReactingMessageId(null);
+
+    if (isDoubleTap) {
+      setSelectionMode(true);
+      setSelectedMessageIds([messageId]);
+    }
   };
 
   const toggleSecretMute = () => {
@@ -635,14 +769,8 @@ useEffect(() => {
           ]}
         >
           <View style={styles.titleBar}>
-
             <View style={styles.titleLeft}>
-              <View style={styles.windowsIcon}>
-                <View style={[styles.winSquare, { backgroundColor: '#f35325' }]} />
-                <View style={[styles.winSquare, { backgroundColor: '#81bc06' }]} />
-                <View style={[styles.winSquare, { backgroundColor: '#05a6f0' }]} />
-                <View style={[styles.winSquare, { backgroundColor: '#ffba08' }]} />
-              </View>
+              <Image source={LOGO_ICON} style={styles.titleLogoImage} resizeMode="contain" />
 
               <Text style={styles.titleText}>Chat s uživatelem</Text>
 
@@ -659,19 +787,19 @@ useEffect(() => {
             <View style={styles.windowButtons}>
               <View style={styles.windowButton}>
                 <Pressable style={styles.closePressable} onPress={goBack}>
-                  <Text style={styles.windowButtonText}>←</Text>
+                  <Image source={BACK_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
               <View style={styles.windowButton}>
                 <Pressable style={styles.closePressable} onPress={handleMinimize}>
-                  <Text style={styles.windowButtonText}>_</Text>
+                  <Image source={MINIMIZE_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
               <View style={[styles.windowButton, styles.closeButton]}>
                 <Pressable style={styles.closePressable} onPress={closeApp}>
-                  <Text style={[styles.windowButtonText, styles.closeButtonText]}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
             </View>
@@ -768,6 +896,10 @@ useEffect(() => {
                 const adminBgColour = adminProfile?.bgColour || '#ece9d8';
                 const iconOutlineColour = isAdmin ? adminOutlineColour : userOutlineColour;
                 const iconBgColour = isAdmin ? adminBgColour : userBgColour;
+                const messageReactions = getMessageReactions(item);
+                const userReaction = getReactionByKey(messageReactions.user);
+                const adminReaction = getReactionByKey(messageReactions.admin);
+                const isPickerOpenForThis = String(reactingMessageId) === String(item.id);
 
                 return (
                   <View
@@ -784,7 +916,8 @@ useEffect(() => {
                         resizeMode="contain"
                       />
                     </View>
-                                        <Pressable
+                    <View style={styles.messageBubbleColumn}>
+                    <Pressable
                       onLongPress={() => onMessageLongPress(item.id)}
                       onPress={() => onMessagePress(item.id)}
                       delayLongPress={250}
@@ -800,14 +933,73 @@ useEffect(() => {
                       ]}
                     >
 
+                      {!isSelected && (userReaction || adminReaction) ? (
+                        <View pointerEvents="none" style={styles.reactionColourLayer}>
+                          {userReaction && adminReaction ? (
+                            <>
+                              <View style={[styles.reactionColourHalf, { backgroundColor: hexToRgba(userReaction.colour) }]} />
+                              <View style={[styles.reactionColourHalf, { backgroundColor: hexToRgba(adminReaction.colour) }]} />
+                            </>
+                          ) : (
+                            <View
+                              style={[
+                                styles.reactionColourFill,
+                                { backgroundColor: hexToRgba((userReaction || adminReaction).colour) },
+                              ]}
+                            />
+                          )}
+                        </View>
+                      ) : null}
+
+                      <View style={styles.messageContent}>
                       <View style={styles.messageHeaderRow}>
                         <Text style={styles.messageAuthor}>
                           {isAdmin ? 'Admin' : userName}
                         </Text>
                         <Text style={styles.messageTime}>{messageTime}</Text>
+                        {isAdmin ? (
+                          <Text style={styles.readReceipt}>
+                            {userReadAt >= Number(item.createdAt || 0) ? 'Zobrazeno' : 'Nezobrazeno'}
+                          </Text>
+                        ) : null}
                       </View>
                       <Text style={styles.messageText}>{item.text}</Text>
+                      </View>
+
+                      {!isSelected && (userReaction || adminReaction) ? (
+                        <View style={styles.messageReactionBadges}>
+                          {userReaction ? (
+                            <View style={[styles.messageReactionBadge, { backgroundColor: userReaction.colour }]}>
+                              <Text style={styles.messageReactionBadgeText}>{userReaction.emoji}</Text>
+                            </View>
+                          ) : null}
+                          {adminReaction ? (
+                            <View style={[styles.messageReactionBadge, { backgroundColor: adminReaction.colour }]}>
+                              <Text style={styles.messageReactionBadgeText}>{adminReaction.emoji}</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      ) : null}
                     </Pressable>
+
+                    {isPickerOpenForThis ? (
+                      <View style={[styles.reactionPickerRow, isAdmin ? styles.reactionPickerRowAdmin : styles.reactionPickerRowUser]}>
+                        {MESSAGE_REACTIONS.map((reactionItem) => (
+                          <Pressable
+                            key={reactionItem.key}
+                            style={({ pressed }) => [
+                              styles.reactionPickerButton,
+                              { borderColor: reactionItem.colour },
+                              pressed && styles.sendButtonPressed,
+                            ]}
+                            onPress={() => setMessageReaction(item.id, reactionItem.key)}
+                          >
+                            <Text style={styles.reactionPickerEmoji}>{reactionItem.emoji}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    ) : null}
+                    </View>
                   </View>
                 );
               })}
@@ -949,15 +1141,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ece9d8',
     borderWidth: 3,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#003c9e',
-    borderBottomColor: '#003c9e',
+    borderColor: '#0754d8',
   },
 
   titleBar: {
     height: 38,
-    backgroundColor: '#0058d8',
+    backgroundColor: '#0a5be7',
     borderBottomWidth: 2,
     borderBottomColor: '#003f9e',
     flexDirection: 'row',
@@ -973,18 +1162,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  windowsIcon: {
-    width: 18,
-    height: 18,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  titleLogoImage: {
+    width: 20,
+    height: 20,
     marginRight: 7,
-  },
-
-  winSquare: {
-    width: 8,
-    height: 8,
-    margin: 0.5,
   },
 
   titleText: {
@@ -1031,18 +1212,17 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     marginLeft: 4,
-    backgroundColor: '#d7e8ff',
-    borderWidth: 1,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#174a9c',
-    borderBottomColor: '#174a9c',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   closeButton: {
-    backgroundColor: '#e04b31',
+    marginLeft: 4,
+  },
+
+  windowButtonIcon: {
+    width: 25,
+    height: 25,
   },
 
   closePressable: {
@@ -1266,11 +1446,97 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
 
-  messageBubble: {
+  messageBubbleColumn: {
     maxWidth: '82%',
+  },
+
+  messageBubble: {
     paddingVertical: 8,
     paddingHorizontal: 10,
+    paddingBottom: 16,
     borderWidth: 2,
+    position: 'relative',
+  },
+
+  reactionColourLayer: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    flexDirection: 'row',
+  },
+
+  reactionColourHalf: {
+    flex: 1,
+  },
+
+  reactionColourFill: {
+    flex: 1,
+  },
+
+  messageContent: {
+    zIndex: 1,
+  },
+
+  messageReactionBadges: {
+    position: 'absolute',
+    right: -8,
+    bottom: -8,
+    zIndex: 2,
+    flexDirection: 'row',
+  },
+
+  messageReactionBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 3,
+  },
+
+  messageReactionBadgeText: {
+    fontSize: 13,
+  },
+
+  reactionPickerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 6,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    paddingHorizontal: 5,
+    paddingVertical: 6,
+  },
+
+  reactionPickerRowAdmin: {
+    alignSelf: 'flex-end',
+  },
+
+  reactionPickerRowUser: {
+    alignSelf: 'flex-start',
+  },
+
+  reactionPickerButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 2,
+  },
+
+  reactionPickerEmoji: {
+    fontSize: 16,
   },
 
   userBubble: {
@@ -1309,6 +1575,13 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
 
+  readReceipt: {
+    color: '#245aa8',
+    fontSize: 9,
+    fontWeight: '900',
+    marginLeft: 6,
+  },
+
   messageText: {
     color: '#000000',
     fontSize: 14,
@@ -1316,11 +1589,11 @@ const styles = StyleSheet.create({
   },
 
   selectedMessageBubble: {
-    backgroundColor: '#ffe38d',
-    borderTopColor: '#fff7d1',
-    borderLeftColor: '#fff7d1',
-    borderRightColor: '#9b7f14',
-    borderBottomColor: '#9b7f14',
+    backgroundColor: '#f06a6a',
+    borderTopColor: '#ffd1d1',
+    borderLeftColor: '#ffd1d1',
+    borderRightColor: '#8a0000',
+    borderBottomColor: '#8a0000',
   },
 
   systemMessageRow: {

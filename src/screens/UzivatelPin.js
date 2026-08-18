@@ -91,6 +91,7 @@ const getCurrentUserName = () => {
 
 const HELPER_MESSAGE_TICKET = 'Dal sem do aukce item za 10000g na 12 hodin a zmizel, v logu nic.';
 const HELPER_MESSAGE_GM = 'GM sem lvl 80 a spadl sem pod texturu na 49.2 62.8 v Dalaranu, portni me pls.';
+const ANNOUNCEMENT_PREFIX = '[[ANNOUNCEMENT]]';
 
 ;
 
@@ -104,6 +105,20 @@ const MESSAGE_REACTIONS = [
 
 const getReactionByKey = (key) => {
   return MESSAGE_REACTIONS.find((item) => item.key === key) || null;
+};
+
+const getMessageReactions = (message) => {
+  if (message?.reactions && typeof message.reactions === 'object') {
+    return {
+      user: message.reactions.user || null,
+      admin: message.reactions.admin || null,
+    };
+  }
+
+  return {
+    user: message?.reaction || null,
+    admin: null,
+  };
 };
 
 const hexToRgba = (hex, alpha = 0.18) => {
@@ -389,6 +404,9 @@ const UzivatelPin=({ navigation,route })=>{
   const [screenMode, setScreenMode] = useState('menu');
   const [iconModalVisible, setIconModalVisible] = useState(false);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
+  const [helperMenuVisible, setHelperMenuVisible] = useState(false);
+  const [announcement, setAnnouncement] = useState(null);
+  const dismissedAnnouncementIdRef = useRef(null);
   const [reactingMessageId, setReactingMessageId] = useState(null);
 
   const screenSlideAnim = useRef(new Animated.Value(0)).current;
@@ -569,6 +587,18 @@ const UzivatelPin=({ navigation,route })=>{
 
     globalThis.CUSIIK_USER_READ_COUNTS = nextReadCounts;
     setReadAdminCount(count);
+
+    const latestAdminMessage = [...nextMessages]
+      .reverse()
+      .find((item) => item?.sender === 'admin');
+
+    if (socket.connected && latestAdminMessage?.createdAt) {
+      socket.emit('chat:read', {
+        userId: currentUserId,
+        readAt: Number(latestAdminMessage.createdAt),
+      });
+    }
+
     try {
       await AsyncStorage.setItem(USER_READ_COUNTS_STORAGE_KEY, JSON.stringify(nextReadCounts));
     } catch {}
@@ -647,6 +677,15 @@ const UzivatelPin=({ navigation,route })=>{
       screenMountAtRef.current = Date.now();
       initialSyncDoneRef.current = false;
 
+      const pushToken = globalThis.CUSIIK_EXPO_PUSH_TOKEN;
+      if (pushToken) {
+        socket.emit('notifications:registerToken', {
+          token: pushToken,
+          role: 'user',
+          userId: currentUserId,
+        });
+      }
+
       socket.emit('state:get');
       socket.emit('chat:get', {
         userId: currentUserId,
@@ -723,7 +762,21 @@ const UzivatelPin=({ navigation,route })=>{
 
       const chats = getGlobalChats();
       const previousMessages = chats[currentUserId] || [];
-      const safeMessages = nextMessages || [];
+      const incomingMessages = nextMessages || [];
+      const announcementMessages = incomingMessages.filter(
+        (item) => item?.sender === 'system' && String(item?.text || '').startsWith(ANNOUNCEMENT_PREFIX)
+      );
+      const newestAnnouncement = announcementMessages[announcementMessages.length - 1];
+      const safeMessages = incomingMessages.filter(
+        (item) => !String(item?.text || '').startsWith(ANNOUNCEMENT_PREFIX)
+      );
+
+      if (newestAnnouncement && String(newestAnnouncement.id) !== dismissedAnnouncementIdRef.current) {
+        setAnnouncement({
+          id: String(newestAnnouncement.id),
+          text: String(newestAnnouncement.text).slice(ANNOUNCEMENT_PREFIX.length),
+        });
+      }
       const previousAdminMessages = previousMessages.filter(
         (item) => item.sender === 'admin'
       ).length;
@@ -908,6 +961,22 @@ const UzivatelPin=({ navigation,route })=>{
     }
   };
 
+  useEffect(() => {
+    const backSubscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeReactionPicker();
+
+      if (screenMode === 'chat') {
+        setScreenMode('menu');
+      } else {
+        goToLogin();
+      }
+
+      return true;
+    });
+
+    return () => backSubscription.remove();
+  }, [screenMode, navigation]);
+
   const saveMessages = (nextMessages) => {
     const chats = getGlobalChats();
 
@@ -921,10 +990,17 @@ const UzivatelPin=({ navigation,route })=>{
 
    const setMessageReaction = (messageId, reactionKey) => {
     const targetMessage = messages.find((item) => item.id === messageId);
-    const nextReaction = targetMessage?.reaction === reactionKey ? null : reactionKey;
+    const currentReactions = getMessageReactions(targetMessage);
+    const nextReaction = currentReactions.user === reactionKey ? null : reactionKey;
 
     const nextMessages = messages.map((item) =>
-      item.id === messageId ? { ...item, reaction: nextReaction } : item
+      item.id === messageId
+        ? {
+            ...item,
+            reaction: undefined,
+            reactions: { ...getMessageReactions(item), user: nextReaction },
+          }
+        : item
     );
 
     saveMessages(nextMessages);
@@ -982,6 +1058,7 @@ const UzivatelPin=({ navigation,route })=>{
 
   const insertHelperMessage = (text) => {
     closeReactionPicker();
+    setHelperMenuVisible(false);
 
     if (isMuted) {
       setBlockedInfo(`Nemůžeš psát. Jsi umlčený ještě na ${muteTimeLeft}.`);
@@ -1278,62 +1355,28 @@ const UzivatelPin=({ navigation,route })=>{
           >
             {renderTitleBar('Menu')}
 
-
-                        <View style={styles.menuBody}>
-                                      <View style={styles.menuTopSection}>
-                                      <View style={styles.menuTopRow}>
-                              <Pressable
-                    style={styles.tButton}
-                    onPress={openTicketModal}
-                  >
-                    <Image source={TBUTTON_ICON} style={styles.tButtonIcon} resizeMode="contain" />
-                  </Pressable>
-
-                  <View style={{ flex: 1 }} />
-
-                  <Image source={BUBBLE_ICON} style={styles.menuTopBubbleImage} resizeMode="contain" />
-
-                  <View style={styles.menuAdminIconColumn}>
-                    <View
-                      style={[
-                        styles.menuAdminIconBox,
-                        {
-                          backgroundColor: adminProfile?.bgColour || '#ece9d8',
-                          borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
-                          borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
-                          borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
-                          borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
-                        },
-                      ]}
-                    >
-                      <Image
-                        source={getIconSource(adminProfile?.icon || 'admin')}
-                        style={styles.menuAdminIconImage}
-                        resizeMode="contain"
-                      />
-                    </View>
-
-                    <Text style={styles.menuAdminGmLabel}>GM</Text>
-                    <Text style={styles.menuAdminGmStatus}>
-                      {isAdminOnline ? '-ON-' : isAdminJob ? '(JOB)' : '(OFF)'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.adminMainMessageBox}>
-
-                  <Text style={styles.adminMainMessageText}>
-                    Sleduj status - tím zjistíš jestli ti aktuálně mohu pomoct (status je vidět nahoře v liště)
-                  </Text>
-                  <Text style={styles.adminMainMessageText}>
-                    Když zadrhel nevyřešíme online lepší bude se sejít a problém vyřešit třeba u piva :D
-                  </Text>
-                  <Text style={styles.adminMainMessageText}>Žijem pouze jednou! Tak si hru hlavně užívej!!!</Text>
-                </View>
+            {announcement ? (
+              <View style={styles.announcementBanner}>
+                <Text style={styles.announcementBannerText}>{announcement.text}</Text>
+                <Pressable
+                  style={styles.announcementCloseButton}
+                  onPress={() => {
+                    dismissedAnnouncementIdRef.current = announcement.id;
+                    setAnnouncement(null);
+                  }}
+                >
+                  <Text style={styles.announcementCloseText}>×</Text>
+                </Pressable>
               </View>
+            ) : null}
 
 
-                      </View>
+            <View style={styles.menuBody}>
+              <View style={styles.adminMainMessageBox}>
+                <Text style={styles.adminMainMessageText}>
+                  Sleduj status - tím zjistíš jestli ti aktuálně mohu pomoct (status je vidět nahoře v liště)
+                </Text>
+              </View>
 
             <View style={styles.menuGrayPanel}>
               <Pressable
@@ -1365,21 +1408,25 @@ const UzivatelPin=({ navigation,route })=>{
 
               <Text style={styles.grayPanelUserName}>{currentUserName}</Text>
 
-              <View style={{ flex: 1 }} />
-
-              <ChatButtonPulseWrapper active={isAdminOnline}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.grayPanelChatButton,
-                    pressed && styles.sendButtonPressed,
-                  ]}
-                  onPress={openChat}
-                >
-                  <Text style={styles.grayPanelChatButtonText}>Chatuj</Text>
-                  <UnreadBadge count={unreadCount} />
-                </Pressable>
-              </ChatButtonPulseWrapper>
             </View>
+
+            <View style={styles.capabilitiesSection}>
+              <Text style={styles.capabilitiesTitle}>Co vše tu můžete dělat:</Text>
+              <Text style={styles.capabilityText}>Chatovat</Text>
+            </View>
+
+            <ChatButtonPulseWrapper active={isAdminOnline}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.grayPanelChatButton,
+                  pressed && styles.sendButtonPressed,
+                ]}
+                onPress={openChat}
+              >
+                <Text style={styles.grayPanelChatButtonText}>Chatuj S GM</Text>
+                <UnreadBadge count={unreadCount} />
+              </Pressable>
+            </ChatButtonPulseWrapper>
 
                         <View style={styles.statusBar}>
               <Text style={styles.statusText}>Připojeno jako uživatel</Text>
@@ -1387,6 +1434,7 @@ const UzivatelPin=({ navigation,route })=>{
                 {unreadCount > 0 ? `${unreadCount} nových zpráv` : 'Menu'}
               </Text>
             </View>
+                        </View>
 
           </Animated.View>
 
@@ -1510,6 +1558,21 @@ const UzivatelPin=({ navigation,route })=>{
         >
                     {renderTitleBar('Chat s GM')}
 
+          {announcement ? (
+            <View style={styles.announcementBanner}>
+              <Text style={styles.announcementBannerText}>{announcement.text}</Text>
+              <Pressable
+                style={styles.announcementCloseButton}
+                onPress={() => {
+                  dismissedAnnouncementIdRef.current = announcement.id;
+                  setAnnouncement(null);
+                }}
+              >
+                <Text style={styles.announcementCloseText}>×</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
 
 
           {isMuted ? (
@@ -1547,7 +1610,9 @@ const UzivatelPin=({ navigation,route })=>{
                 const adminBgColour = adminProfile?.bgColour || '#ece9d8';
                 const iconOutlineColour = isUser ? myOutlineColour : adminOutlineColour;
                 const iconBgColour = isUser ? myBgColour : adminBgColour;
-                const activeReaction = getReactionByKey(item.reaction);
+                const messageReactions = getMessageReactions(item);
+                const userReaction = getReactionByKey(messageReactions.user);
+                const adminReaction = getReactionByKey(messageReactions.admin);
                 const isPickerOpenForThis = reactingMessageId === item.id;
 
                            return (
@@ -1579,9 +1644,27 @@ const UzivatelPin=({ navigation,route })=>{
                           styles.messageBubble,
 
                           isUser ? styles.userBubble : styles.adminBubble,
-                          activeReaction ? { backgroundColor: hexToRgba(activeReaction.colour, 0.16) } : null,
                         ]}
                       >
+                        {userReaction || adminReaction ? (
+                          <View pointerEvents="none" style={styles.reactionColourLayer}>
+                            {userReaction && adminReaction ? (
+                              <>
+                                <View style={[styles.reactionColourHalf, { backgroundColor: hexToRgba(userReaction.colour, 0.24) }]} />
+                                <View style={[styles.reactionColourHalf, { backgroundColor: hexToRgba(adminReaction.colour, 0.24) }]} />
+                              </>
+                            ) : (
+                              <View
+                                style={[
+                                  styles.reactionColourFill,
+                                  { backgroundColor: hexToRgba((userReaction || adminReaction).colour, 0.24) },
+                                ]}
+                              />
+                            )}
+                          </View>
+                        ) : null}
+
+                        <View style={styles.messageContent}>
                         <View style={styles.messageAuthorRow}>
                           <Text style={styles.messageAuthor}>
                             {isUser ? 'Já' : 'GM'}
@@ -1610,17 +1693,20 @@ const UzivatelPin=({ navigation,route })=>{
                         </View>
 
                         <Text style={styles.messageText}>{item.text}</Text>
+                        </View>
 
-                        {activeReaction ? (
-                          <View
-                            style={[
-                              styles.messageReactionBadge,
-                              { backgroundColor: activeReaction.colour },
-                            ]}
-                          >
-                            <Text style={styles.messageReactionBadgeText}>
-                              {activeReaction.emoji}
-                            </Text>
+                        {userReaction || adminReaction ? (
+                          <View style={styles.messageReactionBadges}>
+                            {userReaction ? (
+                              <View style={[styles.messageReactionBadge, { backgroundColor: userReaction.colour }]}>
+                                <Text style={styles.messageReactionBadgeText}>{userReaction.emoji}</Text>
+                              </View>
+                            ) : null}
+                            {adminReaction ? (
+                              <View style={[styles.messageReactionBadge, { backgroundColor: adminReaction.colour }]}>
+                                <Text style={styles.messageReactionBadgeText}>{adminReaction.emoji}</Text>
+                              </View>
+                            ) : null}
                           </View>
                         ) : null}
                       </Pressable>
@@ -1655,6 +1741,46 @@ const UzivatelPin=({ navigation,route })=>{
 
                 </ScrollView>
             </TouchableWithoutFeedback>
+
+            {helperMenuVisible ? (
+              <View style={styles.helperMenuBubble}>
+                <Text style={styles.helperBubbleLabel}>Pomocné věty</Text>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.helperMenuOption,
+                    pressed && styles.helperBubblePressed,
+                  ]}
+                  onPress={() => insertHelperMessage(HELPER_MESSAGE_TICKET)}
+                >
+                  <Text style={styles.helperBubbleText}>{HELPER_MESSAGE_TICKET}</Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.helperMenuOption,
+                    pressed && styles.helperBubblePressed,
+                  ]}
+                  onPress={() => insertHelperMessage(HELPER_MESSAGE_GM)}
+                >
+                  <Text style={styles.helperBubbleText}>{HELPER_MESSAGE_GM}</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.helperInfoButton,
+                helperMenuVisible && styles.helperInfoButtonActive,
+                pressed && styles.helperBubblePressed,
+              ]}
+              onPress={() => {
+                closeReactionPicker();
+                setHelperMenuVisible((current) => !current);
+              }}
+            >
+              <Text style={styles.helperInfoButtonText}>i</Text>
+            </Pressable>
           </View>
 
           {blockedInfo ? (
@@ -1663,61 +1789,6 @@ const UzivatelPin=({ navigation,route })=>{
               <Text style={styles.blockedInfoText}>{blockedInfo}</Text>
             </View>
           ) : null}
-
-                   <Pressable
-            style={({ pressed }) => [
-              styles.helperBubble,
-              pressed && styles.helperBubblePressed,
-              isMuted && styles.helperBubbleDisabled,
-            ]}
-            onPress={() => insertHelperMessage(HELPER_MESSAGE_TICKET)}
-          >
-            <Text
-              style={[
-                styles.helperBubbleLabel,
-                isMuted && styles.helperBubbleTextDisabled,
-              ]}
-            >
-              Pomocná věta:
-            </Text>
-
-            <Text
-              style={[
-                styles.helperBubbleText,
-                isMuted && styles.helperBubbleTextDisabled,
-              ]}
-            >
-              {HELPER_MESSAGE_TICKET}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.helperBubble,
-              pressed && styles.helperBubblePressed,
-              isMuted && styles.helperBubbleDisabled,
-            ]}
-            onPress={() => insertHelperMessage(HELPER_MESSAGE_GM)}
-          >
-            <Text
-              style={[
-                styles.helperBubbleLabel,
-                isMuted && styles.helperBubbleTextDisabled,
-              ]}
-            >
-              Pomocná věta:
-            </Text>
-
-            <Text
-              style={[
-                styles.helperBubbleText,
-                isMuted && styles.helperBubbleTextDisabled,
-              ]}
-            >
-              {HELPER_MESSAGE_GM}
-            </Text>
-          </Pressable>
-
 
           <View style={styles.inputPanel}>
                                <TextInput
@@ -1844,15 +1915,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ece9d8',
     borderWidth: 3,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#003c9e',
-    borderBottomColor: '#003c9e',
+    borderColor: '#0754d8',
   },
 
   titleBar: {
     height: 38,
-    backgroundColor: '#0058d8',
+    backgroundColor: '#0a5be7',
     borderBottomWidth: 2,
     borderBottomColor: '#003f9e',
     flexDirection: 'row',
@@ -1860,6 +1928,47 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingLeft: 8,
     paddingRight: 5,
+  },
+
+  announcementBanner: {
+    minHeight: 48,
+    backgroundColor: '#fff0a6',
+    borderBottomWidth: 2,
+    borderBottomColor: '#d97800',
+    paddingLeft: 12,
+    paddingRight: 46,
+    paddingVertical: 9,
+    justifyContent: 'center',
+  },
+
+  announcementBannerText: {
+    color: '#5c3300',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 18,
+  },
+
+  announcementCloseButton: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    width: 28,
+    height: 28,
+    backgroundColor: '#ffb52e',
+    borderWidth: 2,
+    borderTopColor: '#fff5c7',
+    borderLeftColor: '#fff5c7',
+    borderRightColor: '#9b5200',
+    borderBottomColor: '#9b5200',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  announcementCloseText: {
+    color: '#5c3300',
+    fontSize: 19,
+    fontWeight: '900',
+    lineHeight: 20,
   },
 
   titleLeft: {
@@ -1952,16 +2061,9 @@ const styles = StyleSheet.create({
   },
 
     windowButton: {
-    width: 21,
-    height: 20,
-    marginLeft: 2,
-    backgroundColor: '#3d7fe0',
-    borderWidth: 1,
-    borderTopColor: '#8fc0ff',
-    borderLeftColor: '#8fc0ff',
-    borderRightColor: '#1b3f8f',
-    borderBottomColor: '#1b3f8f',
-    borderRadius: 3,
+    width: 22,
+    height: 22,
+    marginLeft: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1972,12 +2074,7 @@ const styles = StyleSheet.create({
 
 
   closeButton: {
-    backgroundColor: '#e6503a',
-    borderTopColor: '#ff9b8a',
-    borderLeftColor: '#ff9b8a',
-    borderRightColor: '#8f1d10',
-    borderBottomColor: '#8f1d10',
-    marginLeft: 6,
+    marginLeft: 4,
   },
 
 
@@ -1996,8 +2093,8 @@ const styles = StyleSheet.create({
   },
 
   windowButtonIcon: {
-    width: 13,
-    height: 13,
+    width: 25,
+    height: 25,
   },
 
 
@@ -2141,6 +2238,26 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
 
+  capabilitiesSection: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 10,
+  },
+
+  capabilitiesTitle: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '900',
+    marginBottom: 5,
+  },
+
+  capabilityText: {
+    color: '#222222',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
 
  
   chatUnreadCircle: {
@@ -2267,10 +2384,36 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
 
-  messageReactionBadge: {
+  reactionColourLayer: {
     position: 'absolute',
-    bottom: -8,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    flexDirection: 'row',
+  },
+
+  reactionColourHalf: {
+    flex: 1,
+  },
+
+  reactionColourFill: {
+    flex: 1,
+  },
+
+  messageContent: {
+    zIndex: 1,
+  },
+
+  messageReactionBadges: {
+    position: 'absolute',
     right: -8,
+    bottom: -8,
+    zIndex: 2,
+    flexDirection: 'row',
+  },
+
+  messageReactionBadge: {
     width: 24,
     height: 24,
     borderRadius: 12,
@@ -2278,6 +2421,7 @@ const styles = StyleSheet.create({
     borderColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 3,
   },
 
   messageReactionBadgeText: {
@@ -2399,17 +2543,56 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  helperBubble: {
-    backgroundColor: '#fff8d7',
+  helperMenuBubble: {
+    position: 'absolute',
+    left: 10,
+    bottom: 48,
+    width: '86%',
+    maxWidth: 360,
+    backgroundColor: '#fff0a6',
     borderWidth: 2,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#b9a85c',
-    borderBottomColor: '#b9a85c',
-    marginHorizontal: 10,
-    marginBottom: 6,
+    borderColor: '#d97800',
     paddingHorizontal: 10,
+    paddingTop: 9,
+    paddingBottom: 3,
+    elevation: 8,
+    zIndex: 10,
+  },
+
+  helperMenuOption: {
+    backgroundColor: '#fff8d7',
+    borderWidth: 1,
+    borderColor: '#d99a22',
+    paddingHorizontal: 9,
     paddingVertical: 8,
+    marginBottom: 7,
+  },
+
+  helperInfoButton: {
+    position: 'absolute',
+    left: 10,
+    bottom: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#ffd34d',
+    borderWidth: 2,
+    borderColor: '#d97800',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 9,
+    zIndex: 11,
+  },
+
+  helperInfoButtonActive: {
+    backgroundColor: '#ffb52e',
+  },
+
+  helperInfoButtonText: {
+    color: '#5c3300',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 20,
   },
 
   helperBubblePressed: {

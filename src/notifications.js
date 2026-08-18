@@ -1,13 +1,13 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 const NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1000;
 
 const NOTIFICATION_SOUND_NAME = Platform.OS === 'ios' ? 'notification.caf' : 'notification.mp3';
-const NOTIFICATION_CHANNEL_ID = 'default-v2';
-const NOTIFICATION_SILENT_CHANNEL_ID = 'default-v2-silent';
+const NOTIFICATION_CHANNEL_ID = 'chat-messages';
+const NOTIFICATION_SILENT_CHANNEL_ID = 'chat-messages-silent';
 
 const getNotificationCooldownMap = () => {
   if (!globalThis.CUSIIK_NOTIFICATION_COOLDOWNS || typeof globalThis.CUSIIK_NOTIFICATION_COOLDOWNS !== 'object') {
@@ -29,6 +29,19 @@ const setLastNotificationAt = (cooldownKey, timestamp) => {
 
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
+    const isLocalNotification = Boolean(
+      notification?.request?.content?.data?.localNotification
+    );
+
+    if (AppState.currentState === 'active' && !isLocalNotification) {
+      return {
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+        shouldShowBanner: false,
+        shouldShowList: false,
+      };
+    }
+
     const isSilent = Boolean(notification?.request?.content?.data?.silent);
 
     return {
@@ -90,12 +103,14 @@ export const showLocalMessageNotification = async ({
   data = {},
   cooldownKey = 'global-message',
   silent = false,
+  cooldownMs = NOTIFICATION_COOLDOWN_MS,
+  immediate = false,
 }) => {
   const safeCooldownKey = String(cooldownKey || 'global-message');
   const now = Date.now();
   const lastNotificationAt = getLastNotificationAt(safeCooldownKey);
 
-  if (lastNotificationAt > 0 && now - lastNotificationAt < NOTIFICATION_COOLDOWN_MS) {
+  if (cooldownMs > 0 && lastNotificationAt > 0 && now - lastNotificationAt < cooldownMs) {
     return false;
   }
 
@@ -107,14 +122,17 @@ export const showLocalMessageNotification = async ({
       data: {
         ...(data || {}),
         silent: Boolean(silent),
+        localNotification: true,
       },
     },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: 1,
-      channelId: silent ? NOTIFICATION_SILENT_CHANNEL_ID : NOTIFICATION_CHANNEL_ID,
-      repeats: false,
-    },
+    trigger: immediate
+      ? { channelId: silent ? NOTIFICATION_SILENT_CHANNEL_ID : NOTIFICATION_CHANNEL_ID }
+      : {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: 1,
+          channelId: silent ? NOTIFICATION_SILENT_CHANNEL_ID : NOTIFICATION_CHANNEL_ID,
+          repeats: false,
+        },
   });
 
   setLastNotificationAt(safeCooldownKey, now);

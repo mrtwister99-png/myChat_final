@@ -4,6 +4,7 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 8080;
+const ANNOUNCEMENT_PREFIX = '[[ANNOUNCEMENT]]';
 
 const app = express();
 app.use(cors());
@@ -30,6 +31,7 @@ const state = {
   users: [],
 
   chats: {},
+  chatReadAtByUserId: {},
 
   mutedUsers: {},
 
@@ -114,11 +116,11 @@ const sendExpoPushAsync = async ({ to, title, body, data = {} }) => {
   try {
     const messages = tokens.map((token) => ({
       to: token,
-      sound: 'default',
+      sound: 'notification.mp3',
       title: String(title || 'Nova zprava').slice(0, 120),
       body: String(body || '').slice(0, 240),
       data: data || {},
-      channelId: 'default',
+      channelId: 'chat-messages',
     }));
 
     const res = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -520,6 +522,7 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
   state.kickedRoomUserIds = {};
   state.nextUserNumber = 1;
   state.pushCooldowns = {};
+  state.chatReadAtByUserId = {};
   emitState();
 };
 
@@ -745,6 +748,33 @@ io.on('connection', (socket) => {
     socket.emit('chat:messages', {
       userId: cleanUserId,
       messages: state.chats[cleanUserId] || [],
+      readAt: state.chatReadAtByUserId[cleanUserId] || 0,
+    });
+  });
+
+  socket.on('chat:read', ({ userId, readAt }) => {
+    const cleanUserId = String(userId || '').trim();
+    const nextReadAt = Number(readAt || 0);
+
+    if (
+      socket.data.role !== 'user' ||
+      socket.data.userId !== cleanUserId ||
+      !cleanUserId ||
+      !Number.isFinite(nextReadAt) ||
+      nextReadAt <= 0
+    ) {
+      return;
+    }
+
+    const currentReadAt = Number(state.chatReadAtByUserId[cleanUserId] || 0);
+    if (nextReadAt <= currentReadAt) {
+      return;
+    }
+
+    state.chatReadAtByUserId[cleanUserId] = nextReadAt;
+    io.to('admins').emit('chat:read', {
+      userId: cleanUserId,
+      readAt: nextReadAt,
     });
   });
 
@@ -811,6 +841,7 @@ io.on('connection', (socket) => {
   io.emit('chat:messages', {
     userId: cleanUserId,
     messages: state.chats[cleanUserId],
+    readAt: state.chatReadAtByUserId[cleanUserId] || 0,
   });
 
   emitState();
@@ -821,12 +852,22 @@ io.on('connection', (socket) => {
       if (cleanSender === 'admin') {
         // admin -> user
         const userToken = state.pushTokensByUserId[cleanUserId];
-        if (userToken && shouldSendPushWithCooldown(`push-user-${cleanUserId}`)) {
+        if (userToken) {
           await sendExpoPushAsync({
             to: userToken,
             title: 'Nova zprava od admina',
             body: trimmedText.slice(0, 120),
             data: { userId: cleanUserId, action: 'openChat' },
+          });
+        }
+      } else if (cleanSender === 'system' && trimmedText.startsWith(ANNOUNCEMENT_PREFIX)) {
+        const userToken = state.pushTokensByUserId[cleanUserId];
+        if (userToken) {
+          await sendExpoPushAsync({
+            to: userToken,
+            title: 'Nové oznámení',
+            body: trimmedText.slice(ANNOUNCEMENT_PREFIX.length, 240),
+            data: { userId: cleanUserId, action: 'openChat', announcement: true },
           });
         }
   } else if (cleanSender === 'user') {
@@ -836,7 +877,7 @@ io.on('connection', (socket) => {
           return;
         }
         const adminTokens = Array.from(state.adminPushTokens);
-        if (adminTokens.length > 0 && shouldSendPushWithCooldown(`push-admin-${cleanUserId}`)) {
+        if (adminTokens.length > 0) {
           const senderName = user?.name || `Uzivatel ${cleanUserId}`;
           await sendExpoPushAsync({
             to: adminTokens,
@@ -875,6 +916,61 @@ io.on('connection', (socket) => {
     state.chats[cleanUserId] = state.chats[cleanUserId].filter(
       (message) => !idsSet.has(String(message.id))
     );
+
+    io.emit('chat:messages', {
+      userId: cleanUserId,
+      messages: state.chats[cleanUserId],
+    });
+  });
+
+  socket.on('chat:react', ({ userId, messageId, reaction }) => {
+    const cleanUserId = String(userId || '').trim();
+    const cleanMessageId = String(messageId || '').trim();
+    const cleanReaction = reaction == null ? null : String(reaction).trim().toLowerCase();
+    const allowedReactions = new Set(['happy', 'love', 'wow', 'sad', 'angry']);
+    const isAdmin = socket.data.role === 'admin';
+    const isSameUser = socket.data.role === 'user' && socket.data.userId === cleanUserId;
+
+    if (!cleanUserId || !cleanMessageId || (!isAdmin && !isSameUser)) {
+      return;
+    }
+
+    if (cleanReaction !== null && !allowedReactions.has(cleanReaction)) {
+      return;
+    }
+
+    const actor = isAdmin ? 'admin' : 'user';
+    const chat = state.chats[cleanUserId];
+
+    if (!Array.isArray(chat)) {
+      return;
+    }
+
+    let didUpdate = false;
+    state.chats[cleanUserId] = chat.map((message) => {
+      if (String(message.id) !== cleanMessageId) {
+        return message;
+      }
+
+      didUpdate = true;
+      const existingReactions = message.reactions && typeof message.reactions === 'object'
+        ? message.reactions
+        : { user: message.reaction || null, admin: null };
+      const { reaction: legacyReaction, ...messageWithoutLegacyReaction } = message;
+
+      return {
+        ...messageWithoutLegacyReaction,
+        reactions: {
+          user: existingReactions.user || null,
+          admin: existingReactions.admin || null,
+          [actor]: cleanReaction,
+        },
+      };
+    });
+
+    if (!didUpdate) {
+      return;
+    }
 
     io.emit('chat:messages', {
       userId: cleanUserId,
@@ -1102,7 +1198,7 @@ io.on('connection', (socket) => {
     // push notifikace pro admina
     if (!state.secretMutedUsers[cleanUserId]) {
       const adminTokens = Array.from(state.adminPushTokens);
-      if (adminTokens.length > 0 && shouldSendPushWithCooldown(`push-ticket-${cleanUserId}`)) {
+      if (adminTokens.length > 0) {
         sendExpoPushAsync({
           to: adminTokens,
           title: `Nový tiket od ${userName}`,

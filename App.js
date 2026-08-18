@@ -1,5 +1,6 @@
 // App.js
 import React, { useEffect } from 'react';
+import { AppState } from 'react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -36,6 +37,15 @@ const App = () => {
       const token = await registerForPushNotificationsAsync();
       if (token) {
         globalThis.CUSIIK_EXPO_PUSH_TOKEN = token;
+
+        const role = globalThis.CUSIIK_CURRENT_ROLE;
+        if (socket.connected && role) {
+          socket.emit('notifications:registerToken', {
+            token,
+            role,
+            userId: globalThis.CUSIIK_CURRENT_USER_ID || null,
+          });
+        }
       }
 
       // killed state - check if app opened from notification
@@ -136,23 +146,24 @@ const App = () => {
         return;
       }
 
-      const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
-      const isAdminViewingThisChat = activeAdminChatUserId === cleanUserId;
       const isSecretMuted = Boolean(secretMutedUsersById[cleanUserId]);
 
-      if (isAdminViewingThisChat || isSecretMuted) {
+      if (isSecretMuted || AppState.currentState !== 'active') {
         return;
       }
 
       const senderName = userNamesById[cleanUserId] || `Uživatel ${cleanUserId}`;
-      const adminStatus = globalThis.CUSIIK_ADMIN_STATUS || 'off';
-      const isSilent = adminStatus === 'off' || adminStatus === 'job';
+      const newestIncomingMessage = [...safeMessages]
+        .reverse()
+        .find((item) => ['user', 'ticket'].includes(String(item?.sender || '').toLowerCase()));
 
       showLocalMessageNotification({
         title: `Nová zpráva od ${senderName}`,
-        body: 'Otevři admin chat.',
+        body: String(newestIncomingMessage?.text || 'Otevři admin chat.').slice(0, 160),
         cooldownKey: `admin-user-${cleanUserId}`,
-        silent: isSilent,
+        silent: false,
+        cooldownMs: 0,
+        immediate: true,
       });
     };
 

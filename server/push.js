@@ -23,9 +23,9 @@ const sendExpoPush = async ({ token, title, body, data = {} }) => {
         title,
         body,
         data,
-        sound: 'default',
+        sound: 'notification.mp3',
         priority: 'high',
-        channelId: 'default',
+        channelId: 'chat-messages',
       }),
     });
     const result = await response.json();
