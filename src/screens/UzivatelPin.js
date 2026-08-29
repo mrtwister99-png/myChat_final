@@ -27,7 +27,12 @@ import { socket } from '../socket';
 import {
   showLocalMessageNotification,
 } from '../notifications';
-import { playInAppMessageSound } from '../utils/inAppSound';
+import {
+  playInAppChatMessageSound,
+  playInAppMessageSound,
+} from '../utils/inAppSound';
+import { StatusAnimation } from '../components/StatusAnimations';
+import { AvatarIcon } from '../components/AvatarIcon';
 
 
 const resolveCurrentUserId = (routeUserId) => {
@@ -40,7 +45,7 @@ const resolveCurrentUserId = (routeUserId) => {
   const globalUserId = globalThis.CUSIIK_CURRENT_USER_ID;
   const cleanGlobalUserId = String(globalUserId || '').trim();
 
-  return cleanGlobalUserId || '1';
+  return cleanGlobalUserId;
 };
 
 const LOCAL_RANDOM_USER_NAMES = [
@@ -64,7 +69,7 @@ const LOCAL_RANDOM_USER_NAMES = [
 ];
 
 const getRandomLocalUserName = () => {
-  return LOCAL_RANDOM_USER_NAMES[Math.floor(Math.random() * LOCAL_RANDOM_USER_NAMES.length)] || 'UÄąÄľivatel';
+  return LOCAL_RANDOM_USER_NAMES[Math.floor(Math.random() * LOCAL_RANDOM_USER_NAMES.length)] || 'Uživatel';
 };
 
 const isPlaceholderUserName = (name) => {
@@ -75,7 +80,7 @@ const isPlaceholderUserName = (name) => {
     normalized === 'uzivatel' ||
     normalized === 'uživatel' ||
     /^uzivatel\s*\d+$/.test(normalized) ||
-    /^uÄąÄľivatel\s*\d+$/.test(normalized)
+    /^uživatel\s*\d+$/.test(normalized)
   );
 };
 
@@ -89,11 +94,17 @@ const getCurrentUserName = () => {
   return getRandomLocalUserName();
 };
 
-const HELPER_MESSAGE_TICKET = 'Dal sem do aukce item za 10000g na 12 hodin a zmizel, v logu nic.';
 const HELPER_MESSAGE_GM = 'GM sem lvl 80 a spadl sem pod texturu na 49.2 62.8 v Dalaranu, portni me pls.';
 const ANNOUNCEMENT_PREFIX = '[[ANNOUNCEMENT]]';
+const ANNOUNCEMENT_TIMEOUT_MS = 10 * 60 * 1000;
 
-;
+const formatAnnouncementCountdown = (expiresAt) => {
+  const remainingSeconds = Math.max(0, Math.ceil((Number(expiresAt || 0) - Date.now()) / 1000));
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
 
 const MESSAGE_REACTIONS = [
   { key: 'happy', emoji: '😄', colour: '#35c759' },
@@ -143,7 +154,7 @@ const USER_ICON_SOURCES = {
   devil: require('../assets/icons/devil.png'),
   klaun: require('../assets/icons/klaun.png'),
   stop: require('../assets/icons/stop.png'),
-  vykricnik: require('../assets/icons/vykricnik.png'),
+  prase: require('../assets/icons/prase.png'),
   fuckerr: require('../assets/icons/fuckerr.png'),
   zachod: require('../assets/icons/zachod.png'),
   admin: require('../assets/icons/admin.png'),
@@ -155,13 +166,11 @@ const USER_ICON_SOURCES = {
 };
 
 const HAHA_ICON = require('../assets/egg/hahanachytal.png');
-const BUBBLE_ICON = require('../assets/icons/bublinka.png');
 const LOGO_ICON = require('../assets/icons/logoxp.png');
 const BACK_ICON = require('../assets/icons/backsipka.png');
 const HELP_ICON = require('../assets/icons/otaznik.png');
 const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
 const EXIT_ICON = require('../assets/icons/exit.png');
-const TBUTTON_ICON = require('../assets/icons/tbutton.png');
 
 
 
@@ -176,9 +185,8 @@ const USER_ICON_OPTIONS = [
   { key: 'pes', label: 'pes' },
   { key: 'devil', label: 'devil' },
   { key: 'klaun', label: 'klaun' },
-  { key: 'happy', label: 'prsa' },
-  { key: 'stop', label: 'stop' },
-  { key: 'vykricnik', label: 'výstraha' },
+  { key: 'happy', label: 'happy' },
+  { key: 'prase', label: 'prase' },
   { key: 'zachod', label: 'zachod' },
 ];
 
@@ -191,6 +199,10 @@ const normalizeAvatarIcon = (iconKey) => {
 
   if (cleanIcon === 'fucker') {
     return 'fuckerr';
+  }
+
+  if (cleanIcon === 'vykricnik' || cleanIcon === 'prsa' || cleanIcon === 'pras') {
+    return 'prase';
   }
 
   return USER_ICON_SOURCES[cleanIcon] ? cleanIcon : 'uzivatel';
@@ -393,9 +405,47 @@ return (
 </Animated.View>
 );
 };
+
+const RATING_STATS = [
+  { key: 'sila', label: 'Síla', value: 5 },
+  { key: 'vydrz', label: 'Výdrž', value: 5 },
+  { key: 'obratnost', label: 'Obratnost', value: 5 },
+  { key: 'charisma', label: 'Charisma', value: 5 },
+  { key: 'stesti', label: 'Štěstí', value: 5 },
+];
+
+const RatingSlider = ({ label, value, locked }) => {
+  const percent = Math.max(0, Math.min(100, ((value - 1) / 9) * 100));
+
+  return (
+    <View style={styles.ratingRow}>
+      <View style={styles.ratingLabelRow}>
+        <Text style={styles.ratingLabelText}>{label}</Text>
+        <Text style={styles.ratingValueText}>{value}/10</Text>
+      </View>
+
+      <View style={styles.ratingTrackWrap}>
+        <Text style={styles.ratingEndLabel}>1</Text>
+
+        <View style={styles.ratingTrack}>
+          <View style={styles.ratingTrackFill} />
+
+          <View style={[styles.ratingTrackDot, { left: `${percent}%` }]}>
+            {locked ? <Text style={styles.ratingLockIcon}>🔒</Text> : null}
+          </View>
+        </View>
+
+        <Text style={styles.ratingEndLabel}>10</Text>
+      </View>
+    </View>
+  );
+};
+
 const UzivatelPin=({ navigation,route })=>{
 
   const scrollViewRef = useRef(null);
+  const inputRef = useRef(null);
+  const shouldScrollToReactionPickerRef = useRef(false);
   const initialSyncDoneRef = useRef(false);
   const screenMountAtRef = useRef(Date.now());
   const screenModeRef = useRef('menu');
@@ -406,6 +456,7 @@ const UzivatelPin=({ navigation,route })=>{
   const [helpModalVisible, setHelpModalVisible] = useState(false);
   const [helperMenuVisible, setHelperMenuVisible] = useState(false);
   const [announcement, setAnnouncement] = useState(null);
+  const [inAppToast, setInAppToast] = useState(null);
   const dismissedAnnouncementIdRef = useRef(null);
   const [reactingMessageId, setReactingMessageId] = useState(null);
 
@@ -418,6 +469,9 @@ const UzivatelPin=({ navigation,route })=>{
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState(getInitialMessages);
   const [adminStatus, setAdminStatus] = useState(getAdminStatus());
+  const [connectionText, setConnectionText] = useState(
+    socket.connected ? 'Server online' : 'Připojuji server...'
+  );
   const [nowTick, setNowTick] = useState(Date.now());
   const [blockedInfo, setBlockedInfo] = useState('');
   const [serverMutedUsers, setServerMutedUsers] = useState(getGlobalMutedUsers());
@@ -444,9 +498,7 @@ const UzivatelPin=({ navigation,route })=>{
   );
   const [eggImages, setEggImages] = useState([]);
   const [eggMessageVisible, setEggMessageVisible] = useState(false);
-
-  const [ticketModalVisible, setTicketModalVisible] = useState(false);
-  const [ticketText, setTicketText] = useState('');
+  const [taskLockNotice, setTaskLockNotice] = useState(null);
 
   const [eggVisible, setEggVisible] = useState(false);
   const [eggPos, setEggPos] = useState({ top: 100, left: 50 });
@@ -454,13 +506,40 @@ const UzivatelPin=({ navigation,route })=>{
 
 
   useEffect(() => {
+    if (!currentUserId) {
+      navigation.replace('PinEntry');
+      return;
+    }
+
     globalThis.CUSIIK_CURRENT_USER_ID = currentUserId;
-  }, [currentUserId]);
+  }, [currentUserId, navigation]);
 
  useEffect(() => {
  screenMountAtRef.current = Date.now();
  initialSyncDoneRef.current = false;
  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!announcement) {
+      return undefined;
+    }
+
+    const tick = () => {
+      if (!announcement || !announcement.expiresAt) {
+        return;
+      }
+
+      const remaining = Number(announcement.expiresAt) - Date.now();
+      if (remaining <= 0) {
+        setAnnouncement(null);
+        return;
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [announcement?.id]);
 
   useEffect(() => {
     (async () => {
@@ -605,10 +684,21 @@ const UzivatelPin=({ navigation,route })=>{
   };
 
   const openChat = () => {
+    if (isAvatarLocked) {
+      setTaskLockNotice('Splň úkol!');
+      setBlockedInfo('Splň úkol!');
+      setScreenMode('menu');
+      return;
+    }
+
     const chats = getGlobalChats();
     const latestMessages = chats[currentUserId] || messages;
     setScreenMode('chat');
     markMessagesAsRead(latestMessages);
+    setInAppToast(null);
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 140);
     scrollToBottom(false);
   };
 
@@ -674,6 +764,7 @@ const UzivatelPin=({ navigation,route })=>{
 
   useEffect(() => {
     const handleConnect = () => {
+      setConnectionText('Server online');
       screenMountAtRef.current = Date.now();
       initialSyncDoneRef.current = false;
 
@@ -775,6 +866,7 @@ const UzivatelPin=({ navigation,route })=>{
         setAnnouncement({
           id: String(newestAnnouncement.id),
           text: String(newestAnnouncement.text).slice(ANNOUNCEMENT_PREFIX.length),
+          expiresAt: Date.now() + ANNOUNCEMENT_TIMEOUT_MS,
         });
       }
       const previousAdminMessages = previousMessages.filter(
@@ -821,17 +913,37 @@ const UzivatelPin=({ navigation,route })=>{
         return;
       }
 
-            const shouldNotify =
+      const isInActiveChat = isActiveInThisChat || screenModeRef.current === 'chat';
+      const shouldPlayChatSound = isInActiveChat && nextUnread > previousUnread;
+
+      if (shouldPlayChatSound) {
+        playInAppChatMessageSound();
+      }
+
+      const shouldNotify =
         !isActiveInThisChat &&
         screenModeRef.current !== 'chat' &&
         nextUnread > previousUnread;
 
       if (shouldNotify) {
         playInAppMessageSound();
-        showLocalMessageNotification({
+        const latestAdminMessageText = String(newestAdminMessage?.text || 'Máte novou zprávu v chatu.');
+        setInAppToast((currentToast) => ({
+          ...currentToast,
           title: 'Nová zpráva od admina',
-          body: 'Máte novou zprávu v chatu.',
-        });
+          body: latestAdminMessageText.slice(0, 120),
+          onReply: () => {
+            setInAppToast(null);
+            setScreenMode('chat');
+            setTimeout(() => inputRef.current?.focus(), 180);
+          },
+        }));
+        if (AppState.currentState !== 'active') {
+          showLocalMessageNotification({
+            title: 'Nová zpráva od admina',
+            body: latestAdminMessageText.slice(0, 120),
+          });
+        }
       }
 
       if (screenModeRef.current === 'chat' || isActiveInThisChat) {
@@ -870,10 +982,38 @@ const UzivatelPin=({ navigation,route })=>{
       }
     };
 
+    const handleTaskLock = ({ enabled, message }) => {
+      if (!enabled) {
+        setTaskLockNotice(null);
+        setBlockedInfo('');
+        return;
+      }
+
+      setTaskLockNotice(message || 'Splň úkol!');
+      setBlockedInfo(message || 'Splň úkol!');
+      setScreenMode('menu');
+      if (screenMode === 'chat') {
+        setTimeout(() => {
+          setScreenMode('menu');
+        }, 0);
+      }
+    };
+
+    const handleDisconnect = () => {
+      setConnectionText('Server offline - lokální režim');
+    };
+
+    const handleConnectError = () => {
+      setConnectionText('Server nedostupný - lokální režim');
+    };
+
     socket.on('server:state', handleServerState);
     socket.on('chat:messages', handleChatMessages);
     socket.on('chat:muted', handleMuted);
+    socket.on('user:task-lock', handleTaskLock);
     socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
 
     if (!socket.connected) {
       socket.connect();
@@ -885,11 +1025,29 @@ const UzivatelPin=({ navigation,route })=>{
       socket.off('server:state', handleServerState);
       socket.off('chat:messages', handleChatMessages);
       socket.off('chat:muted', handleMuted);
+      socket.off('user:task-lock', handleTaskLock);
       socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
     };
   }, [currentUserId]);
 
 
+
+  useEffect(() => {
+    if (isAvatarLocked) {
+      setTaskLockNotice('Splň úkol!');
+      setBlockedInfo('Splň úkol!');
+      if (screenMode === 'chat') {
+        setScreenMode('menu');
+      }
+    } else {
+      setTaskLockNotice(null);
+      if (blockedInfo === 'Splň úkol!') {
+        setBlockedInfo('');
+      }
+    }
+  }, [isAvatarLocked, screenMode, blockedInfo]);
 
   useEffect(() => {
     if (!navigation?.addListener) {
@@ -979,13 +1137,21 @@ const UzivatelPin=({ navigation,route })=>{
 
   const saveMessages = (nextMessages) => {
     const chats = getGlobalChats();
+    const limitedMessages = nextMessages.slice(-200);
 
-    chats[currentUserId] = nextMessages;
-    setMessages(nextMessages);
+    chats[currentUserId] = limitedMessages;
+    setMessages(limitedMessages);
   };
 
   const toggleReactionPicker = (messageId) => {
+    const isOpeningPicker = reactingMessageId !== messageId;
+    const isLastMessage = messages.length > 0 && String(messages[messages.length - 1]?.id) === String(messageId);
+
     setReactingMessageId((current) => (current === messageId ? null : messageId));
+
+    if (isOpeningPicker && isLastMessage) {
+      shouldScrollToReactionPickerRef.current = true;
+    }
   };
 
    const setMessageReaction = (messageId, reactionKey) => {
@@ -1019,48 +1185,18 @@ const UzivatelPin=({ navigation,route })=>{
     setReactingMessageId(null);
   };
 
-  const openTicketModal = () => {
-    closeReactionPicker();
-    setTicketText('');
-    setTicketModalVisible(true);
-  };
-
-  const closeTicketModal = () => {
-    setTicketModalVisible(false);
-    setTicketText('');
-  };
-
-  const sendTicket = () => {
-    const trimmedTicket = ticketText.trim();
-
-    if (!trimmedTicket) {
-      return;
-    }
-
-    if (socket.connected) {
-      socket.emit('ticket:send', {
-        userId: currentUserId,
-        text: trimmedTicket,
-      });
-    }
-
-    closeTicketModal();
-    setBlockedInfo('Tiket byl odeslán GM, přečte si ho jakmile bude online.');
-    setTimeout(() => {
-      setBlockedInfo((current) => {
-        if (current && current.includes('Tiket byl odeslán')) {
-          return '';
-        }
-        return current;
-      });
-    }, 5000);
-  };
-
   const insertHelperMessage = (text) => {
     closeReactionPicker();
     setHelperMenuVisible(false);
 
+    if (isAvatarLocked) {
+      playInAppMessageSound();
+      setBlockedInfo('Ikonka je uzamčena adminem a nelze ji změnit.');
+      return;
+    }
+
     if (isMuted) {
+      playInAppMessageSound();
       setBlockedInfo(`Nemůžeš psát. Jsi umlčený ještě na ${muteTimeLeft}.`);
       return;
     }
@@ -1106,13 +1242,25 @@ const UzivatelPin=({ navigation,route })=>{
     closeReactionPicker();
     const trimmedMessage = message.trim();
 
+    if (isAvatarLocked) {
+      playInAppMessageSound();
+      setBlockedInfo('Ikonka je uzamčena adminem a nelze ji změnit.');
+      return;
+    }
 
     if (isMuted) {
+      playInAppMessageSound();
       setBlockedInfo(`Nemůžeš psát. Jsi umlčený ještě na ${muteTimeLeft}.`);
       return;
     }
 
     if (!trimmedMessage) {
+      return;
+    }
+
+    if (trimmedMessage.startsWith(ANNOUNCEMENT_PREFIX)) {
+      setBlockedInfo('Tento text nelze odeslat jako oznámení.');
+      playInAppMessageSound();
       return;
     }
 
@@ -1125,21 +1273,17 @@ const UzivatelPin=({ navigation,route })=>{
 
         playSendButtonFeedback();
 
+    const nextMessages = [...messages, newMessage];
+    saveMessages(nextMessages);
+
     if (socket.connected) {
       socket.emit('chat:send', {
         userId: currentUserId,
         sender: 'user',
         text: trimmedMessage,
       });
-
-      setMessage('');
-      setBlockedInfo('');
-      return;
     }
 
-    const nextMessages = [...messages, newMessage];
-
-    saveMessages(nextMessages);
     setMessage('');
     setBlockedInfo('');
   };
@@ -1185,6 +1329,32 @@ const UzivatelPin=({ navigation,route })=>{
     setEggMessageVisible(false);
   };
 
+  const renderInAppToast = () => {
+    if (!inAppToast) {
+      return null;
+    }
+
+    return (
+      <View style={styles.inAppToastWrap}>
+        <View style={styles.inAppToast}>
+          <View style={styles.inAppToastTextWrap}>
+            <Text style={styles.inAppToastTitle}>{inAppToast.title}</Text>
+            <Text style={styles.inAppToastBody}>{inAppToast.body}</Text>
+          </View>
+
+          <Pressable
+            style={styles.inAppToastButton}
+            onPress={() => {
+              inAppToast.onReply?.();
+            }}
+          >
+            <Text style={styles.inAppToastButtonText}>Odpovědět</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
   const renderTitleBar = (title) => {
 
     const handleTopBack = () => {
@@ -1212,7 +1382,9 @@ const UzivatelPin=({ navigation,route })=>{
 
        const handleClose = () => {
       closeReactionPicker();
-      BackHandler.exitApp();
+        if (Platform.OS === 'android') {
+          BackHandler.exitApp();
+        }
     };
 
     return (
@@ -1224,17 +1396,9 @@ const UzivatelPin=({ navigation,route })=>{
 
           <Text style={styles.titleText}>{title}</Text>
 
-                    <PulsingDot
-            active={isAdminOnline}
-            style={[
-              styles.titleStatusDot,
-              isAdminOnline
-                ? styles.statusOnline
-                : isAdminJob
-                  ? styles.statusJob
-                  : styles.statusOffline,
-            ]}
-          />
+                    <View style={styles.titleStatusAnimWrap}>
+            <StatusAnimation status={effectiveAdminStatus} size={22} />
+          </View>
 
           <Text style={styles.titleStatusText}>
             {getAdminStatusLabel()}
@@ -1303,7 +1467,7 @@ const UzivatelPin=({ navigation,route })=>{
               style={styles.modalCloseButton}
               onPress={() => setHelpModalVisible(false)}
             >
-              <Text style={styles.modalCloseButtonText}>x</Text>
+              <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
             </Pressable>
           </View>
 
@@ -1358,18 +1522,26 @@ const UzivatelPin=({ navigation,route })=>{
             {announcement ? (
               <View style={styles.announcementBanner}>
                 <Text style={styles.announcementBannerText}>{announcement.text}</Text>
-                <Pressable
-                  style={styles.announcementCloseButton}
-                  onPress={() => {
-                    dismissedAnnouncementIdRef.current = announcement.id;
-                    setAnnouncement(null);
-                  }}
-                >
-                  <Text style={styles.announcementCloseText}>×</Text>
-                </Pressable>
+                <View style={styles.announcementMetaRight}>
+                  <Text style={styles.announcementCountdownText}>({formatAnnouncementCountdown(announcement.expiresAt)})</Text>
+                  <Pressable
+                    style={styles.announcementCloseButton}
+                    onPress={() => {
+                      dismissedAnnouncementIdRef.current = announcement.id;
+                      setAnnouncement(null);
+                    }}
+                  >
+                    <Image source={EXIT_ICON} style={styles.announcementCloseIcon} resizeMode="contain" />
+                  </Pressable>
+                </View>
               </View>
             ) : null}
 
+            {taskLockNotice ? (
+              <View style={styles.taskLockBanner}>
+                <Text style={styles.taskLockBannerText}>{taskLockNotice}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.menuBody}>
               <View style={styles.adminMainMessageBox}>
@@ -1415,11 +1587,29 @@ const UzivatelPin=({ navigation,route })=>{
               <Text style={styles.capabilityText}>Chatovat</Text>
             </View>
 
+            <View style={styles.menuMiddleSection}>
+              <View style={styles.menuMiddleLeftBox}>
+                <Text style={styles.menuMiddlePlaceholderText}>
+                  {'Minichat\n(připravuje se)'}
+                </Text>
+              </View>
+
+              <View style={styles.menuMiddleRatingBox}>
+                <Text style={styles.ratingBoxTitle}>Hodnocení (zamčeno)</Text>
+
+                {RATING_STATS.map((stat) => (
+                  <RatingSlider key={stat.key} label={stat.label} value={stat.value} locked />
+                ))}
+              </View>
+            </View>
+
             <ChatButtonPulseWrapper active={isAdminOnline}>
               <Pressable
+                disabled={isAvatarLocked}
                 style={({ pressed }) => [
                   styles.grayPanelChatButton,
-                  pressed && styles.sendButtonPressed,
+                  isAvatarLocked && styles.grayPanelChatButtonDisabled,
+                  pressed && !isAvatarLocked && styles.sendButtonPressed,
                 ]}
                 onPress={openChat}
               >
@@ -1431,7 +1621,7 @@ const UzivatelPin=({ navigation,route })=>{
                         <View style={styles.statusBar}>
               <Text style={styles.statusText}>Připojeno jako uživatel</Text>
               <Text style={styles.statusText}>
-                {unreadCount > 0 ? `${unreadCount} nových zpráv` : 'Menu'}
+                {`${connectionText} | GM: ${getAdminStatusText()}`}
               </Text>
             </View>
                         </View>
@@ -1454,7 +1644,7 @@ const UzivatelPin=({ navigation,route })=>{
                     style={styles.modalCloseButton}
                     onPress={() => setIconModalVisible(false)}
                   >
-                    <Text style={styles.modalCloseButtonText}>x</Text>
+                    <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                   </Pressable>
                 </View>
 
@@ -1483,55 +1673,10 @@ const UzivatelPin=({ navigation,route })=>{
                       </Pressable>
                     ))}
                   </View>
+
                 </View>
                          </View>
                        </View>
-          </Modal>
-
-              <Modal
-            visible={ticketModalVisible}
-            transparent
-            animationType="fade"
-            onRequestClose={closeTicketModal}
-          >
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalWindow}>
-                <View style={styles.modalTitleBar}>
-                  <Text style={styles.modalTitleText}>Tiket pro GM</Text>
-
-                  <Pressable style={styles.modalCloseButton} onPress={closeTicketModal}>
-                    <Text style={styles.modalCloseButtonText}>x</Text>
-                  </Pressable>
-                </View>
-
-                <View style={styles.modalBody}>
-                  <Text style={styles.modalLabel}>
-                    Napiš zprávu přímo pro GM. Přečte si ji, jakmile bude online.
-                  </Text>
-
-                  <TextInput
-                    value={ticketText}
-                    onChangeText={setTicketText}
-                    style={[styles.input, { marginBottom: 12 }]}
-                    placeholder="Popiš svůj problém..."
-                    placeholderTextColor="#666666"
-                    multiline
-                    maxLength={500}
-                  />
-
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.sendButton,
-                      { alignSelf: 'flex-end' },
-                      pressed && styles.sendButtonPressed,
-                    ]}
-                    onPress={sendTicket}
-                  >
-                    <Text style={styles.sendButtonText}>Odeslat tiket</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
           </Modal>
 
           {renderHelpModal()}
@@ -1546,8 +1691,9 @@ const UzivatelPin=({ navigation,route })=>{
 
               <KeyboardWrapper
         style={styles.page}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
+              enabled
       >
 
         <Animated.View
@@ -1568,12 +1714,12 @@ const UzivatelPin=({ navigation,route })=>{
                   setAnnouncement(null);
                 }}
               >
-                <Text style={styles.announcementCloseText}>×</Text>
+                <Image source={EXIT_ICON} style={styles.announcementCloseIcon} resizeMode="contain" />
               </Pressable>
             </View>
           ) : null}
 
-
+          {renderInAppToast()}
 
           {isMuted ? (
             <View style={styles.muteBanner}>
@@ -1627,10 +1773,10 @@ const UzivatelPin=({ navigation,route })=>{
                       style={[styles.miniIconWrapper, { borderColor: iconOutlineColour, backgroundColor: iconBgColour, borderWidth: 2 }]}
                       onPress={closeReactionPicker}
                     >
-                      <Image
+                      <AvatarIcon
                         source={getIconSource(isUser ? (userAvatarIcon || 'uzivatel') : (adminProfile?.icon || 'admin'))}
+                        iconKey={isUser ? (userAvatarIcon || 'uzivatel') : (adminProfile?.icon || 'admin')}
                         style={styles.miniIconImage}
-                        resizeMode="contain"
                       />
                     </Pressable>
 
@@ -1670,25 +1816,6 @@ const UzivatelPin=({ navigation,route })=>{
                             {isUser ? 'Já' : 'GM'}
                           </Text>
 
-                          {!isUser ? (
-                            <>
-                              <View
-                                style={[
-                                  styles.messageStatusDot,
-                                  isAdminOnline
-                                    ? styles.statusOnline
-                                    : isAdminJob
-                                      ? styles.statusJob
-                                      : styles.statusOffline,
-                                ]}
-                              />
-
-                              <Text style={styles.messageStatusText}>
-                                {getAdminStatusLabel()}
-                              </Text>
-                            </>
-                          ) : null}
-
                           <Text style={styles.messageTime}>{messageTime}</Text>
                         </View>
 
@@ -1717,6 +1844,14 @@ const UzivatelPin=({ navigation,route })=>{
                             styles.reactionPickerRow,
                             isUser ? styles.reactionPickerRowUser : styles.reactionPickerRowAdmin,
                           ]}
+                          onLayout={() => {
+                            if (shouldScrollToReactionPickerRef.current) {
+                              shouldScrollToReactionPickerRef.current = false;
+                              requestAnimationFrame(() => {
+                                scrollViewRef.current?.scrollToEnd({ animated: true });
+                              });
+                            }
+                          }}
                         >
                           {MESSAGE_REACTIONS.map((reactionItem) => (
                             <Pressable
@@ -1745,16 +1880,6 @@ const UzivatelPin=({ navigation,route })=>{
             {helperMenuVisible ? (
               <View style={styles.helperMenuBubble}>
                 <Text style={styles.helperBubbleLabel}>Pomocné věty</Text>
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.helperMenuOption,
-                    pressed && styles.helperBubblePressed,
-                  ]}
-                  onPress={() => insertHelperMessage(HELPER_MESSAGE_TICKET)}
-                >
-                  <Text style={styles.helperBubbleText}>{HELPER_MESSAGE_TICKET}</Text>
-                </Pressable>
 
                 <Pressable
                   style={({ pressed }) => [
@@ -1932,9 +2057,15 @@ const styles = StyleSheet.create({
 
   announcementBanner: {
     minHeight: 48,
-    backgroundColor: '#fff0a6',
-    borderBottomWidth: 2,
-    borderBottomColor: '#d97800',
+    backgroundColor: '#fff8cc',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#7a4a00',
+    borderBottomColor: '#7a4a00',
+    marginHorizontal: 10,
+    marginTop: 8,
+    marginBottom: 8,
     paddingLeft: 12,
     paddingRight: 46,
     paddingVertical: 9,
@@ -1942,33 +2073,61 @@ const styles = StyleSheet.create({
   },
 
   announcementBannerText: {
-    color: '#5c3300',
+    color: '#3d2700',
     fontSize: 13,
     fontWeight: '900',
     lineHeight: 18,
   },
 
-  announcementCloseButton: {
+  taskLockBanner: {
+    backgroundColor: '#ffd7d7',
+    borderWidth: 1,
+    borderColor: '#a80000',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginHorizontal: 12,
+    marginBottom: 8,
+  },
+
+  taskLockBannerText: {
+    color: '#a80000',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+
+  announcementMetaRight: {
     position: 'absolute',
     right: 8,
     top: 8,
-    width: 28,
-    height: 28,
-    backgroundColor: '#ffb52e',
-    borderWidth: 2,
-    borderTopColor: '#fff5c7',
-    borderLeftColor: '#fff5c7',
-    borderRightColor: '#9b5200',
-    borderBottomColor: '#9b5200',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  announcementCountdownText: {
+    color: '#3d2700',
+    fontSize: 11,
+    fontWeight: '900',
+    marginRight: 8,
+  },
+
+  announcementCloseButton: {
+    width: 26,
+    height: 26,
+    backgroundColor: '#e04b31',
+    borderWidth: 1,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#8f1d10',
+    borderBottomColor: '#8f1d10',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  announcementCloseText: {
-    color: '#5c3300',
-    fontSize: 19,
-    fontWeight: '900',
-    lineHeight: 20,
+  announcementCloseIcon: {
+    width: 16,
+    height: 16,
+    tintColor: '#ffffff',
   },
 
   titleLeft: {
@@ -2017,11 +2176,19 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
+  titleStatusAnimWrap: {
+    width: 22,
+    height: 22,
+    marginLeft: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
     titleStatusText: {
     color: '#ffffff',
     fontSize: 11,
     fontWeight: '900',
-    marginLeft: 4,
+    marginLeft: 2,
     textTransform: 'uppercase',
   },
 
@@ -2138,24 +2305,6 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
-  tButton: {
-    width: 32,
-    height: 28,
-    backgroundColor: '#ece9d8',
-    borderWidth: 2,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#777777',
-    borderBottomColor: '#777777',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-   tButtonIcon: {
-    width: 20,
-    height: 18,
-  },
-
   menuTopBubbleImage: {
     width: 34,
     height: 34,
@@ -2231,6 +2380,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
 
+  grayPanelChatButtonDisabled: {
+    backgroundColor: '#d6d3c3',
+    opacity: 0.7,
+  },
+
   grayPanelChatButtonText: {
     color: '#000000',
     fontSize: 13,
@@ -2258,8 +2412,122 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  menuMiddleSection: {
+    width: '100%',
+    flexDirection: 'row',
+    flex: 1,
+    marginBottom: 12,
+  },
 
- 
+  menuMiddleLeftBox: {
+    flex: 1,
+    marginRight: 8,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#aaa793',
+    backgroundColor: '#f5f5f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+  },
+
+  menuMiddlePlaceholderText: {
+    color: '#888888',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 17,
+  },
+
+  menuMiddleRatingBox: {
+    flex: 1,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    padding: 10,
+  },
+
+  ratingBoxTitle: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+
+  ratingRow: {
+    marginBottom: 12,
+  },
+
+  ratingLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 3,
+  },
+
+  ratingLabelText: {
+    color: '#000000',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+
+  ratingValueText: {
+    color: '#333333',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  ratingTrackWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  ratingEndLabel: {
+    color: '#555555',
+    fontSize: 9,
+    fontWeight: '900',
+    width: 14,
+    textAlign: 'center',
+  },
+
+  ratingTrack: {
+    flex: 1,
+    height: 18,
+    marginHorizontal: 4,
+    justifyContent: 'center',
+    position: 'relative',
+  },
+
+  ratingTrackFill: {
+    height: 3,
+    backgroundColor: '#b7b39c',
+    borderRadius: 2,
+  },
+
+  ratingTrackDot: {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    marginLeft: -9,
+    top: -7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  ratingLockIcon: {
+    fontSize: 9,
+  },
+
   chatUnreadCircle: {
     minWidth: 24,
     height: 24,
@@ -2325,8 +2593,9 @@ const styles = StyleSheet.create({
     borderLeftColor: '#808080',
     borderRightColor: '#ffffff',
     borderBottomColor: '#ffffff',
-    margin: 10,
-    marginBottom: 6,
+    marginHorizontal: 10,
+    marginTop: 10,
+    marginBottom: 8,
   },
 
   messagesScroll: {
@@ -2334,13 +2603,14 @@ const styles = StyleSheet.create({
   },
 
   messagesContent: {
-    padding: 12,
-    paddingBottom: 18,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 26,
   },
 
   messageRow: {
     width: '100%',
-    marginBottom: 10,
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -2478,8 +2748,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#dceaff',
     borderTopColor: '#ffffff',
     borderLeftColor: '#ffffff',
-    borderRightColor: '#245aa8',
-    borderBottomColor: '#245aa8',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
   },
 
   messageAuthorRow: {
@@ -2501,6 +2771,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ffffff',
     marginLeft: 6,
+  },
+
+  messageStatusAnimWrap: {
+    width: 14,
+    height: 14,
+    marginLeft: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   messageStatusText: {
@@ -2634,21 +2912,21 @@ const styles = StyleSheet.create({
     borderTopWidth: 2,
     borderTopColor: '#ffffff',
     paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingTop: 10,
+    paddingBottom: 10,
     flexDirection: 'row',
     alignItems: 'flex-end',
   },
 
   input: {
     flex: 1,
-    minHeight: 42,
-    maxHeight: 95,
+    minHeight: 46,
+    maxHeight: 110,
     backgroundColor: '#ffffff',
     color: '#000000',
     fontSize: 14,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderWidth: 2,
     borderTopColor: '#6e6e6e',
     borderLeftColor: '#6e6e6e',
@@ -2704,7 +2982,7 @@ const styles = StyleSheet.create({
   },
 
   statusBar: {
-    height: 25,
+    height: 28,
     backgroundColor: '#d6d3c3',
     borderTopWidth: 1,
     borderTopColor: '#aaa793',
@@ -2768,6 +3046,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#8f1d10',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
 
   modalCloseButtonText: {
@@ -2775,6 +3054,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
     lineHeight: 19,
+  },
+
+  modalCloseButtonIcon: {
+    width: 18,
+    height: 18,
+    tintColor: '#ffffff',
   },
 
   modalBody: {
@@ -2797,12 +3082,12 @@ const styles = StyleSheet.create({
   colourButton: {
     width: '48%',
     minHeight: 46,
-    backgroundColor: '#ece9d8',
+    backgroundColor: '#f4f1e8',
     borderWidth: 2,
     borderTopColor: '#ffffff',
     borderLeftColor: '#ffffff',
-    borderRightColor: '#777777',
-    borderBottomColor: '#777777',
+    borderRightColor: '#8a8a8a',
+    borderBottomColor: '#8a8a8a',
     marginBottom: 10,
     paddingHorizontal: 8,
     flexDirection: 'row',
@@ -2810,11 +3095,11 @@ const styles = StyleSheet.create({
   },
 
   iconButtonSelected: {
-    borderTopColor: '#1f7a1f',
-    borderLeftColor: '#1f7a1f',
-    borderRightColor: '#7df57d',
-    borderBottomColor: '#7df57d',
-    backgroundColor: '#e7ffe7',
+    borderTopColor: '#1b5ec7',
+    borderLeftColor: '#1b5ec7',
+    borderRightColor: '#8ab3ff',
+    borderBottomColor: '#8ab3ff',
+    backgroundColor: '#f2f7ff',
   },
 
   iconPreview: {

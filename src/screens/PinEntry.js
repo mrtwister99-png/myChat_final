@@ -3,6 +3,8 @@ import { Animated, BackHandler, Dimensions, Image, KeyboardAvoidingView, Platfor
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { socket } from '../socket';
+import { StatusAnimation } from '../components/StatusAnimations';
+import { playInAppMessageSound, playXpStartSound } from '../utils/inAppSound';
 
 const DEFAULT_USER_PIN = '1111';
 const DEFAULT_ADMIN_PIN = '8831';
@@ -55,6 +57,20 @@ const PinEntry = ({ navigation }) => {
   const [errorText, setErrorText] = useState('');
   const [serverStatusText, setServerStatusText] = useState('Připojuji server...');
   const [isCheckingPin, setIsCheckingPin] = useState(false);
+
+  const getServerStatusType = (value) => {
+    const normalized = String(value || '').toLowerCase();
+
+    if (normalized.includes('online')) {
+      return 'on';
+    }
+
+    if (normalized.includes('připojuj') || normalized.includes('nedostup') || normalized.includes('offline')) {
+      return 'off';
+    }
+
+    return 'off';
+  };
     const inputRef = useRef(null);
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const entranceAnim = useRef(new Animated.Value(-Dimensions.get('window').width)).current;
@@ -134,6 +150,7 @@ const PinEntry = ({ navigation }) => {
       setIsCheckingPin(false);
       setPin('');
       setErrorText('');
+      playXpStartSound();
 
       if (payload?.role === 'user') {
         globalThis.CUSIIK_CURRENT_ROLE = 'user';
@@ -164,7 +181,12 @@ const PinEntry = ({ navigation }) => {
       handleWrongPin();
     };
 
-    const handleAuthError = (payload) => { setIsCheckingPin(false); setErrorText(payload?.message || 'Špatný PIN.'); shakeWindow(); };
+    const handleAuthError = (payload) => {
+      setIsCheckingPin(false);
+      setErrorText(payload?.message || 'Špatný PIN.');
+      playInAppMessageSound();
+      shakeWindow();
+    };
     const handleUserKicked = async ({ userId, preserveIdentity, specialPin } = {}) => {
       const shouldPreserveIdentity = Boolean(preserveIdentity && userId);
 
@@ -237,6 +259,7 @@ const PinEntry = ({ navigation }) => {
 
   const handleWrongPin = () => {
     setErrorText('Špatný PIN.');
+    playInAppMessageSound();
     shakeWindow();
   };
 
@@ -249,6 +272,7 @@ const PinEntry = ({ navigation }) => {
       globalThis.CUSIIK_CURRENT_ROLE = 'user';
       globalThis.CUSIIK_CURRENT_USER_NAME = localUserName;
       setPin('');
+      playXpStartSound();
       navigation.replace(USER_SCREEN, { userName: localUserName });
       return;
     }
@@ -256,6 +280,7 @@ const PinEntry = ({ navigation }) => {
     if (cleanValue === currentAdminPin) {
       globalThis.CUSIIK_CURRENT_ROLE = 'admin';
       setPin('');
+      playXpStartSound();
       navigation.replace(ADMIN_SCREEN);
       return;
     }
@@ -290,7 +315,10 @@ const PinEntry = ({ navigation }) => {
         return;
       }
 
-      handleLocalPinCheck(cleanValue);
+      setIsCheckingPin(false);
+      setErrorText('Server musí být online pro přihlášení.');
+      playInAppMessageSound();
+      shakeWindow();
     }, 150);
   };
 
@@ -300,9 +328,11 @@ const PinEntry = ({ navigation }) => {
   };
 
   const handleCloseApp = () => {
-    try {
-      BackHandler.exitApp();
-    } catch {}
+    if (Platform.OS === 'android') {
+      try {
+        BackHandler.exitApp();
+      } catch {}
+    }
   };
 
   // Easter egg logic
@@ -393,9 +423,11 @@ const PinEntry = ({ navigation }) => {
               showSoftInputOnFocus
               style={styles.hiddenInput}
               onBlur={() => {
-                if (easterActive) return;
+                if (easterActive || !navigation.isFocused()) return;
                 setTimeout(() => {
-                  inputRef.current?.focus();
+                  if (!easterActive && navigation.isFocused()) {
+                    inputRef.current?.focus();
+                  }
                 }, 300);
               }}
             />
@@ -491,7 +523,15 @@ const PinEntry = ({ navigation }) => {
 
                 <View style={styles.statusBar}>
                   <Text style={styles.statusText}>Ready</Text>
-                  <Text style={styles.statusText}>{serverStatusText}</Text>
+                  <View style={styles.statusRight}>
+                    <View style={styles.statusAnimWrap}>
+                      <StatusAnimation
+                        status={getServerStatusType(serverStatusText)}
+                        size={18}
+                      />
+                    </View>
+                    <Text style={styles.statusText}>{serverStatusText}</Text>
+                  </View>
                 </View>
               </Animated.View>
             </View>
@@ -623,6 +663,8 @@ const styles = StyleSheet.create({
   xpButtonTextDisabled: { color: '#555555' },
   statusBar: { minHeight: 25, backgroundColor: '#d6d3c3', borderTopWidth: 1, borderTopColor: '#aaa793', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4 },
   statusText: { color: '#333333', fontSize: 11, flexShrink: 1 },
+  statusRight: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+  statusAnimWrap: { width: 16, height: 16, marginRight: 5, alignItems: 'center', justifyContent: 'center' },
 
   easterTimerBar: { position: 'absolute', top: 0, left: 0, right: 0, height: 42, backgroundColor: '#ff0000', borderBottomWidth: 3, borderBottomColor: '#8a0000', alignItems: 'center', justifyContent: 'center', zIndex: 9999, elevation: 20 },
   easterTimerText: { color: '#ffffff', fontSize: 18, fontWeight: '900', textAlign: 'center' },

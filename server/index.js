@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 8080;
 const ANNOUNCEMENT_PREFIX = '[[ANNOUNCEMENT]]';
+const MAX_MESSAGES_PER_CHAT = 200;
 
 const app = express();
 app.use(cors());
@@ -54,7 +55,7 @@ const SUPPORTED_AVATAR_ICONS = new Set([
   'devil',
   'klaun',
   'stop',
-  'vykricnik',
+  'prase',
   'fuckerr',
   'zachod',
 ]);
@@ -77,6 +78,10 @@ const normalizeAvatarIcon = (icon) => {
 
   if (cleanIcon === 'fucker') {
     return 'fuckerr';
+  }
+
+  if (cleanIcon === 'vykricnik') {
+    return 'prase';
   }
 
   return SUPPORTED_AVATAR_ICONS.has(cleanIcon) ? cleanIcon : 'uzivatel';
@@ -119,8 +124,12 @@ const sendExpoPushAsync = async ({ to, title, body, data = {} }) => {
       sound: 'notification.mp3',
       title: String(title || 'Nova zprava').slice(0, 120),
       body: String(body || '').slice(0, 240),
-      data: data || {},
+      data: {
+        ...(data || {}),
+        action: data?.action || 'openChat',
+      },
       channelId: 'chat-messages',
+      categoryId: 'chat_reply',
     }));
 
     const res = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -419,6 +428,32 @@ const getUserById = (userId) => {
   return state.users.find((user) => user.id === userId);
 };
 
+const syncSocketUserSession = (socket, expectedUserId) => {
+  const cleanExpectedUserId = String(expectedUserId || '').trim();
+
+  if (!cleanExpectedUserId) {
+    return false;
+  }
+
+  const currentSocketUserId = socket.data.userId ? String(socket.data.userId).trim() : '';
+  const lastKnownUserId = socket.data.lastUserId ? String(socket.data.lastUserId).trim() : '';
+
+  if (currentSocketUserId && currentSocketUserId !== cleanExpectedUserId) {
+    return false;
+  }
+
+  if (!currentSocketUserId && (lastKnownUserId === cleanExpectedUserId || !lastKnownUserId)) {
+    socket.data.role = 'user';
+    socket.data.userId = cleanExpectedUserId;
+    socket.data.lastUserId = cleanExpectedUserId;
+    socket.join('users');
+    socket.join(`user:${cleanExpectedUserId}`);
+    return true;
+  }
+
+  return socket.data.role === 'user' && socket.data.userId === cleanExpectedUserId;
+};
+
 const markUserOnline = (userId, socket) => {
   state.users = state.users.map((user) =>
     user.id === userId
@@ -433,6 +468,7 @@ const markUserOnline = (userId, socket) => {
 
   socket.data.role = 'user';
   socket.data.userId = userId;
+  socket.data.lastUserId = userId;
 
   socket.join('users');
   socket.join(`user:${userId}`);
@@ -787,7 +823,19 @@ io.on('connection', (socket) => {
     return;
   }
 
+  if (trimmedText.startsWith(ANNOUNCEMENT_PREFIX) && cleanSender !== 'system') {
+    return;
+  }
+
   const user = getUserById(cleanUserId);
+
+  if (cleanSender === 'admin' && socket.data.role !== 'admin') {
+    return;
+  }
+
+  if (cleanSender === 'system' && socket.data.role !== 'admin') {
+    return;
+  }
 
   if (cleanSender === 'user') {
     if (!user) {
@@ -798,10 +846,19 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (socket.data.userId !== cleanUserId) {
+    const sessionMatchesUser = syncSocketUserSession(socket, cleanUserId);
+    if (!sessionMatchesUser) {
       socket.emit('user:kicked', {
         userId: cleanUserId,
         reason: 'Neplatné přihlášení. Přihlaš se znovu.',
+      });
+      return;
+    }
+
+    if (user.avatarLocked) {
+      socket.emit('chat:muted', {
+        userId: cleanUserId,
+        muteUntil: Date.now() + 1000,
       });
       return;
     }
@@ -837,6 +894,7 @@ io.on('connection', (socket) => {
   }
 
   state.chats[cleanUserId].push(newMessage);
+  state.chats[cleanUserId] = state.chats[cleanUserId].slice(-MAX_MESSAGES_PER_CHAT);
 
   io.emit('chat:messages', {
     userId: cleanUserId,
@@ -857,7 +915,7 @@ io.on('connection', (socket) => {
             to: userToken,
             title: 'Nova zprava od admina',
             body: trimmedText.slice(0, 120),
-            data: { userId: cleanUserId, action: 'openChat' },
+            data: { userId: cleanUserId, action: 'openChat', role: 'user' },
           });
         }
       } else if (cleanSender === 'system' && trimmedText.startsWith(ANNOUNCEMENT_PREFIX)) {
@@ -867,7 +925,7 @@ io.on('connection', (socket) => {
             to: userToken,
             title: 'Nové oznámení',
             body: trimmedText.slice(ANNOUNCEMENT_PREFIX.length, 240),
-            data: { userId: cleanUserId, action: 'openChat', announcement: true },
+            data: { userId: cleanUserId, action: 'openChat', announcement: true, role: 'user' },
           });
         }
   } else if (cleanSender === 'user') {
@@ -883,7 +941,7 @@ io.on('connection', (socket) => {
             to: adminTokens,
             title: `Nova zprava od ${senderName}`,
             body: trimmedText.slice(0, 120),
-            data: { userId: cleanUserId, action: 'openChat' },
+            data: { userId: cleanUserId, action: 'openChat', role: 'admin' },
           });
         }
       }
@@ -1162,53 +1220,6 @@ io.on('connection', (socket) => {
     emitState();
   });
 
-  socket.on('ticket:send', ({ userId, text }) => {
-    const cleanUserId = String(userId || '').trim();
-    const trimmedText = String(text || '').trim();
-    if (!cleanUserId || !trimmedText) return;
-
-    const user = getUserById(cleanUserId);
-    const userName = user?.name || `Uzivatel ${cleanUserId}`;
-
-    if (!state.chats[cleanUserId]) state.chats[cleanUserId] = [];
-
-    const ticketMessage = {
-      id: `ticket-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      sender: 'ticket',
-      text: trimmedText,
-      authorName: userName,
-      createdAt: Date.now(),
-    };
-
-    state.chats[cleanUserId].push(ticketMessage);
-
-    // FIX: posli vsem - io.emit zajisti ze to dojde i kdyz admin neni zrovna v 'admins' roomce
-    io.emit('chat:messages', {
-      userId: cleanUserId,
-      messages: state.chats[cleanUserId],
-    });
-
-    io.to('admins').emit('ticket:new', {
-      userId: cleanUserId,
-      userName,
-      text: trimmedText,
-      createdAt: ticketMessage.createdAt,
-    });
-
-    // push notifikace pro admina
-    if (!state.secretMutedUsers[cleanUserId]) {
-      const adminTokens = Array.from(state.adminPushTokens);
-      if (adminTokens.length > 0) {
-        sendExpoPushAsync({
-          to: adminTokens,
-          title: `Nový tiket od ${userName}`,
-          body: trimmedText.slice(0, 120),
-          data: { userId: cleanUserId, action: 'openChat' },
-        }).catch(()=>{});
-      }
-    }
-  });
-
   socket.on('admin:setUserColour', ({ userId, colour }) => {
     if (socket.data.role !== 'admin') {
       return;
@@ -1234,6 +1245,36 @@ io.on('connection', (socket) => {
     rememberUserProfile(updatedUser);
     patchStoredUserProfile(cleanUserId, {
       silhouetteColour: cleanColour,
+    });
+
+    emitState();
+  });
+
+  socket.on('admin:setUserBgColour', ({ userId, colour }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '');
+    const cleanColour = String(colour || '').trim();
+
+    if (!cleanUserId || !cleanColour) {
+      return;
+    }
+
+    state.users = state.users.map((user) =>
+      user.id === cleanUserId
+        ? {
+            ...user,
+            bgColour: cleanColour,
+          }
+        : user
+    );
+
+    const updatedUser = getUserById(cleanUserId);
+    rememberUserProfile(updatedUser);
+    patchStoredUserProfile(cleanUserId, {
+      bgColour: cleanColour,
     });
 
     emitState();
@@ -1266,6 +1307,12 @@ io.on('connection', (socket) => {
     patchStoredUserProfile(cleanUserId, {
       avatarIcon: isEnabled ? 'fuckerr' : 'uzivatel',
       avatarLocked: isEnabled,
+    });
+
+    io.to(`user:${cleanUserId}`).emit('user:task-lock', {
+      userId: cleanUserId,
+      enabled: isEnabled,
+      message: isEnabled ? 'Splň úkol!' : 'Úkol splněn. Můžeš pokračovat.',
     });
 
     emitState();

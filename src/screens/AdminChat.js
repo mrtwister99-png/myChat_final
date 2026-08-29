@@ -19,12 +19,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
+import { StatusAnimation } from '../components/StatusAnimations';
+import { AvatarIcon } from '../components/AvatarIcon';
 
-const KeyboardWrapper = Platform.OS === 'ios' ? KeyboardAvoidingView : View;
+const KeyboardWrapper = KeyboardAvoidingView;
 
-const EYE_ICON = require('../assets/icons/oko.png');
-const EYE_SLASH_ICON = require('../assets/icons/okoskrtt.png');
-const EYE_SECRET_MUTED_ICON = require('../assets/icons/okopotaji.png');
+const MUTE_ICON = require('../assets/icons/timeout.png');
+const SECRET_MUTE_ICON = require('../assets/icons/psss.png');
 const BACK_ICON = require('../assets/icons/backsipka.png');
 const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
 const EXIT_ICON = require('../assets/icons/exit.png');
@@ -79,7 +80,7 @@ const USER_ICON_SOURCES = {
   devil: require('../assets/icons/devil.png'),
   klaun: require('../assets/icons/klaun.png'),
   stop: require('../assets/icons/stop.png'),
-  vykricnik: require('../assets/icons/vykricnik.png'),
+  prase: require('../assets/icons/prase.png'),
   fuckerr: require('../assets/icons/fuckerr.png'),
   zachod: require('../assets/icons/zachod.png'),
   admin: require('../assets/icons/admin.png'),
@@ -94,6 +95,7 @@ const normalizeAvatarIcon = (iconKey) => {
   const cleanIcon = String(iconKey || '').trim().toLowerCase();
   if (cleanIcon === 'klan') return 'klaun';
   if (cleanIcon === 'fucker') return 'fuckerr';
+  if (cleanIcon === 'vykricnik') return 'prase';
   return USER_ICON_SOURCES[cleanIcon] ? cleanIcon : 'uzivatel';
 };
 
@@ -202,6 +204,19 @@ const AdminChat = ({ navigation, route }) => {
     }, 120);
   };
 
+  const toggleReactionPicker = (messageId) => {
+    const isOpeningPicker = reactingMessageId !== messageId;
+    const isLastMessage = messages.length > 0 && String(messages[messages.length - 1]?.id) === String(messageId);
+
+    setReactingMessageId((currentId) =>
+      String(currentId) === String(messageId) ? null : messageId
+    );
+
+    if (isOpeningPicker && isLastMessage) {
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 180);
+    }
+  };
+
   const [message, setMessage] = useState('');
   const [muteModalVisible, setMuteModalVisible] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -215,6 +230,19 @@ const AdminChat = ({ navigation, route }) => {
   const [currentUserData, setCurrentUserData] = useState(null);
   const [adminAvatarIcon, setAdminAvatarIcon] = useState('admin');
   const [adminProfile, setAdminProfile] = useState(globalThis.CUSIIK_ADMIN_PROFILE || { icon: 'admin', silhouetteColour: '#0b3d91', bgColour: '#ece9d8' });
+  const [adminStatus, setAdminStatus] = useState(globalThis.CUSIIK_ADMIN_STATUS || 'off');
+
+  const getAdminStatusLabel = () => {
+    if (adminStatus === 'on') {
+      return 'ON';
+    }
+
+    if (adminStatus === 'job') {
+      return 'JOB';
+    }
+
+    return 'OFF';
+  };
   const [connectionText, setConnectionText] = useState(
     socket.connected ? 'Server online' : 'Připojuji server...'
   );
@@ -301,6 +329,11 @@ useEffect(() => {
     };
 
     const handleServerState = (serverState) => {
+      if (serverState?.adminStatus) {
+        setAdminStatus(serverState.adminStatus);
+        globalThis.CUSIIK_ADMIN_STATUS = serverState.adminStatus;
+      }
+
       if (serverState?.mutedUsers) {
         setServerMutedUsers(serverState.mutedUsers);
         globalThis.CUSIIK_MUTED_USERS = serverState.mutedUsers;
@@ -409,9 +442,10 @@ useEffect(() => {
 
   const saveMessages = (nextMessages) => {
     const chats = getGlobalChats();
+    const limitedMessages = nextMessages.slice(-200);
 
-    chats[userId] = nextMessages;
-    setMessages(nextMessages);
+    chats[userId] = limitedMessages;
+    setMessages(limitedMessages);
   };
 
   const sendSystemMessage = (text) => {
@@ -483,6 +517,11 @@ useEffect(() => {
     const trimmedMessage = message.trim();
 
     if (!trimmedMessage) {
+      return;
+    }
+
+    if (trimmedMessage.startsWith(ANNOUNCEMENT_PREFIX)) {
+      Alert.alert('Oznámení', 'Oznámení se posílají pouze přes nabídku Oznámení.');
       return;
     }
 
@@ -611,9 +650,11 @@ useEffect(() => {
   };
 
   const closeApp = () => {
-    try {
-      BackHandler.exitApp();
-    } catch {}
+    if (Platform.OS === 'android') {
+      try {
+        BackHandler.exitApp();
+      } catch {}
+    }
   };
 
   const toggleMessageSelection = (messageId) => {
@@ -671,9 +712,7 @@ useEffect(() => {
       return;
     }
 
-    setReactingMessageId((currentId) =>
-      String(currentId) === String(messageId) ? null : messageId
-    );
+    toggleReactionPicker(messageId);
   };
 
   const onMessagePress = (messageId) => {
@@ -760,7 +799,9 @@ useEffect(() => {
 
       <KeyboardWrapper
         style={styles.page}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+        enabled
       >
               <Animated.View
           style={[
@@ -774,14 +815,13 @@ useEffect(() => {
 
               <Text style={styles.titleText}>Chat s uživatelem</Text>
 
-              <View
-                style={[
-                  styles.titleStatusDot,
-                  isServerOnline ? styles.titleStatusOnline : styles.titleStatusOffline,
-                ]}
-              />
+              <View style={styles.titleStatusAnimWrap}>
+                <StatusAnimation status={isServerOnline ? adminStatus : 'off'} size={22} />
+              </View>
 
-              <Text style={styles.titleStatusText}>{isServerOnline ? 'on' : 'off'}</Text>
+              <Text style={styles.titleStatusText}>
+                {isServerOnline ? getAdminStatusLabel() : 'OFF'}
+              </Text>
             </View>
 
             <View style={styles.windowButtons}>
@@ -806,11 +846,21 @@ useEffect(() => {
           </View>
 
           <View style={styles.topPanel}>
-            <Image
-              source={getIconSource(currentUserData?.avatarIcon || 'uzivatel')}
-              style={styles.userHeaderIcon}
-              resizeMode="contain"
-            />
+            <View
+              style={[
+                styles.userHeaderIconBox,
+                {
+                  borderColor: currentUserData?.silhouetteColour || currentUserData?.colour || '#0b3d91',
+                  backgroundColor: currentUserData?.bgColour || '#ece9d8',
+                },
+              ]}
+            >
+              <Image
+                source={getIconSource(currentUserData?.avatarIcon || 'uzivatel')}
+                style={styles.userHeaderIcon}
+                resizeMode="contain"
+              />
+            </View>
 
             <View style={styles.userInfoBox}>
               <View style={styles.userNameRow}>
@@ -848,7 +898,7 @@ useEffect(() => {
                 delayLongPress={260}
               >
                 <Image
-                  source={isSecretMuted ? EYE_SECRET_MUTED_ICON : (isMuted ? EYE_SLASH_ICON : EYE_ICON)}
+                  source={isSecretMuted ? SECRET_MUTE_ICON : MUTE_ICON}
                   style={styles.muteButtonIcon}
                   resizeMode="contain"
                 />
@@ -910,10 +960,10 @@ useEffect(() => {
                     ]}
                   >
                     <View style={[styles.miniIconWrapper, { borderColor: iconOutlineColour, backgroundColor: iconBgColour, borderWidth: 2 }]}>
-                      <Image
+                      <AvatarIcon
                         source={getIconSource(isAdmin ? (adminProfile?.icon || adminAvatarIcon || 'admin') : (currentUserData?.avatarIcon || 'uzivatel'))}
+                        iconKey={isAdmin ? (adminProfile?.icon || adminAvatarIcon || 'admin') : (currentUserData?.avatarIcon || 'uzivatel')}
                         style={styles.miniIconImage}
-                        resizeMode="contain"
                       />
                     </View>
                     <View style={styles.messageBubbleColumn}>
@@ -1009,6 +1059,7 @@ useEffect(() => {
           <View style={styles.inputPanel}>
             <TextInput
               value={message}
+              onFocus={() => setReactingMessageId(null)}
               onChangeText={setMessage}
               placeholder={`Napiš zprávu pro ${userName}...`}
               placeholderTextColor="#666666"
@@ -1040,7 +1091,7 @@ useEffect(() => {
                 ? `Vybráno: ${selectedMessageIds.length}`
                 : isMuted
                   ? `Mute: ${muteTimeLeft}`
-                  : connectionText}
+                  : `${connectionText} | Status: ${getAdminStatusLabel()}`}
             </Text>
                     </View>
         </Animated.View>
@@ -1058,7 +1109,7 @@ useEffect(() => {
                 <Text style={styles.modalTitleText}>Umlčet uživatele</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeMuteModal}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -1187,6 +1238,14 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
+  titleStatusAnimWrap: {
+    width: 22,
+    height: 22,
+    marginLeft: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   titleStatusText: {
     color: '#ffffff',
     fontSize: 11,
@@ -1296,6 +1355,14 @@ const styles = StyleSheet.create({
   userHeaderIcon: {
     width: 38,
     height: 38,
+  },
+
+  userHeaderIconBox: {
+    width: 46,
+    height: 46,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 10,
   },
 

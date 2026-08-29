@@ -53,6 +53,34 @@ Notifications.setNotificationHandler({
   },
 });
 
+export const registerNotificationCategories = async () => {
+  try {
+    await Notifications.setNotificationCategoryAsync('chat_reply', [
+      {
+        identifier: 'reply',
+        buttonTitle: 'Odpovědět',
+        options: {
+          opensAppToForeground: true,
+          isDestructive: false,
+          isAuthenticationRequired: false,
+        },
+        textInput: {
+          placeholder: 'Napiš odpověď...',
+        },
+      },
+      {
+        identifier: 'open',
+        buttonTitle: 'Otevřít',
+        options: {
+          opensAppToForeground: true,
+        },
+      },
+    ]);
+  } catch {
+    // no-op; categories are optional on some targets
+  }
+};
+
 export const registerForPushNotificationsAsync = async () => {
   if (!Device.isDevice) {
     return null;
@@ -119,6 +147,7 @@ export const showLocalMessageNotification = async ({
       title,
       body,
       sound: silent ? null : NOTIFICATION_SOUND_NAME,
+      categoryIdentifier: 'chat_reply',
       data: {
         ...(data || {}),
         silent: Boolean(silent),

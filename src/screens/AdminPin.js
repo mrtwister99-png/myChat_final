@@ -22,11 +22,18 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { socket } from '../socket';
-import { playInAppMessageSound } from '../utils/inAppSound';
+import { playInAppChatMessageSound } from '../utils/inAppSound';
+import {
+  JobPulseAnimation,
+  OffPulseAnimation,
+  OnLoopAnimation,
+  StatusAnimation,
+} from '../components/StatusAnimations';
+import { AvatarIcon } from '../components/AvatarIcon';
 
 
-const EYE_ICON = require('../assets/icons/oko.png');
-const EYE_SECRET_ICON = require('../assets/icons/okopotaji.png');
+const MUTE_ICON = require('../assets/icons/timeout.png');
+const SECRET_MUTE_ICON = require('../assets/icons/psss.png');
 const FUCKER_ICON = require('../assets/icons/fuckerr.png');
 const KICK_ICON = require('../assets/icons/stop.png');
 const BACK_ICON = require('../assets/icons/backsipka.png');
@@ -47,8 +54,10 @@ const MUTE_OPTIONS = [
   { label: '10 min', milliseconds: 10 * 60 * 1000 },
   { label: '30 min', milliseconds: 30 * 60 * 1000 },
   { label: '1 hod', milliseconds: 60 * 60 * 1000 },
+  { label: '5 hod', milliseconds: 5 * 60 * 60 * 1000 },
   { label: '12 hod', milliseconds: 12 * 60 * 60 * 1000 },
   { label: '1 den', milliseconds: 24 * 60 * 60 * 1000 },
+  { label: '2 dny', milliseconds: 2 * 24 * 60 * 60 * 1000 },
 ];
 
 
@@ -87,7 +96,7 @@ const USER_ICON_SOURCES = {
   devil: require('../assets/icons/devil.png'),
   klaun: require('../assets/icons/klaun.png'),
   stop: require('../assets/icons/stop.png'),
-  vykricnik: require('../assets/icons/vykricnik.png'),
+  prase: require('../assets/icons/prase.png'),
   fuckerr: require('../assets/icons/fuckerr.png'),
   zachod: require('../assets/icons/zachod.png'),
   admin: require('../assets/icons/admin.png'),
@@ -121,6 +130,10 @@ const normalizeAvatarIcon = (iconKey) => {
 
   if (cleanIcon === 'fucker') {
     return 'fuckerr';
+  }
+
+  if (cleanIcon === 'vykricnik') {
+    return 'prase';
   }
 
   return USER_ICON_SOURCES[cleanIcon] ? cleanIcon : 'uzivatel';
@@ -273,7 +286,7 @@ const getUserMessageCount = (userId) => {
 
   return messages.filter((message) => {
     const sender = String(message?.sender || '').toLowerCase();
-    return sender === 'user' || sender === 'ticket';
+    return sender === 'user';
   }).length;
 };
 
@@ -316,265 +329,6 @@ const areUsersEqual = (a, b) => {
   return true;
 };
 
-const ON_FRAME_SOURCES = [
-  require('../assets/anima/stav0.png'),
-  require('../assets/anima/stav1.png'),
-  require('../assets/anima/stav2.png'),
-  require('../assets/anima/stav3.png'),
-  require('../assets/anima/stav4.png'),
-  require('../assets/anima/stav5.png'),
-  require('../assets/anima/stav6.png'),
-  require('../assets/anima/stav7.png'),
-  require('../assets/anima/stav8.png'),
-];
-
-const OFF_FRAME_SOURCES = [
-  require('../assets/anima/off0.png'),
-  require('../assets/anima/off1.png'),
-  require('../assets/anima/off2.png'),
-  require('../assets/anima/off3.png'),
-  require('../assets/anima/off4.png'),
-  require('../assets/anima/off5.png'),
-  require('../assets/anima/off6.png'),
-];
-
-const JOB_FRAME_SOURCES = [
-  require('../assets/anima/job-0.png'),
-  require('../assets/anima/job-1.png'),
-  require('../assets/anima/job-2.png'),
-  require('../assets/anima/job-3.png'),
-  require('../assets/anima/job-4.png'),
-  require('../assets/anima/job-5.png'),
-  require('../assets/anima/job-6.png'),
-  require('../assets/anima/job-7.png'),
-];
-
-// Sdílený "epoch" pro synchronizaci všech instancí ON animace napříč obrazovkou.
-const ON_ANIM_EPOCH = Date.now();
-
-const OnLoopAnimation = ({ size = 34, stepDuration = 200 }) => {
-  const totalFrames = ON_FRAME_SOURCES.length;
-  const getSyncedFrameIndex = () => {
-    const elapsed = Date.now() - ON_ANIM_EPOCH;
-    return Math.floor(elapsed / stepDuration) % totalFrames;
-  };
-
-  const [frameIndex, setFrameIndex] = useState(getSyncedFrameIndex);
-
-  useEffect(() => {
-    let isCancelled = false;
-    setFrameIndex(getSyncedFrameIndex());
-
-    const tick = () => {
-      if (isCancelled) {
-        return;
-      }
-
-      setFrameIndex(getSyncedFrameIndex());
-
-      const elapsed = Date.now() - ON_ANIM_EPOCH;
-      const msToNextStep = stepDuration - (elapsed % stepDuration);
-
-      timeoutRef.current = setTimeout(tick, msToNextStep);
-    };
-
-    const timeoutRef = { current: null };
-    timeoutRef.current = setTimeout(tick, stepDuration - ((Date.now() - ON_ANIM_EPOCH) % stepDuration));
-
-    return () => {
-      isCancelled = true;
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, [stepDuration]);
-
-  return (
-    <Image
-      source={ON_FRAME_SOURCES[frameIndex]}
-      style={{ width: size, height: size }}
-      resizeMode="contain"
-    />
-  );
-};
-
-
-const OffPulseAnimation = ({ size = 34, stepDuration = 200 }) => {
-  const [risingFrameIndex, setRisingFrameIndex] = useState(0);
-  const [showOverlay, setShowOverlay] = useState(false);
-  const overlayScale = useRef(new Animated.Value(1)).current;
-  const timersRef = useRef([]);
-  const pulseLoopRef = useRef(null);
-
-  useEffect(() => {
-    let isCancelled = false;
-    setRisingFrameIndex(0);
-    setShowOverlay(false);
-    overlayScale.setValue(1);
-
-    const lastRisingIndex = 5; // off0 .. off5 - tady animace natrvalo zůstane stát
-
-    const scheduleNext = (index) => {
-      const timer = setTimeout(() => {
-        if (isCancelled) {
-          return;
-        }
-
-        if (index === lastRisingIndex) {
-          // off5 je od teď navždy vidět (base vrstva se dál nemění)
-
-          // HOLD 700ms na samotném off5, pak navrch přibude off6
-          const holdTimer = setTimeout(() => {
-            if (isCancelled) {
-              return;
-            }
-
-            setShowOverlay(true);
-
-            // velmi pomalý, dlouhý pulz off6 navrch - nekonečná smyčka
-            pulseLoopRef.current = Animated.loop(
-              Animated.sequence([
-                Animated.timing(overlayScale, {
-                  toValue: 0.7,
-                  duration: 1800,
-                  easing: Easing.inOut(Easing.ease),
-                  useNativeDriver: true,
-                }),
-                Animated.timing(overlayScale, {
-                  toValue: 1.15,
-                  duration: 2200,
-                  easing: Easing.inOut(Easing.ease),
-                  useNativeDriver: true,
-                }),
-                Animated.timing(overlayScale, {
-                  toValue: 1,
-                  duration: 1800,
-                  easing: Easing.inOut(Easing.ease),
-                  useNativeDriver: true,
-                }),
-              ])
-            );
-
-            pulseLoopRef.current.start();
-          }, 700);
-
-          timersRef.current.push(holdTimer);
-          return;
-        }
-
-        const nextIndex = index + 1;
-        setRisingFrameIndex(nextIndex);
-        scheduleNext(nextIndex);
-      }, stepDuration);
-
-      timersRef.current.push(timer);
-    };
-
-    scheduleNext(0);
-
-    return () => {
-      isCancelled = true;
-      timersRef.current.forEach((timer) => clearTimeout(timer));
-      timersRef.current = [];
-      if (pulseLoopRef.current) {
-        pulseLoopRef.current.stop();
-      }
-    };
-  }, [stepDuration]);
-
-  return (
-    <View style={{ width: size, height: size }}>
-      {/* base vrstva - doběhne na off5 a zůstává vidět navždy */}
-      <Image
-        source={OFF_FRAME_SOURCES[risingFrameIndex]}
-        style={{ width: size, height: size, position: 'absolute', top: 0, left: 0 }}
-        resizeMode="contain"
-      />
-
-      {/* overlay vrstva - off6 se přidá navrch a pomalu pulzuje, off5 pod ní je pořád vidět */}
-      {showOverlay ? (
-        <Animated.Image
-          source={OFF_FRAME_SOURCES[6]}
-          style={{
-            width: size,
-            height: size,
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            transform: [{ scale: overlayScale }],
-          }}
-          resizeMode="contain"
-        />
-      ) : null}
-    </View>
-  );
-};
-
-// Sdílený "epoch" pro synchronizaci všech instancí JOB animace napříč obrazovkou.
-const JOB_ANIM_EPOCH = Date.now();
-
-const getJobSyncedFrameIndex = (stepDuration, holdDuration) => {
-  const introDuration = stepDuration * 4; // 0 -> 1 -> 2 -> 3 -> 4 (4 kroky rychlé fáze)
-  const elapsed = Date.now() - JOB_ANIM_EPOCH;
-
-  if (elapsed < introDuration) {
-    return Math.min(3, Math.floor(elapsed / stepDuration));
-  }
-
-  const slowElapsed = elapsed - introDuration;
-  const slowCycleLength = holdDuration * 4; // 4 -> 5 -> 6 -> 7 -> (zpět na 4)
-  const positionInCycle = slowElapsed % slowCycleLength;
-
-  return 4 + Math.floor(positionInCycle / holdDuration);
-};
-
-const JobPulseAnimation = ({ size = 34, stepDuration = 200, holdDuration = 1000 }) => {
-  const [frameIndex, setFrameIndex] = useState(() =>
-    getJobSyncedFrameIndex(stepDuration, holdDuration)
-  );
-  const timerRef = useRef(null);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    const tick = () => {
-      if (isCancelled) {
-        return;
-      }
-
-      const nextFrame = getJobSyncedFrameIndex(stepDuration, holdDuration);
-      setFrameIndex(nextFrame);
-
-      const elapsed = Date.now() - JOB_ANIM_EPOCH;
-      const introDuration = stepDuration * 4;
-
-      const msToNextStep =
-        elapsed < introDuration
-          ? stepDuration - (elapsed % stepDuration)
-          : holdDuration - ((elapsed - introDuration) % holdDuration);
-
-      timerRef.current = setTimeout(tick, msToNextStep);
-    };
-
-    setFrameIndex(getJobSyncedFrameIndex(stepDuration, holdDuration));
-    tick();
-
-    return () => {
-      isCancelled = true;
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-    };
-  }, [stepDuration, holdDuration]);
-
-  return (
-    <Image
-      source={JOB_FRAME_SOURCES[frameIndex]}
-      style={{ width: size, height: size }}
-      resizeMode="contain"
-    />
-  );
-};
 
 
 const OnlineCountText = ({ count, style }) => {
@@ -749,7 +503,20 @@ const AdminPin = ({ navigation }) => {
   const [announcementTarget, setAnnouncementTarget] = useState('all');
   const [announcementUserIds, setAnnouncementUserIds] = useState([]);
   const [announcementError, setAnnouncementError] = useState('');
+  const [inAppToast, setInAppToast] = useState(null);
   const [kickPinModalVisible, setKickPinModalVisible] = useState(false);
+
+  useEffect(() => {
+    if (!inAppToast) {
+      return undefined;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setInAppToast(null);
+    }, 6000);
+
+    return () => clearTimeout(timeoutId);
+  }, [inAppToast]);
   const [kickPin, setKickPin] = useState('0008');
   const [kickPinError, setKickPinError] = useState('');
 
@@ -763,6 +530,7 @@ const AdminPin = ({ navigation }) => {
   const [muteModalVisible, setMuteModalVisible] = useState(false);
   const [colourModalVisible, setColourModalVisible] = useState(false);
   const [bgColourModalVisible, setBgColourModalVisible] = useState(false);
+  const [quickActionsModalVisible, setQuickActionsModalVisible] = useState(false);
 
   const [readCounts, setReadCounts] = useState(getGlobalReadCounts());
   const [secretMutedUsers, setSecretMutedUsers] = useState(getGlobalSecretMutedUsers());
@@ -784,6 +552,7 @@ const AdminPin = ({ navigation }) => {
   const [connectionText, setConnectionText] = useState(
     socket.connected ? 'Server online' : 'Připojuji server...'
   );
+  const connectionTextTimeoutRef = useRef(null);
 
   const isAdminOnline = adminStatus === 'on';
   const isAdminJob = adminStatus === 'job';
@@ -839,6 +608,11 @@ const AdminPin = ({ navigation }) => {
     lastKnownMessageCountsRef.current = {};
 
     const handleConnect = () => {
+      if (connectionTextTimeoutRef.current) {
+        clearTimeout(connectionTextTimeoutRef.current);
+        connectionTextTimeoutRef.current = null;
+      }
+
       setConnectionText('Server online');
       socket.emit('state:get');
 
@@ -852,11 +626,23 @@ const AdminPin = ({ navigation }) => {
     };
 
     const handleDisconnect = () => {
-      setConnectionText('Server offline - lokální režim');
+      if (connectionTextTimeoutRef.current) {
+        clearTimeout(connectionTextTimeoutRef.current);
+      }
+
+      connectionTextTimeoutRef.current = setTimeout(() => {
+        setConnectionText('Server offline - lokální režim');
+      }, 400);
     };
 
     const handleConnectError = () => {
-      setConnectionText('Server nedostupný - lokální režim');
+      if (connectionTextTimeoutRef.current) {
+        clearTimeout(connectionTextTimeoutRef.current);
+      }
+
+      connectionTextTimeoutRef.current = setTimeout(() => {
+        setConnectionText('Server nedostupný - lokální režim');
+      }, 400);
     };
 
     const handleServerState = (serverState) => {
@@ -934,7 +720,7 @@ const AdminPin = ({ navigation }) => {
             const safeMessages = messages || [];
       const userMessagesCount = safeMessages.filter((item) => {
         const s = String(item?.sender || '').toLowerCase();
-        return s === 'user' || s === 'ticket';
+        return s === 'user';
       }).length;
       const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
       const secretMutedMap = getGlobalSecretMutedUsers();
@@ -950,11 +736,43 @@ const AdminPin = ({ navigation }) => {
       lastKnownMessageCountsRef.current[cleanUserId] = userMessagesCount;
 
   
-      if (isNewMessageArrived && isInitialLoadDone && !isSecretMuted) {
-        playInAppMessageSound();
+      if (
+        isNewMessageArrived &&
+        isInitialLoadDone &&
+        !isSecretMuted &&
+        isAdminViewingThisChat &&
+        AppState.currentState === 'active'
+      ) {
+        playInAppChatMessageSound();
       }
 
+      const shouldShowAdminToast =
+        isNewMessageArrived &&
+        isInitialLoadDone &&
+        !isSecretMuted &&
+        !isAdminViewingThisChat &&
+        AppState.currentState === 'active';
 
+      if (shouldShowAdminToast) {
+        const newestUserMessage = [...safeMessages].reverse().find((item) => item?.sender === 'user');
+        const userDisplayName = users.find((user) => String(user.id) === String(cleanUserId))?.name || `Uživatel ${cleanUserId}`;
+
+        setInAppToast((currentToast) => {
+          if (currentToast && String(currentToast.userId) === String(cleanUserId)) {
+            return {
+              ...currentToast,
+              userName: String(userDisplayName),
+              text: String(newestUserMessage?.text || 'Máte novou zprávu.').slice(0, 120),
+            };
+          }
+
+          return {
+            userId: cleanUserId,
+            userName: String(userDisplayName),
+            text: String(newestUserMessage?.text || 'Máte novou zprávu.').slice(0, 120),
+          };
+        });
+      }
 
       const nextReadCounts = { ...getGlobalReadCounts() };
 
@@ -993,50 +811,12 @@ const AdminPin = ({ navigation }) => {
 
     };
 
-             const handleNewTicket = ({ userId, userName: ticketUserName, text, createdAt }) => {
-      const cleanUserId = String(userId || '').trim();
-      if (!cleanUserId ||!text) return;
-
-      const chats = getGlobalChats();
-      const existingMessages = chats[cleanUserId] || [];
-      const ticketCreatedAt = createdAt || Date.now();
-      const alreadyExists = existingMessages.some(m => String(m.createdAt) === String(ticketCreatedAt) && String(m.text) === String(text));
-
-      if (!alreadyExists) {
-        const ticketMessage = {
-          id: `ticket-${ticketCreatedAt}`,
-          sender: 'ticket',
-          text,
-          authorName: ticketUserName || '',
-          createdAt: ticketCreatedAt,
-        };
-        chats[cleanUserId] = [...existingMessages, ticketMessage];
-      }
-
-      const activeAdminChatUserId = String(globalThis.CUSIIK_ACTIVE_ADMIN_CHAT_USER_ID || '').trim();
-      const isAdminViewingThisChat = activeAdminChatUserId === cleanUserId;
-      const isSecretMuted = Boolean(getGlobalSecretMutedUsers()[cleanUserId]);
-
-      if (isSecretMuted) {
-        const nextReadCounts = {
-          ...getGlobalReadCounts(),
-          [cleanUserId]: getUserMessageCount(cleanUserId),
-        };
-        persistReadCounts(nextReadCounts);
-        setReadCounts(nextReadCounts);
-      }
-
-      setNowTick(Date.now());
-    };
-    
-
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
     socket.on('server:state', handleServerState);
     socket.on('chat:messages', handleChatMessages);
     socket.on('room:hardReset', handleHardReset);
-    socket.on('ticket:new', handleNewTicket);
 
 
     if (!socket.connected) {
@@ -1053,13 +833,17 @@ const AdminPin = ({ navigation }) => {
     }
 
      return () => {
+      if (connectionTextTimeoutRef.current) {
+        clearTimeout(connectionTextTimeoutRef.current);
+        connectionTextTimeoutRef.current = null;
+      }
+
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
       socket.off('server:state', handleServerState);
       socket.off('chat:messages', handleChatMessages);
       socket.off('room:hardReset');
-      socket.off('ticket:new', handleNewTicket);
     };
   }, []);
 
@@ -1109,6 +893,7 @@ const AdminPin = ({ navigation }) => {
 
   const openAdminChat = (user) => {
     markUserAsRead(user.id);
+    setInAppToast(null);
 
     navigation.navigate('AdminChat', {
       userId: user.id,
@@ -1140,13 +925,11 @@ const AdminPin = ({ navigation }) => {
   }, [navigation]);
 
   const closeApp = () => {
-    try {
-      if (Platform.OS === 'android') {
+    if (Platform.OS === 'android') {
+      try {
         BackHandler.exitApp();
-      } else {
-        BackHandler.exitApp();
-      }
-    } catch {}
+      } catch {}
+    }
   };
 
   const closeUserMenu = () => {
@@ -1502,12 +1285,11 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
         specialPin: targetPin,
         preserveIdentity: true,
       });
+      logAction(`Kick uživatele ${user.name} odeslán serveru k potvrzení.`);
+      return;
     }
 
-    // hned ho zmiz z listu, necekas na server
-    setUsers((currentUsers) => currentUsers.filter((u) => u.id !== user.id));
-
-    logAction(`Uživatel ${user.name} byl kicknut. Jeho speciální PIN je ${targetPin}.`);
+    logAction(`Kick uživatele ${user.name} nebyl odeslán: server je offline.`);
   };
 
   const saveNewAdminPin = () => {
@@ -1640,6 +1422,19 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     setActionUser(user);
     setMuteModalVisible(true);
     setUserMenuVisible(false);
+  };
+
+  const openQuickActionsModal = (user) => {
+    if (!user) {
+      return;
+    }
+
+    setActionUser(user);
+    setQuickActionsModalVisible(true);
+  };
+
+  const closeQuickActionsModal = () => {
+    setQuickActionsModalVisible(false);
   };
 
   const toggleSecretMute = (user) => {
@@ -1806,6 +1601,42 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     .filter((user) => !secretMutedUsers[String(user.id)] && getUnreadCount(user.id) > 0)
     .slice(0, 5);
 
+  const totalUnreadCount = users.reduce(
+    (sum, user) => sum + (secretMutedUsers[String(user.id)] ? 0 : getUnreadCount(user.id)),
+    0
+  );
+
+  const renderInAppToast = () => {
+    if (!inAppToast) {
+      return null;
+    }
+
+    return (
+      <View style={styles.inAppToastWrap}>
+        <View style={styles.inAppToast}>
+          <View style={styles.inAppToastTextWrap}>
+            <Text style={styles.inAppToastTitle}>{`Nová zpráva od ${inAppToast.userName}`}</Text>
+            <Text style={styles.inAppToastBody}>{inAppToast.text}</Text>
+          </View>
+
+          <Pressable
+            style={styles.inAppToastButton}
+            onPress={() => {
+              const targetUser = users.find((user) => String(user.id) === String(inAppToast.userId));
+              if (targetUser) {
+                openAdminChat(targetUser);
+              } else {
+                setInAppToast(null);
+              }
+            }}
+          >
+            <Text style={styles.inAppToastButtonText}>Odpovědět</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
   return (
 
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -1823,11 +1654,11 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
 
                                       <View style={styles.titleStatusAnimWrap}>
                {isAdminOnline ? (
-                 <OnLoopAnimation size={22} stepDuration={200} />
+                 <OnLoopAnimation size={22} />
                ) : isAdminJob ? (
-                 <JobPulseAnimation size={22} stepDuration={200} holdDuration={1000} />
+                 <JobPulseAnimation size={22} />
                ) : (
-                 <OffPulseAnimation size={22} stepDuration={200} />
+                 <OffPulseAnimation size={22} />
                )}
              </View>
 
@@ -1864,6 +1695,8 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
 
           </View>
 
+           {renderInAppToast()}
+
            <View style={styles.body}>
                 <View style={styles.topInfoPanel}>
               <Pressable
@@ -1880,14 +1713,20 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 ]}
                 onPress={openAdminProfileEditor}
               >
-                <Image
+                <AvatarIcon
                   source={getAdminIconSource(adminProfile?.icon || 'admin')}
+                  iconKey={normalizeAdminIcon(adminProfile?.icon || 'admin')}
                   style={styles.topAdminIconImage}
-                  resizeMode="contain"
                 />
+
+                {totalUnreadCount > 0 ? (
+                  <View style={styles.totalUnreadBadge}>
+                    <Text style={styles.totalUnreadBadgeText}>{totalUnreadCount}</Text>
+                  </View>
+                ) : null}
               </Pressable>
 
-              <Text style={styles.topInfoAdminLabel}>Admin</Text>
+              <Text style={styles.topInfoAdminLabel}>GM</Text>
 
                           <View style={styles.unreadAvatarsRow}>
                 {unreadUsersPreview.length === 0 ? (
@@ -1930,7 +1769,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
 
             <View style={styles.usersPanel}>
               <View style={styles.panelTitleBar}>
-                <Text style={styles.panelTitleText}>Uživatelé v roomce</Text>
+                <Text style={styles.panelTitleText}>{`Uživatelé v roomce (${users.length})`}</Text>
                 <OnlineCountText
   count={users.filter((user) => user.online).length}
   style={styles.panelCountText}
@@ -1965,6 +1804,11 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                     const isUserMuted = getMuteMsLeft(user.id, nowTick) > 0;
                     const isUserSecretMuted = Boolean(secretMutedUsers[user.id]);
                     const isUserFuckerLocked = Boolean(user.avatarLocked);
+                    const userRowDimmedStyle = isUserSecretMuted
+                      ? styles.userRowSecretMutedOpacity
+                      : !user.online
+                        ? styles.userRowOfflineOpacity
+                        : null;
 
                     return (
                   <View
@@ -1976,17 +1820,13 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                             : isUserMuted
                               ? styles.userRowMuted
                               : null,
-                          isUserSecretMuted
-                            ? styles.userRowSecretMutedOpacity
-                            : !user.online
-                              ? styles.userRowOfflineOpacity
-                              : null,
                         ]}
                       >
 
                                                           <Pressable
                           style={({ pressed }) => [
                             styles.userInfo,
+                            userRowDimmedStyle,
                             pressed && styles.userInfoPressed,
                           ]}
                           onPress={() => openAdminChat(user)}
@@ -2016,7 +1856,6 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                             <View style={styles.userNameRow}>
                               {renderUserNameWithMute(user, styles.userName)}
                               {renderMuteTag(user)}
-                              <UnreadBadge count={unreadCount} isSecret={isUserSecretMuted} />
                             </View>
 
                             <View style={styles.userStatusRow}>
@@ -2032,48 +1871,18 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                           </View>
                         </Pressable>
 
+                        <View style={styles.unreadBadgeSlot}>
+                          <UnreadBadge count={unreadCount} isSecret={isUserSecretMuted} />
+                        </View>
 
-                                              <Pressable
-                          style={({ pressed }) => [
-                            styles.eyeToggleButton,
-                            pressed && styles.xpButtonPressed,
-                            isUserSecretMuted && styles.eyeToggleButtonActive,
-                            !isUserSecretMuted && isUserMuted && styles.eyeToggleButtonMuted,
-                          ]}
-                          onPress={() => openMuteModalForUser(user)}
-                          onLongPress={() => toggleSecretMute(user)}
-                          delayLongPress={260}
-                        >
-
-                                               <Image
-                            source={isUserSecretMuted ? EYE_SECRET_ICON : EYE_ICON}
-                            style={styles.eyeToggleIcon}
-                            resizeMode="contain"
-                          />
-
-                        </Pressable>
-
-                                               <Pressable
-                          style={({ pressed }) => [
-                            styles.fuckerButton,
-                            isUserFuckerLocked && styles.fuckerButtonActive,
-                            pressed && styles.xpButtonPressed,
-                          ]}
-                          onPress={() => setUserToFuckerAvatar(user)}
-                        >
-                          <Image
-                            source={FUCKER_ICON}
-                            style={styles.fuckerButtonIcon}
-                            resizeMode="contain"
-                          />
-                        </Pressable>
 
                                             <Pressable
                           style={({ pressed }) => [
                             styles.kickButton,
+                            userRowDimmedStyle,
                             pressed && styles.xpButtonPressed,
                           ]}
-                          onPress={() => openKickPinModal(user)}
+                          onPress={() => openQuickActionsModal(user)}
                         >
                           <Image
                             source={KICK_ICON}
@@ -2160,26 +1969,14 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 ]}
                 onPress={toggleAdminStatus}
               >
-                                            <View style={styles.statusOptionTop}>
-                  {isAdminOnline ? (
-                    <View style={styles.adminStatusAnimWrap}>
-                      <OnLoopAnimation size={18} stepDuration={200} />
-                    </View>
-                  ) : isAdminJob ? (
-                    <View style={styles.adminStatusAnimWrap}>
-                      <JobPulseAnimation size={18} stepDuration={200} holdDuration={1000} />
-                    </View>
-                  ) : (
-                    <View style={styles.adminStatusAnimWrap}>
-                      <OffPulseAnimation size={18} stepDuration={200} />
-                    </View>
-                  )}
+                <View style={styles.statusOptionTop}>
+                  <View style={styles.adminStatusAnimWrap}>
+                    <StatusAnimation status={adminStatus} size={18} />
+                  </View>
                   <Text style={styles.bigActionButtonTitle}>
                     Admin status: {getAdminStatusLabel()}
                   </Text>
                 </View>
-
-
               </Pressable>
             </View>
 
@@ -2188,7 +1985,9 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
 
           <View style={styles.statusBar}>
             <Text style={styles.statusText}>Připojeno jako admin</Text>
-            <Text style={styles.statusText}>{connectionText}</Text>
+            <Text style={styles.statusText}>
+              {`${connectionText} | Status: ${getAdminStatusLabel()}`}
+            </Text>
           </View>
         </View>
 
@@ -2207,7 +2006,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Text style={styles.modalTitleText}>Zpráva všem uživatelům</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeBroadcastModal}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -2273,7 +2072,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
               <View style={styles.modalTitleBar}>
                 <Text style={styles.modalTitleText}>Oznámení nahoře v okně</Text>
                 <Pressable style={styles.modalCloseButton} onPress={closeAnnouncementModal}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -2372,7 +2171,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Text style={styles.modalTitleText}>Kick uživatele</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeKickPinModal}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -2414,6 +2213,99 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
         </Modal>
 
         <Modal
+          visible={quickActionsModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeQuickActionsModal}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Akce uživatele</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closeQuickActionsModal}>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.selectedUserText}>
+                  {actionUser ? actionUser.name : ''}
+                </Text>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => {
+                    closeQuickActionsModal();
+                    openMuteModalForUser(actionUser);
+                  }}
+                >
+                  <Text style={styles.settingsOptionTitle}>Umlčet</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Dočasně zakáže uživateli psát zprávy.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => {
+                    closeQuickActionsModal();
+                    toggleSecretMute(actionUser);
+                  }}
+                >
+                  <Text style={styles.settingsOptionTitle}>
+                    {actionUser && secretMutedUsers[actionUser.id] ? 'Zrušit umlčení potají' : 'Umlčet potají'}
+                  </Text>
+                  <Text style={styles.settingsOptionText}>
+                    Uživatel neuvidí, že je umlčený.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => {
+                    closeQuickActionsModal();
+                    setUserToFuckerAvatar(actionUser);
+                  }}
+                >
+                  <Text style={styles.settingsOptionTitle}>
+                    {actionUser?.avatarLocked ? 'Zrušit fucker ikonku' : 'Fucker'}
+                  </Text>
+                  <Text style={styles.settingsOptionText}>
+                    Uzamkne uživateli ikonku na fuckera.
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => {
+                    closeQuickActionsModal();
+                    openKickPinModal(actionUser);
+                  }}
+                >
+                  <Text style={styles.settingsOptionTitle}>Kick</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Vyhodí uživatele z roomky a nabídne nový PIN.
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
           visible={userMenuVisible}
           transparent
           animationType="fade"
@@ -2427,7 +2319,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 </Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeUserMenu}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -2534,7 +2426,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   style={styles.modalCloseButton}
                   onPress={() => setMuteModalVisible(false)}
                 >
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -2613,7 +2505,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   style={styles.modalCloseButton}
                   onPress={() => setColourModalVisible(false)}
                 >
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -2663,7 +2555,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   style={styles.modalCloseButton}
                   onPress={() => setBgColourModalVisible(false)}
                 >
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -2711,7 +2603,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Text style={styles.modalTitleText}>Přejmenovat uživatele</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeRenameModal}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -2768,7 +2660,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Text style={styles.modalTitleText}>Nastavení admina</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeAdminProfileEditor}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -2856,7 +2748,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   style={styles.modalCloseButton}
                   onPress={() => setAdminPinModalVisible(false)}
                 >
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -2924,7 +2816,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   style={styles.modalCloseButton}
                   onPress={() => setAdminPwModalVisible(false)}
                 >
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -3008,7 +2900,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Text style={styles.modalTitleText}>Výběr admin ikonky</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={() => setAdminIconModalVisible(false)}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -3028,10 +2920,10 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                         onPress={() => updateAdminIcon(iconOption.key)}
                       >
                         <View style={styles.adminIconThumb}>
-                          <Image
+                          <AvatarIcon
                             source={getAdminIconSource(iconOption.key)}
+                            iconKey={iconOption.key}
                             style={styles.adminIconThumbImage}
-                            resizeMode="contain"
                           />
                         </View>
                         <Text style={styles.adminIconLabel}>{iconOption.label}</Text>
@@ -3056,7 +2948,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Text style={styles.modalTitleText}>Výběr obrysu admina</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={() => setAdminOutlineModalVisible(false)}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -3103,7 +2995,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 </Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeChangeModal}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -3239,7 +3131,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Text style={styles.modalTitleText}>Nápověda</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={() => setHelpModalVisible(false)}>
-                  <Text style={styles.modalCloseButtonText}>×</Text>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
                 </Pressable>
               </View>
 
@@ -3486,6 +3378,13 @@ const styles = StyleSheet.create({
 
   userInfoPressed: {
     opacity: 0.7,
+  },
+
+  unreadBadgeSlot: {
+    minWidth: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
   },
 
   userIconBox: {
@@ -3825,23 +3724,28 @@ const styles = StyleSheet.create({
     borderLeftColor: '#ffffff',
     borderRightColor: '#003c9e',
     borderBottomColor: '#003c9e',
+    shadowColor: '#000000',
+    shadowOpacity: 0.18,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
+    elevation: 4,
   },
 
   modalWindowDangerSingle: {
-    borderTopColor: '#ff8a8a',
-    borderLeftColor: '#ff8a8a',
-    borderRightColor: '#a80000',
-    borderBottomColor: '#a80000',
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#003c9e',
+    borderBottomColor: '#003c9e',
   },
 
   modalWindowDangerDouble: {
-    borderWidth: 4,
-    borderTopColor: '#ff8a8a',
-    borderLeftColor: '#ff8a8a',
-    borderRightColor: '#a80000',
-    borderBottomColor: '#a80000',
+    borderWidth: 3,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#003c9e',
+    borderBottomColor: '#003c9e',
     shadowColor: '#a80000',
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.2,
     shadowRadius: 0,
     shadowOffset: { width: 0, height: 0 },
     elevation: 3,
@@ -3868,14 +3772,9 @@ const styles = StyleSheet.create({
   modalCloseButton: {
     width: 22,
     height: 22,
-    backgroundColor: '#e04b31',
-    borderWidth: 1,
-    borderTopColor: '#ffffff',
-    borderLeftColor: '#ffffff',
-    borderRightColor: '#8f1d10',
-    borderBottomColor: '#8f1d10',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
 
   modalCloseButtonText: {
@@ -3883,6 +3782,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
     lineHeight: 19,
+  },
+
+  modalCloseButtonIcon: {
+    width: 22,
+    height: 22,
   },
 
   modalBody: {
@@ -4440,11 +4344,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
+    position: 'relative',
   },
 
   topAdminIconImage: {
     width: 26,
     height: 26,
+  },
+
+  totalUnreadBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ff3b30',
+    borderWidth: 1,
+    borderColor: '#a80000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+
+  totalUnreadBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '900',
   },
 
   unreadCircle: {

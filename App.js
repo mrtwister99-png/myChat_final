@@ -9,7 +9,12 @@ import PinEntry from './src/screens/PinEntry';
 import UzivatelPin from './src/screens/UzivatelPin';
 import AdminPin from './src/screens/AdminPin';
 import AdminChat from './src/screens/AdminChat';
-import { registerForPushNotificationsAsync, showLocalMessageNotification, addNotificationResponseListener } from './src/notifications';
+import {
+  registerForPushNotificationsAsync,
+  showLocalMessageNotification,
+  addNotificationResponseListener,
+  registerNotificationCategories,
+} from './src/notifications';
 import * as Notifications from 'expo-notifications';
 import { socket } from './src/socket';
 
@@ -32,6 +37,8 @@ const App = () => {
       if (lastUserName) {
         globalThis.CUSIIK_CURRENT_USER_NAME = lastUserName;
       }
+
+      await registerNotificationCategories();
 
       // push token
       const token = await registerForPushNotificationsAsync();
@@ -65,7 +72,28 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    const sub = addNotificationResponseListener((data) => {
+    const sub = addNotificationResponseListener((data, response) => {
+      const notificationUserId = data?.userId ? String(data.userId) : '';
+      const actionId = response?.actionIdentifier || data?.action || 'open';
+      const replyText = String(response?.userText || '').trim();
+      const normalizedRole = String(globalThis.CUSIIK_CURRENT_ROLE || data?.role || 'user').trim().toLowerCase();
+      const role = normalizedRole === 'admin' ? 'admin' : 'user';
+
+      if (actionId === 'reply' && replyText && notificationUserId) {
+        if (navigationRef.isReady()) {
+          navigationRef.navigate('UzivatelPin', { userId: notificationUserId });
+        }
+
+        setTimeout(() => {
+          socket.emit('chat:send', {
+            userId: notificationUserId,
+            sender: role,
+            text: replyText,
+          });
+        }, 200);
+        return;
+      }
+
       if (data?.userId && data?.action === 'openChat' && navigationRef.isReady()) {
         navigationRef.navigate('UzivatelPin', { userId: String(data.userId) });
       }
@@ -120,7 +148,7 @@ const App = () => {
       const safeMessages = Array.isArray(messages) ? messages : [];
  const nextUserCount = safeMessages.filter((item) => {
   const s = String(item?.sender || '').toLowerCase();
-  return s === 'user' || s === 'ticket';
+  return s === 'user';
 }).length;
       const hasPrevious = Object.prototype.hasOwnProperty.call(lastUserMessageCounts, cleanUserId);
       const previousUserCount = hasPrevious ? lastUserMessageCounts[cleanUserId] : nextUserCount;
@@ -155,7 +183,7 @@ const App = () => {
       const senderName = userNamesById[cleanUserId] || `Uživatel ${cleanUserId}`;
       const newestIncomingMessage = [...safeMessages]
         .reverse()
-        .find((item) => ['user', 'ticket'].includes(String(item?.sender || '').toLowerCase()));
+        .find((item) => String(item?.sender || '').toLowerCase() === 'user');
 
       showLocalMessageNotification({
         title: `Nová zpráva od ${senderName}`,
