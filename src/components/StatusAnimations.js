@@ -108,48 +108,55 @@ export const OnLoopAnimation = ({ size = 34, stepDuration = 300 }) => {
   );
 };
 
+// Sdílený "epoch" pro synchronizaci všech instancí OFF animace napříč obrazovkou
+// (stejný princip jako u ON/JOB - odstraňuje desync/blikání mezi více zobrazenými instancemi).
+const OFF_ANIM_EPOCH = Date.now();
+const OFF_INTRO_DURATION = OFF_INTRO_DURATIONS.reduce((sum, duration) => sum + duration, 0);
+const OFF_LOOP_DURATION = OFF_LOOP_FRAMES.reduce((sum, frame) => sum + frame.duration, 0);
+
+const getOffSyncedFrame = () => {
+  const elapsed = Date.now() - OFF_ANIM_EPOCH;
+
+  if (elapsed < OFF_INTRO_DURATION) {
+    let acc = 0;
+    for (let i = 0; i < OFF_INTRO_DURATIONS.length; i += 1) {
+      acc += OFF_INTRO_DURATIONS[i];
+      if (elapsed < acc) {
+        return { index: i, msToNext: acc - elapsed };
+      }
+    }
+  }
+
+  const positionInLoop = (elapsed - OFF_INTRO_DURATION) % OFF_LOOP_DURATION;
+  let acc = 0;
+  for (let i = 0; i < OFF_LOOP_FRAMES.length; i += 1) {
+    acc += OFF_LOOP_FRAMES[i].duration;
+    if (positionInLoop < acc) {
+      return { index: OFF_LOOP_FRAMES[i].index, msToNext: acc - positionInLoop };
+    }
+  }
+
+  return { index: OFF_LOOP_FRAMES[0].index, msToNext: OFF_LOOP_FRAMES[0].duration };
+};
+
 export const OffPulseAnimation = ({ size = 34 }) => {
-  const [frameIndex, setFrameIndex] = useState(1);
+  const [frameIndex, setFrameIndex] = useState(() => getOffSyncedFrame().index);
   const timerRef = useRef(null);
 
   useEffect(() => {
     let isCancelled = false;
-    let introStep = 0;
-    let loopStep = 0;
 
-    const scheduleLoop = () => {
-      timerRef.current = setTimeout(() => {
-        if (isCancelled) {
-          return;
-        }
+    const tick = () => {
+      if (isCancelled) {
+        return;
+      }
 
-        loopStep = (loopStep + 1) % OFF_LOOP_FRAMES.length;
-        setFrameIndex(OFF_LOOP_FRAMES[loopStep].index);
-        scheduleLoop();
-      }, OFF_LOOP_FRAMES[loopStep].duration);
+      const { index, msToNext } = getOffSyncedFrame();
+      setFrameIndex(index);
+      timerRef.current = setTimeout(tick, msToNext);
     };
 
-    const scheduleIntro = () => {
-      timerRef.current = setTimeout(() => {
-        if (isCancelled) {
-          return;
-        }
-
-        introStep += 1;
-
-        if (introStep < OFF_INTRO_DURATIONS.length) {
-          setFrameIndex(introStep);
-          scheduleIntro();
-          return;
-        }
-
-        setFrameIndex(OFF_LOOP_FRAMES[0].index);
-        scheduleLoop();
-      }, OFF_INTRO_DURATIONS[introStep]);
-    };
-
-    setFrameIndex(1);
-    scheduleIntro();
+    tick();
 
     return () => {
       isCancelled = true;

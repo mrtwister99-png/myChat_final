@@ -499,10 +499,46 @@ const UzivatelPin=({ navigation,route })=>{
   const [eggImages, setEggImages] = useState([]);
   const [eggMessageVisible, setEggMessageVisible] = useState(false);
   const [taskLockNotice, setTaskLockNotice] = useState(null);
+  const [ratingUnlocked, setRatingUnlocked] = useState(false);
+  const [ratingModalVisible, setRatingModalVisible] = useState(false);
+  const [ratingCharisma, setRatingCharisma] = useState(5);
+  const [ratingStesti, setRatingStesti] = useState(5);
 
   const [eggVisible, setEggVisible] = useState(false);
   const [eggPos, setEggPos] = useState({ top: 100, left: 50 });
   const [eggSize, setEggSize] = useState(150);
+
+  const comingSoonSpinAnim = useRef(new Animated.Value(0)).current;
+  const comingSoonPulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const spinLoop = Animated.loop(
+      Animated.timing(comingSoonSpinAnim, {
+        toValue: 1,
+        duration: 4000,
+        useNativeDriver: true,
+      })
+    );
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(comingSoonPulseAnim, { toValue: 1.18, duration: 900, useNativeDriver: true }),
+        Animated.timing(comingSoonPulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+      ])
+    );
+
+    spinLoop.start();
+    pulseLoop.start();
+
+    return () => {
+      spinLoop.stop();
+      pulseLoop.stop();
+    };
+  }, []);
+
+  const comingSoonSpin = comingSoonSpinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
 
   useEffect(() => {
@@ -999,6 +1035,26 @@ const UzivatelPin=({ navigation,route })=>{
       }
     };
 
+    const handleRatingUnlock = (data) => {
+      const targetUserId = data?.userId;
+
+      if (targetUserId !== undefined && String(targetUserId) !== String(currentUserId)) {
+        return;
+      }
+
+      const nextEnabled = Boolean(data?.enabled);
+
+      setRatingUnlocked(nextEnabled);
+
+      if (nextEnabled) {
+        setRatingCharisma(5);
+        setRatingStesti(5);
+        setRatingModalVisible(true);
+      } else {
+        setRatingModalVisible(false);
+      }
+    };
+
     const handleDisconnect = () => {
       setConnectionText('Server offline - lokální režim');
     };
@@ -1011,6 +1067,7 @@ const UzivatelPin=({ navigation,route })=>{
     socket.on('chat:messages', handleChatMessages);
     socket.on('chat:muted', handleMuted);
     socket.on('user:task-lock', handleTaskLock);
+    socket.on('admin:unlockRating', handleRatingUnlock);
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
@@ -1026,6 +1083,7 @@ const UzivatelPin=({ navigation,route })=>{
       socket.off('chat:messages', handleChatMessages);
       socket.off('chat:muted', handleMuted);
       socket.off('user:task-lock', handleTaskLock);
+      socket.off('admin:unlockRating', handleRatingUnlock);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
@@ -1288,6 +1346,27 @@ const UzivatelPin=({ navigation,route })=>{
     setBlockedInfo('');
   };
 
+  const adjustRatingValue = (statKey, delta) => {
+    if (statKey === 'charisma') {
+      setRatingCharisma((current) => Math.max(1, Math.min(10, current + delta)));
+    } else if (statKey === 'stesti') {
+      setRatingStesti((current) => Math.max(1, Math.min(10, current + delta)));
+    }
+  };
+
+  const submitRating = () => {
+    if (socket.connected) {
+      socket.emit('user:ratingUpdate', {
+        userId: currentUserId,
+        charisma: ratingCharisma,
+        stesti: ratingStesti,
+      });
+    }
+
+    setRatingModalVisible(false);
+    setRatingUnlocked(false);
+  };
+
 
     const triggerHahaEgg = () => {
     const screenDim = Dimensions.get('window');
@@ -1464,10 +1543,10 @@ const UzivatelPin=({ navigation,route })=>{
             <Text style={styles.modalTitleText}>Nápověda</Text>
 
             <Pressable
-              style={styles.modalCloseButton}
+              style={styles.modalCloseButtonPlain}
               onPress={() => setHelpModalVisible(false)}
             >
-              <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
+              <Image source={EXIT_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
             </Pressable>
           </View>
 
@@ -1490,15 +1569,84 @@ const UzivatelPin=({ navigation,route })=>{
             <Text style={styles.helperBubbleText}>
               ON = GM je online a může reagovat. JOB = je zaneprázdněný. OFF = není dostupný.
             </Text>
-
-            <View style={{ height: 12 }} />
-
-            <Text style={styles.modalLabel}>Tlačítko T</Text>
-            <Text style={styles.helperBubbleText}>
-              Otevře tiket pro GM – zprávu si přečte, i když je zrovna offline.
-            </Text>
           </ScrollView>
 
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderRatingModal = () => (
+    <Modal
+      visible={ratingModalVisible}
+      transparent
+      animationType="fade"
+      onRequestClose={() => {}}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalWindow}>
+          <View style={styles.modalTitleBar}>
+            <Text style={styles.modalTitleText}>Hodnocení od GM</Text>
+          </View>
+
+          <View style={styles.modalBody}>
+            <Text style={styles.modalLabel}>
+              GM ti odemkl hodnocení. Ohodnoť se prosím upřímně:
+            </Text>
+
+            <View style={styles.ratingEditRow}>
+              <Text style={styles.ratingLabelText}>Charisma</Text>
+
+              <View style={styles.ratingStepperRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.ratingStepperButton, pressed && styles.sendButtonPressed]}
+                  onPress={() => adjustRatingValue('charisma', -1)}
+                >
+                  <Text style={styles.ratingStepperButtonText}>-</Text>
+                </Pressable>
+
+                <Text style={styles.ratingStepperValue}>{ratingCharisma}/10</Text>
+
+                <Pressable
+                  style={({ pressed }) => [styles.ratingStepperButton, pressed && styles.sendButtonPressed]}
+                  onPress={() => adjustRatingValue('charisma', 1)}
+                >
+                  <Text style={styles.ratingStepperButtonText}>+</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.ratingEditRow}>
+              <Text style={styles.ratingLabelText}>Štěstí</Text>
+
+              <View style={styles.ratingStepperRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.ratingStepperButton, pressed && styles.sendButtonPressed]}
+                  onPress={() => adjustRatingValue('stesti', -1)}
+                >
+                  <Text style={styles.ratingStepperButtonText}>-</Text>
+                </Pressable>
+
+                <Text style={styles.ratingStepperValue}>{ratingStesti}/10</Text>
+
+                <Pressable
+                  style={({ pressed }) => [styles.ratingStepperButton, pressed && styles.sendButtonPressed]}
+                  onPress={() => adjustRatingValue('stesti', 1)}
+                >
+                  <Text style={styles.ratingStepperButtonText}>+</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={({ pressed }) => [styles.modalButton, pressed && styles.sendButtonPressed]}
+                onPress={submitRating}
+              >
+                <Text style={styles.modalButtonText}>Odeslat</Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </View>
     </Modal>
@@ -1582,15 +1730,18 @@ const UzivatelPin=({ navigation,route })=>{
 
             </View>
 
-            <View style={styles.capabilitiesSection}>
-              <Text style={styles.capabilitiesTitle}>Co vše tu můžete dělat:</Text>
-              <Text style={styles.capabilityText}>Chatovat</Text>
-            </View>
-
             <View style={styles.menuMiddleSection}>
               <View style={styles.menuMiddleLeftBox}>
+                <View style={styles.comingSoonOrbitWrap}>
+                  <Animated.View style={[styles.comingSoonOrbitRing, { transform: [{ rotate: comingSoonSpin }] }]}>
+                    <View style={styles.comingSoonOrbitDot} />
+                  </Animated.View>
+                  <Animated.View style={[styles.comingSoonPulseCore, { transform: [{ scale: comingSoonPulseAnim }] }]} />
+                  <Text style={styles.comingSoonIconText}>🛠️</Text>
+                </View>
+                <Text style={styles.menuMiddlePlaceholderTitle}>Připravuje se</Text>
                 <Text style={styles.menuMiddlePlaceholderText}>
-                  {'Minichat\n(připravuje se)'}
+                  {'Minichat brzy dorazí'}
                 </Text>
               </View>
 
@@ -1608,6 +1759,7 @@ const UzivatelPin=({ navigation,route })=>{
                 disabled={isAvatarLocked}
                 style={({ pressed }) => [
                   styles.grayPanelChatButton,
+                  styles.grayPanelChatButtonOutlined,
                   isAvatarLocked && styles.grayPanelChatButtonDisabled,
                   pressed && !isAvatarLocked && styles.sendButtonPressed,
                 ]}
@@ -1617,15 +1769,14 @@ const UzivatelPin=({ navigation,route })=>{
                 <UnreadBadge count={unreadCount} />
               </Pressable>
             </ChatButtonPulseWrapper>
+            </View>
 
-                        <View style={styles.statusBar}>
+            <View style={styles.statusBar}>
               <Text style={styles.statusText}>Připojeno jako uživatel</Text>
               <Text style={styles.statusText}>
                 {`${connectionText} | GM: ${getAdminStatusText()}`}
               </Text>
             </View>
-                        </View>
-
           </Animated.View>
 
           <Modal
@@ -1641,10 +1792,10 @@ const UzivatelPin=({ navigation,route })=>{
                   <Text style={styles.modalTitleText}>Výběr ikonky</Text>
 
                   <Pressable
-                    style={styles.modalCloseButton}
+                    style={styles.modalCloseButtonPlain}
                     onPress={() => setIconModalVisible(false)}
                   >
-                    <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
+                    <Image source={EXIT_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                   </Pressable>
                 </View>
 
@@ -1680,6 +1831,7 @@ const UzivatelPin=({ navigation,route })=>{
           </Modal>
 
           {renderHelpModal()}
+          {renderRatingModal()}
         </View>
       </SafeAreaView>
     );
@@ -2018,6 +2170,7 @@ const UzivatelPin=({ navigation,route })=>{
       </Modal>
 
       {renderHelpModal()}
+      {renderRatingModal()}
     </SafeAreaView>
   );
 };
@@ -2264,6 +2417,13 @@ const styles = StyleSheet.create({
     height: 25,
   },
 
+  modalCloseButtonPlain: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
 
   closeButtonText: {
     color: '#ffffff',
@@ -2273,9 +2433,9 @@ const styles = StyleSheet.create({
 
   menuBody: {
     flex: 1,
-    padding: 18,
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    padding: 14,
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
   },
 
   menuTopSection: {
@@ -2380,6 +2540,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
 
+  grayPanelChatButtonOutlined: {
+    width: '100%',
+    height: 54,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+  },
+
   grayPanelChatButtonDisabled: {
     backgroundColor: '#d6d3c3',
     opacity: 0.7,
@@ -2416,6 +2587,8 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     flex: 1,
+    minHeight: 320,
+    marginTop: 8,
     marginBottom: 12,
   },
 
@@ -2429,6 +2602,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 10,
+  },
+
+  comingSoonOrbitWrap: {
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+
+  comingSoonOrbitRing: {
+    position: 'absolute',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: '#c9c2a0',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+
+  comingSoonOrbitDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#d97800',
+    marginTop: -5,
+  },
+
+  comingSoonPulseCore: {
+    position: 'absolute',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#fff0a6',
+    borderWidth: 2,
+    borderColor: '#ffd34d',
+  },
+
+  comingSoonIconText: {
+    fontSize: 22,
+  },
+
+  menuMiddlePlaceholderTitle: {
+    color: '#5c3300',
+    fontSize: 13,
+    fontWeight: '900',
+    marginBottom: 4,
   },
 
   menuMiddlePlaceholderText: {
@@ -3144,6 +3365,72 @@ const styles = StyleSheet.create({
     textShadowColor: '#000000',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 3,
+  },
+
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+  },
+
+  modalButton: {
+    minWidth: 88,
+    height: 36,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    marginLeft: 10,
+  },
+
+  modalButtonText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  ratingEditRow: {
+    marginBottom: 14,
+  },
+
+  ratingStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+
+  ratingStepperButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  ratingStepperButtonText: {
+    color: '#000000',
+    fontSize: 20,
+    fontWeight: '900',
+  },
+
+  ratingStepperValue: {
+    color: '#003c9e',
+    fontSize: 16,
+    fontWeight: '900',
+    marginHorizontal: 16,
+    minWidth: 50,
+    textAlign: 'center',
   },
 });
 

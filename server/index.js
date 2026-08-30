@@ -45,6 +45,9 @@ const state = {
   pushTokensByUserId: {},
   adminPushTokens: new Set(),
   pushCooldowns: {},
+
+  unlockedRatingUsers: {},
+  userRatings: {},
 };
 
 const SUPPORTED_AVATAR_ICONS = new Set([
@@ -274,6 +277,8 @@ const getPublicState = () => {
     users: getPublicUsers(),
     mutedUsers: state.mutedUsers,
     secretMutedUsers: normalizedSecretMutedUsers,
+    unlockedRatingUsers: state.unlockedRatingUsers,
+    userRatings: state.userRatings,
   };
 };
 
@@ -508,6 +513,8 @@ const removeUserById = (userId) => {
   delete state.mutedUsers[cleanUserId];
   delete state.secretMutedUsers[cleanUserId];
   delete state.userPinsById[cleanUserId];
+  delete state.unlockedRatingUsers[cleanUserId];
+  delete state.userRatings[cleanUserId];
 };
 
 const kickUser = (userId, reason = 'Byl jsi vyhozen z roomky.') => {
@@ -559,6 +566,8 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
   state.nextUserNumber = 1;
   state.pushCooldowns = {};
   state.chatReadAtByUserId = {};
+  state.unlockedRatingUsers = {};
+  state.userRatings = {};
   emitState();
 };
 
@@ -1313,6 +1322,62 @@ io.on('connection', (socket) => {
       userId: cleanUserId,
       enabled: isEnabled,
       message: isEnabled ? 'Splň úkol!' : 'Úkol splněn. Můžeš pokračovat.',
+    });
+
+    emitState();
+  });
+
+  socket.on('admin:unlockRating', ({ userId, enabled }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanUserId = String(userId || '').trim();
+    const isEnabled = Boolean(enabled);
+
+    if (!cleanUserId) {
+      return;
+    }
+
+    if (isEnabled) {
+      state.unlockedRatingUsers[cleanUserId] = true;
+    } else {
+      delete state.unlockedRatingUsers[cleanUserId];
+    }
+
+    io.to(`user:${cleanUserId}`).emit('admin:unlockRating', {
+      userId: cleanUserId,
+      enabled: isEnabled,
+    });
+
+    emitState();
+  });
+
+  socket.on('user:ratingUpdate', ({ userId, charisma, stesti }) => {
+    const cleanUserId = String(userId || '').trim();
+
+    if (!cleanUserId) {
+      return;
+    }
+
+    if (socket.data.role !== 'user' || socket.data.userId !== cleanUserId) {
+      return;
+    }
+
+    const cleanCharisma = Math.max(1, Math.min(10, Number(charisma) || 1));
+    const cleanStesti = Math.max(1, Math.min(10, Number(stesti) || 1));
+
+    state.userRatings[cleanUserId] = {
+      charisma: cleanCharisma,
+      stesti: cleanStesti,
+    };
+
+    delete state.unlockedRatingUsers[cleanUserId];
+
+    io.to('admins').emit('user:ratingUpdate', {
+      userId: cleanUserId,
+      charisma: cleanCharisma,
+      stesti: cleanStesti,
     });
 
     emitState();

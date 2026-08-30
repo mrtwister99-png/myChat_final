@@ -1,16 +1,15 @@
-// src/screens/AdminPin.js
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Animated,
   AppState,
   BackHandler,
-  Easing,
+  Dimensions,
   Image,
-  Keyboard,
-
   KeyboardAvoidingView,
+  Keyboard,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -41,6 +40,7 @@ const HELP_ICON = require('../assets/icons/otaznik.png');
 const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
 const EXIT_ICON = require('../assets/icons/exit.png');
 const LOGO_ICON = require('../assets/icons/logoxp.png');
+const STAT_ICON = require('../assets/icons/buttonStat.png');
 
 
 
@@ -474,6 +474,60 @@ const PinDots = ({ length, maxLength = 4 }) => {
   );
 };
 
+const SWIPE_UNLOCK_THRESHOLD = -70;
+
+const SwipeToUnlockRow = ({ children, onUnlock, disabled }) => {
+  const translateX = useRef(new Animated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        if (disabled) {
+          return false;
+        }
+
+        return (
+          Math.abs(gestureState.dx) > 12 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.5
+        );
+      },
+      onPanResponderMove: (_, gestureState) => {
+        const nextValue = Math.min(0, Math.max(gestureState.dx, -110));
+        translateX.setValue(nextValue);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        const shouldUnlock = gestureState.dx <= SWIPE_UNLOCK_THRESHOLD;
+
+        Animated.timing(translateX, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }).start();
+
+        if (shouldUnlock) {
+          onUnlock();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.timing(translateX, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }).start();
+      },
+    })
+  ).current;
+
+  return (
+    <Animated.View
+      {...panResponder.panHandlers}
+      style={{ transform: [{ translateX }] }}
+    >
+      {children}
+    </Animated.View>
+  );
+};
+
 const AdminPin = ({ navigation }) => {
   const [users, setUsers] = useState([
   ]);
@@ -503,20 +557,7 @@ const AdminPin = ({ navigation }) => {
   const [announcementTarget, setAnnouncementTarget] = useState('all');
   const [announcementUserIds, setAnnouncementUserIds] = useState([]);
   const [announcementError, setAnnouncementError] = useState('');
-  const [inAppToast, setInAppToast] = useState(null);
   const [kickPinModalVisible, setKickPinModalVisible] = useState(false);
-
-  useEffect(() => {
-    if (!inAppToast) {
-      return undefined;
-    }
-
-    const timeoutId = setTimeout(() => {
-      setInAppToast(null);
-    }, 6000);
-
-    return () => clearTimeout(timeoutId);
-  }, [inAppToast]);
   const [kickPin, setKickPin] = useState('0008');
   const [kickPinError, setKickPinError] = useState('');
 
@@ -546,6 +587,9 @@ const AdminPin = ({ navigation }) => {
   const [actionHistory, setActionHistory] = useState([]);
   const [actionHistoryExpanded, setActionHistoryExpanded] = useState(false);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
+  const [statsModalVisible, setStatsModalVisible] = useState(false);
+  const [unlockedRatingUsers, setUnlockedRatingUsers] = useState({});
+  const [userRatings, setUserRatings] = useState({});
 
 
 
@@ -665,6 +709,14 @@ const AdminPin = ({ navigation }) => {
         globalThis.CUSIIK_SECRET_MUTED_USERS = serverState.secretMutedUsers;
       }
 
+      if (serverState?.unlockedRatingUsers) {
+        setUnlockedRatingUsers(serverState.unlockedRatingUsers);
+      }
+
+      if (serverState?.userRatings) {
+        setUserRatings(serverState.userRatings);
+      }
+
       if (serverState?.adminProfile) {
         const normalizedAdminProfile = {
           icon: normalizeAdminIcon(serverState.adminProfile.icon || 'admin'),
@@ -740,38 +792,9 @@ const AdminPin = ({ navigation }) => {
         isNewMessageArrived &&
         isInitialLoadDone &&
         !isSecretMuted &&
-        isAdminViewingThisChat &&
         AppState.currentState === 'active'
       ) {
         playInAppChatMessageSound();
-      }
-
-      const shouldShowAdminToast =
-        isNewMessageArrived &&
-        isInitialLoadDone &&
-        !isSecretMuted &&
-        !isAdminViewingThisChat &&
-        AppState.currentState === 'active';
-
-      if (shouldShowAdminToast) {
-        const newestUserMessage = [...safeMessages].reverse().find((item) => item?.sender === 'user');
-        const userDisplayName = users.find((user) => String(user.id) === String(cleanUserId))?.name || `Uživatel ${cleanUserId}`;
-
-        setInAppToast((currentToast) => {
-          if (currentToast && String(currentToast.userId) === String(cleanUserId)) {
-            return {
-              ...currentToast,
-              userName: String(userDisplayName),
-              text: String(newestUserMessage?.text || 'Máte novou zprávu.').slice(0, 120),
-            };
-          }
-
-          return {
-            userId: cleanUserId,
-            userName: String(userDisplayName),
-            text: String(newestUserMessage?.text || 'Máte novou zprávu.').slice(0, 120),
-          };
-        });
       }
 
       const nextReadCounts = { ...getGlobalReadCounts() };
@@ -811,12 +834,26 @@ const AdminPin = ({ navigation }) => {
 
     };
 
+    const handleUserRatingUpdate = ({ userId, charisma, stesti } = {}) => {
+      const cleanUserId = String(userId || '').trim();
+
+      if (!cleanUserId) {
+        return;
+      }
+
+      setUserRatings((currentRatings) => ({
+        ...currentRatings,
+        [cleanUserId]: { charisma, stesti },
+      }));
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
     socket.on('server:state', handleServerState);
     socket.on('chat:messages', handleChatMessages);
     socket.on('room:hardReset', handleHardReset);
+    socket.on('user:ratingUpdate', handleUserRatingUpdate);
 
 
     if (!socket.connected) {
@@ -844,6 +881,7 @@ const AdminPin = ({ navigation }) => {
       socket.off('server:state', handleServerState);
       socket.off('chat:messages', handleChatMessages);
       socket.off('room:hardReset');
+      socket.off('user:ratingUpdate', handleUserRatingUpdate);
     };
   }, []);
 
@@ -893,7 +931,6 @@ const AdminPin = ({ navigation }) => {
 
   const openAdminChat = (user) => {
     markUserAsRead(user.id);
-    setInAppToast(null);
 
     navigation.navigate('AdminChat', {
       userId: user.id,
@@ -1424,6 +1461,28 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     setUserMenuVisible(false);
   };
 
+  const unlockUserRating = (user) => {
+    if (!user) {
+      return;
+    }
+
+    const cleanUserId = String(user.id);
+
+    setUnlockedRatingUsers((current) => ({
+      ...current,
+      [cleanUserId]: true,
+    }));
+
+    if (socket.connected) {
+      socket.emit('admin:unlockRating', {
+        userId: user.id,
+        enabled: true,
+      });
+    }
+
+    logAction(`Hodnocení uživatele ${user.name} bylo odemčeno.`);
+  };
+
   const openQuickActionsModal = (user) => {
     if (!user) {
       return;
@@ -1606,37 +1665,6 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     0
   );
 
-  const renderInAppToast = () => {
-    if (!inAppToast) {
-      return null;
-    }
-
-    return (
-      <View style={styles.inAppToastWrap}>
-        <View style={styles.inAppToast}>
-          <View style={styles.inAppToastTextWrap}>
-            <Text style={styles.inAppToastTitle}>{`Nová zpráva od ${inAppToast.userName}`}</Text>
-            <Text style={styles.inAppToastBody}>{inAppToast.text}</Text>
-          </View>
-
-          <Pressable
-            style={styles.inAppToastButton}
-            onPress={() => {
-              const targetUser = users.find((user) => String(user.id) === String(inAppToast.userId));
-              if (targetUser) {
-                openAdminChat(targetUser);
-              } else {
-                setInAppToast(null);
-              }
-            }}
-          >
-            <Text style={styles.inAppToastButtonText}>Odpovědět</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  };
-
   return (
 
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -1673,6 +1701,12 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 </Pressable>
               </View>
 
+              <View style={[styles.windowButton, styles.windowButtonGapLeft]}>
+                <Pressable style={styles.closePressable} onPress={() => setStatsModalVisible(true)}>
+                  <Image source={STAT_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
+                </Pressable>
+              </View>
+
               <View style={styles.windowButton}>
                 <Pressable style={styles.closePressable} onPress={() => setHelpModalVisible(true)}>
                   <Image source={HELP_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
@@ -1694,8 +1728,6 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
 
 
           </View>
-
-           {renderInAppToast()}
 
            <View style={styles.body}>
                 <View style={styles.topInfoPanel}>
@@ -1811,8 +1843,12 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                         : null;
 
                     return (
+                  <SwipeToUnlockRow
+                    key={user.id}
+                    disabled={isUserSecretMuted}
+                    onUnlock={() => unlockUserRating(user)}
+                  >
                   <View
-                        key={user.id}
                         style={[
                           styles.userRow,
                           isUserSecretMuted
@@ -1833,23 +1869,31 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                           onLongPress={() => openUserMenu(user)}
                           delayLongPress={260}
                         >
-                          <View
-                            style={[
-                              styles.userIconBox,
-                              {
-                                backgroundColor: user.bgColour || '#dceaff',
-                                borderTopColor: user.silhouetteColour || '#0b3d91',
-                                borderLeftColor: user.silhouetteColour || '#0b3d91',
-                                borderRightColor: user.silhouetteColour || '#0b3d91',
-                                borderBottomColor: user.silhouetteColour || '#0b3d91',
-                              },
-                            ]}
-                          >
-                            <Image
-                              source={getUserIconSource(user.avatarIcon)}
-                              style={styles.userIconImage}
-                              resizeMode="contain"
-                            />
+                          <View style={styles.userIconWrap}>
+                            <View
+                              style={[
+                                styles.userIconBox,
+                                {
+                                  backgroundColor: user.bgColour || '#dceaff',
+                                  borderTopColor: user.silhouetteColour || '#0b3d91',
+                                  borderLeftColor: user.silhouetteColour || '#0b3d91',
+                                  borderRightColor: user.silhouetteColour || '#0b3d91',
+                                  borderBottomColor: user.silhouetteColour || '#0b3d91',
+                                },
+                              ]}
+                            >
+                              <Image
+                                source={getUserIconSource(user.avatarIcon)}
+                                style={styles.userIconImage}
+                                resizeMode="contain"
+                              />
+                            </View>
+
+                            {unreadCount > 0 ? (
+                              <View style={styles.userIconBadgeWrap}>
+                                <UnreadBadge count={unreadCount} isSecret={isUserSecretMuted} />
+                              </View>
+                            ) : null}
                           </View>
 
                           <View style={styles.userTextBox}>
@@ -1871,11 +1915,6 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                           </View>
                         </Pressable>
 
-                        <View style={styles.unreadBadgeSlot}>
-                          <UnreadBadge count={unreadCount} isSecret={isUserSecretMuted} />
-                        </View>
-
-
                                             <Pressable
                           style={({ pressed }) => [
                             styles.kickButton,
@@ -1892,6 +1931,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                         </Pressable>
 
                       </View>
+                  </SwipeToUnlockRow>
 
                     );
                   })
@@ -2236,6 +2276,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Pressable
                   style={({ pressed }) => [
                     styles.settingsOption,
+                    styles.settingsOptionMute,
                     pressed && styles.xpButtonPressed,
                   ]}
                   onPress={() => {
@@ -2252,6 +2293,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Pressable
                   style={({ pressed }) => [
                     styles.settingsOption,
+                    styles.settingsOptionSecretMute,
                     pressed && styles.xpButtonPressed,
                   ]}
                   onPress={() => {
@@ -2270,6 +2312,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Pressable
                   style={({ pressed }) => [
                     styles.settingsOption,
+                    styles.settingsOptionSecretMute,
                     pressed && styles.xpButtonPressed,
                   ]}
                   onPress={() => {
@@ -2288,6 +2331,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Pressable
                   style={({ pressed }) => [
                     styles.settingsOption,
+                    styles.settingsOptionKick,
                     pressed && styles.xpButtonPressed,
                   ]}
                   onPress={() => {
@@ -3173,6 +3217,77 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
           </View>
         </Modal>
 
+        <Modal
+          visible={statsModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setStatsModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Hodnocení uživatelů</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={() => setStatsModalVisible(false)}>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
+                </Pressable>
+              </View>
+
+              <ScrollView style={styles.modalBody}>
+                <Text style={styles.modalLabel}>
+                  Podržením a přetažením uživatele doleva odemkneš jeho hodnocení.
+                </Text>
+
+                {Object.keys(unlockedRatingUsers).length === 0 ? (
+                  <View style={styles.smallEmptyBox}>
+                    <Text style={styles.smallEmptyText}>
+                      Zatím nemáš odemčené hodnocení žádného uživatele.
+                    </Text>
+                  </View>
+                ) : (
+                  users
+                    .filter((user) => unlockedRatingUsers[String(user.id)])
+                    .map((user) => {
+                      const rating = userRatings[String(user.id)];
+
+                      return (
+                        <View key={user.id} style={styles.settingsUserRow}>
+                          <View
+                            style={[
+                              styles.smallUserIconBox,
+                              {
+                                backgroundColor: user.bgColour || '#dceaff',
+                                borderTopColor: user.silhouetteColour || '#0b3d91',
+                                borderLeftColor: user.silhouetteColour || '#0b3d91',
+                                borderRightColor: user.silhouetteColour || '#0b3d91',
+                                borderBottomColor: user.silhouetteColour || '#0b3d91',
+                              },
+                            ]}
+                          >
+                            <Image
+                              source={getUserIconSource(user.avatarIcon)}
+                              style={styles.smallUserIconImage}
+                              resizeMode="contain"
+                            />
+                          </View>
+
+                          <View style={styles.settingsUserTextBox}>
+                            <Text style={styles.settingsUserName}>{user.name}</Text>
+                            <Text style={styles.settingsUserSubText}>
+                              {rating
+                                ? `Charisma: ${rating.charisma ?? '-'}/10  •  Štěstí: ${rating.stesti ?? '-'}/10`
+                                : 'Čeká na odeslání hodnocení od uživatele...'}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
                  </View>
     </SafeAreaView>
   );
@@ -3387,6 +3502,17 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
 
+  userIconWrap: {
+    position: 'relative',
+    marginRight: 10,
+  },
+
+  userIconBadgeWrap: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+  },
+
   userIconBox: {
     width: 42,
     height: 42,
@@ -3397,7 +3523,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#245aa8',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
   },
 
   userIconImage: {
@@ -4062,10 +4187,10 @@ const styles = StyleSheet.create({
   },
 
   settingsOptionMute: {
-    borderTopColor: '#e49b38',
-    borderLeftColor: '#e49b38',
-    borderRightColor: '#8b4700',
-    borderBottomColor: '#8b4700',
+    borderTopColor: '#ff8a8a',
+    borderLeftColor: '#ff8a8a',
+    borderRightColor: '#a80000',
+    borderBottomColor: '#a80000',
   },
 
   settingsOptionSecretMute: {
@@ -4073,6 +4198,13 @@ const styles = StyleSheet.create({
     borderLeftColor: '#b67ae8',
     borderRightColor: '#5d1f85',
     borderBottomColor: '#5d1f85',
+  },
+
+  settingsOptionKick: {
+    borderTopColor: '#ff8a8a',
+    borderLeftColor: '#ff8a8a',
+    borderRightColor: '#a80000',
+    borderBottomColor: '#a80000',
   },
 
   userRowMuted: {
@@ -4354,14 +4486,14 @@ const styles = StyleSheet.create({
 
   totalUnreadBadge: {
     position: 'absolute',
-    top: -6,
-    right: -6,
+    top: -12,
+    right: -12,
     minWidth: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#ff3b30',
+    backgroundColor: '#28c840',
     borderWidth: 1,
-    borderColor: '#a80000',
+    borderColor: '#0b7a16',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
