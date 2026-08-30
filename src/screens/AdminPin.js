@@ -74,6 +74,15 @@ const USER_COLOURS = [
   { label: 'Tyrkysová', value: '#40e0d0' },
 ];
 
+const ADMIN_FILL_COLOURS = [
+  { label: 'Výchozí', value: '#ece9d8' },
+  { label: 'Bílá', value: '#ffffff' },
+  { label: 'Ledová', value: '#dceaff' },
+  { label: 'Mátová', value: '#d7ffd8' },
+  { label: 'Krémová', value: '#fff3c4' },
+  { label: 'Levandulová', value: '#e8c6ff' },
+];
+
 const ADMIN_OUTLINE_COLOURS = [
   ...USER_COLOURS,
   { label: 'Ledová', value: '#7dd3fc' },
@@ -579,6 +588,7 @@ const AdminPin = ({ navigation }) => {
   const [adminEditModalVisible, setAdminEditModalVisible] = useState(false);
   const [adminIconModalVisible, setAdminIconModalVisible] = useState(false);
   const [adminOutlineModalVisible, setAdminOutlineModalVisible] = useState(false);
+  const [adminFillModalVisible, setAdminFillModalVisible] = useState(false);
   const [adminPinModalVisible, setAdminPinModalVisible] = useState(false);
   const [adminPwModalVisible, setAdminPwModalVisible] = useState(false);
   const [newAdminPw, setNewAdminPw] = useState('');
@@ -590,6 +600,8 @@ const AdminPin = ({ navigation }) => {
   const [statsModalVisible, setStatsModalVisible] = useState(false);
   const [unlockedRatingUsers, setUnlockedRatingUsers] = useState({});
   const [userRatings, setUserRatings] = useState({});
+  const [ratingConfirmVisible, setRatingConfirmVisible] = useState(false);
+  const [ratingConfirmUser, setRatingConfirmUser] = useState(null);
 
 
 
@@ -1249,6 +1261,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     setAdminEditModalVisible(false);
     setAdminIconModalVisible(false);
     setAdminOutlineModalVisible(false);
+    setAdminFillModalVisible(false);
     setAdminPinModalVisible(false);
     setAdminPwModalVisible(false);
   };
@@ -1305,6 +1318,26 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
   logAction('Barva obrysu admina byla změněna.');
 
     setAdminOutlineModalVisible(false);
+  };
+
+  const updateAdminFillColour = (colour) => {
+    const nextProfile = {
+      ...adminProfile,
+      bgColour: colour,
+    };
+
+    setAdminProfile(nextProfile);
+    globalThis.CUSIIK_ADMIN_PROFILE = nextProfile;
+
+    if (socket.connected) {
+      socket.emit('admin:setProfile', {
+        bgColour: colour,
+      });
+    }
+
+    logAction('Výplň admina byla změněna.');
+
+    setAdminFillModalVisible(false);
   };
 
 
@@ -1481,6 +1514,28 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     }
 
     logAction(`Hodnocení uživatele ${user.name} bylo odemčeno.`);
+  };
+
+  const openRatingConfirm = (user) => {
+    if (!user) {
+      return;
+    }
+
+    setRatingConfirmUser(user);
+    setRatingConfirmVisible(true);
+  };
+
+  const closeRatingConfirm = () => {
+    setRatingConfirmVisible(false);
+    setRatingConfirmUser(null);
+  };
+
+  const confirmRatingUnlock = () => {
+    if (ratingConfirmUser) {
+      unlockUserRating(ratingConfirmUser);
+    }
+
+    closeRatingConfirm();
   };
 
   const openQuickActionsModal = (user) => {
@@ -1846,7 +1901,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   <SwipeToUnlockRow
                     key={user.id}
                     disabled={isUserSecretMuted}
-                    onUnlock={() => unlockUserRating(user)}
+                    onUnlock={() => openRatingConfirm(user)}
                   >
                   <View
                         style={[
@@ -2312,7 +2367,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Pressable
                   style={({ pressed }) => [
                     styles.settingsOption,
-                    styles.settingsOptionSecretMute,
+                    styles.settingsOptionFucker,
                     pressed && styles.xpButtonPressed,
                   ]}
                   onPress={() => {
@@ -2740,6 +2795,19 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                     styles.settingsOption,
                     pressed && styles.xpButtonPressed,
                   ]}
+                  onPress={() => setAdminFillModalVisible(true)}
+                >
+                  <Text style={styles.settingsOptionTitle}>Výplň</Text>
+                  <Text style={styles.settingsOptionText}>
+                    Barva pozadí tvé ikonky (pár barev na výběr).
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    pressed && styles.xpButtonPressed,
+                  ]}
                   onPress={openAdminPinModal}
                 >
                   <Text style={styles.settingsOptionTitle}>Admin PIN</Text>
@@ -3023,6 +3091,49 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
           </View>
         </Modal>
 
+        <Modal
+          visible={adminFillModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAdminFillModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Výběr výplně admina</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={() => setAdminFillModalVisible(false)}>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <View style={styles.colourGrid}>
+                  {ADMIN_FILL_COLOURS.map((colour) => (
+                    <Pressable
+                      key={colour.value}
+                      style={({ pressed }) => [
+                        styles.colourButton,
+                        (adminProfile?.bgColour || '#ece9d8') === colour.value && styles.adminIconButtonActive,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => updateAdminFillColour(colour.value)}
+                    >
+                      <View
+                        style={[
+                          styles.colourPreview,
+                          { backgroundColor: colour.value },
+                        ]}
+                      />
+                      <Text style={styles.colourButtonText}>{colour.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
                <Modal
           visible={changeModalVisible}
           transparent
@@ -3284,6 +3395,57 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                     })
                 )}
               </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={ratingConfirmVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeRatingConfirm}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Odemknout hodnocení</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closeRatingConfirm}>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>
+                  Opravdu chceš odemknout hodnocení uživateli?
+                </Text>
+
+                <Text style={styles.selectedUserText}>
+                  {ratingConfirmUser ? ratingConfirmUser.name : ''}
+                </Text>
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={confirmRatingUnlock}
+                  >
+                    <Text style={styles.modalButtonText}>Ano, odemknout</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={closeRatingConfirm}
+                  >
+                    <Text style={styles.modalButtonText}>Zrušit</Text>
+                  </Pressable>
+                </View>
+              </View>
             </View>
           </View>
         </Modal>
@@ -4200,11 +4362,18 @@ const styles = StyleSheet.create({
     borderBottomColor: '#5d1f85',
   },
 
+  settingsOptionFucker: {
+    borderTopColor: '#9af5a8',
+    borderLeftColor: '#9af5a8',
+    borderRightColor: '#1d7f2c',
+    borderBottomColor: '#1d7f2c',
+  },
+
   settingsOptionKick: {
-    borderTopColor: '#ff8a8a',
-    borderLeftColor: '#ff8a8a',
-    borderRightColor: '#a80000',
-    borderBottomColor: '#a80000',
+    borderTopColor: '#4d4d4d',
+    borderLeftColor: '#4d4d4d',
+    borderRightColor: '#000000',
+    borderBottomColor: '#000000',
   },
 
   userRowMuted: {
@@ -4703,10 +4872,10 @@ kickButton: {
   height: 34,
   backgroundColor: '#ece9d8',
   borderWidth: 2,
-  borderTopColor: '#ff8a8a',
-  borderLeftColor: '#ff8a8a',
-  borderRightColor: '#a80000',
-  borderBottomColor: '#a80000',
+  borderTopColor: '#4d4d4d',
+  borderLeftColor: '#4d4d4d',
+  borderRightColor: '#000000',
+  borderBottomColor: '#000000',
   alignItems: 'center',
   justifyContent: 'center',
 },

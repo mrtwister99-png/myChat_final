@@ -508,37 +508,32 @@ const UzivatelPin=({ navigation,route })=>{
   const [eggPos, setEggPos] = useState({ top: 100, left: 50 });
   const [eggSize, setEggSize] = useState(150);
 
-  const comingSoonSpinAnim = useRef(new Animated.Value(0)).current;
-  const comingSoonPulseAnim = useRef(new Animated.Value(1)).current;
+  const terminalCursorAnim = useRef(new Animated.Value(1)).current;
+  const terminalScanAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const spinLoop = Animated.loop(
-      Animated.timing(comingSoonSpinAnim, {
+    const cursorLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(terminalCursorAnim, { toValue: 0, duration: 450, useNativeDriver: true }),
+        Animated.timing(terminalCursorAnim, { toValue: 1, duration: 450, useNativeDriver: true }),
+      ])
+    );
+    const scanLoop = Animated.loop(
+      Animated.timing(terminalScanAnim, {
         toValue: 1,
-        duration: 4000,
+        duration: 2600,
         useNativeDriver: true,
       })
     );
-    const pulseLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(comingSoonPulseAnim, { toValue: 1.18, duration: 900, useNativeDriver: true }),
-        Animated.timing(comingSoonPulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
-      ])
-    );
 
-    spinLoop.start();
-    pulseLoop.start();
+    cursorLoop.start();
+    scanLoop.start();
 
     return () => {
-      spinLoop.stop();
-      pulseLoop.stop();
+      cursorLoop.stop();
+      scanLoop.stop();
     };
   }, []);
-
-  const comingSoonSpin = comingSoonSpinAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
 
 
   useEffect(() => {
@@ -1726,23 +1721,53 @@ const UzivatelPin=({ navigation,route })=>{
                 />
               </Pressable>
 
-              <Text style={styles.grayPanelUserName}>{currentUserName}</Text>
+              <Text style={styles.grayPanelUserNameFlex}>{currentUserName}</Text>
 
+              <Pressable
+                style={({ pressed }) => [
+                  styles.grayPanelSettingsButton,
+                  pressed && styles.sendButtonPressed,
+                ]}
+                onPress={() => {
+                  if (isAvatarLocked) {
+                    setBlockedInfo('Ikonka je uzamčena adminem a nelze ji změnit.');
+                    return;
+                  }
+
+                  setIconModalVisible(true);
+                }}
+              >
+                <Text style={styles.grayPanelSettingsButtonText}>Nastavení</Text>
+              </Pressable>
             </View>
 
             <View style={styles.menuMiddleSection}>
-              <View style={styles.menuMiddleLeftBox}>
-                <View style={styles.comingSoonOrbitWrap}>
-                  <Animated.View style={[styles.comingSoonOrbitRing, { transform: [{ rotate: comingSoonSpin }] }]}>
-                    <View style={styles.comingSoonOrbitDot} />
-                  </Animated.View>
-                  <Animated.View style={[styles.comingSoonPulseCore, { transform: [{ scale: comingSoonPulseAnim }] }]} />
-                  <Text style={styles.comingSoonIconText}>🛠️</Text>
+              <View style={styles.terminalBox}>
+                <Animated.View
+                  style={[
+                    styles.terminalScanline,
+                    {
+                      transform: [
+                        {
+                          translateY: terminalScanAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 240],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                />
+
+                <Text style={styles.terminalLine}>{'> system.boot()'}</Text>
+                <Text style={styles.terminalLine}>{'> loading module: minichat.exe'}</Text>
+                <Text style={styles.terminalLine}>{'> status: [##########----] 68%'}</Text>
+                <View style={styles.terminalPromptRow}>
+                  <Text style={styles.terminalPrompt}>{'C:\\GM> '}</Text>
+                  <Animated.Text style={[styles.terminalCursor, { opacity: terminalCursorAnim }]}>
+                    {'█'}
+                  </Animated.Text>
                 </View>
-                <Text style={styles.menuMiddlePlaceholderTitle}>Připravuje se</Text>
-                <Text style={styles.menuMiddlePlaceholderText}>
-                  {'Minichat brzy dorazí'}
-                </Text>
               </View>
 
               <View style={styles.menuMiddleRatingBox}>
@@ -1751,6 +1776,11 @@ const UzivatelPin=({ navigation,route })=>{
                 {RATING_STATS.map((stat) => (
                   <RatingSlider key={stat.key} label={stat.label} value={stat.value} locked />
                 ))}
+
+                <View style={styles.ratingSubmitDisabledButton}>
+                  <Text style={styles.ratingSubmitDisabledIcon}>🔒</Text>
+                  <Text style={styles.ratingSubmitDisabledText}>Odeslat</Text>
+                </View>
               </View>
             </View>
 
@@ -2525,6 +2555,32 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 
+  grayPanelUserNameFlex: {
+    flex: 1,
+    color: '#000000',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  grayPanelSettingsButton: {
+    height: 34,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+
+  grayPanelSettingsButtonText: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
   grayPanelChatButton: {
     height: 34,
     minWidth: 84,
@@ -2604,60 +2660,53 @@ const styles = StyleSheet.create({
     padding: 10,
   },
 
-  comingSoonOrbitWrap: {
-    width: 64,
-    height: 64,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-
-  comingSoonOrbitRing: {
-    position: 'absolute',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  terminalBox: {
+    flex: 1,
+    marginRight: 8,
+    backgroundColor: '#0a0f0a',
     borderWidth: 2,
-    borderColor: '#c9c2a0',
-    borderStyle: 'dashed',
-    alignItems: 'center',
+    borderTopColor: '#1c2e1c',
+    borderLeftColor: '#1c2e1c',
+    borderRightColor: '#00ff66',
+    borderBottomColor: '#00ff66',
+    padding: 10,
+    overflow: 'hidden',
+    position: 'relative',
   },
 
-  comingSoonOrbitDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#d97800',
-    marginTop: -5,
-  },
-
-  comingSoonPulseCore: {
+  terminalScanline: {
     position: 'absolute',
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#fff0a6',
-    borderWidth: 2,
-    borderColor: '#ffd34d',
+    left: 0,
+    right: 0,
+    height: 14,
+    backgroundColor: 'rgba(0, 255, 102, 0.08)',
   },
 
-  comingSoonIconText: {
-    fontSize: 22,
-  },
-
-  menuMiddlePlaceholderTitle: {
-    color: '#5c3300',
-    fontSize: 13,
-    fontWeight: '900',
-    marginBottom: 4,
-  },
-
-  menuMiddlePlaceholderText: {
-    color: '#888888',
-    fontSize: 12,
+  terminalLine: {
+    color: '#00ff66',
+    fontSize: 11,
     fontWeight: '700',
-    textAlign: 'center',
-    lineHeight: 17,
+    marginBottom: 6,
+    fontFamily: Platform.OS === 'android' ? 'monospace' : 'Courier',
+  },
+
+  terminalPromptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+
+  terminalPrompt: {
+    color: '#00ff66',
+    fontSize: 11,
+    fontWeight: '900',
+    fontFamily: Platform.OS === 'android' ? 'monospace' : 'Courier',
+  },
+
+  terminalCursor: {
+    color: '#00ff66',
+    fontSize: 12,
+    fontWeight: '900',
   },
 
   menuMiddleRatingBox: {
@@ -2747,6 +2796,32 @@ const styles = StyleSheet.create({
 
   ratingLockIcon: {
     fontSize: 9,
+  },
+
+  ratingSubmitDisabledButton: {
+    marginTop: 6,
+    height: 36,
+    backgroundColor: '#d6d3c3',
+    borderWidth: 2,
+    borderTopColor: '#bebaa4',
+    borderLeftColor: '#bebaa4',
+    borderRightColor: '#8a8a8a',
+    borderBottomColor: '#8a8a8a',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.75,
+  },
+
+  ratingSubmitDisabledIcon: {
+    fontSize: 12,
+    marginRight: 6,
+  },
+
+  ratingSubmitDisabledText: {
+    color: '#666666',
+    fontSize: 12,
+    fontWeight: '900',
   },
 
   chatUnreadCircle: {

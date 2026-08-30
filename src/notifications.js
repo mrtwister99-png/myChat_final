@@ -86,6 +86,10 @@ export const registerForPushNotificationsAsync = async () => {
     return null;
   }
 
+  const projectId =
+    Constants?.expoConfig?.extra?.eas?.projectId ??
+    Constants?.easConfig?.projectId;
+
   await Notifications.setNotificationChannelAsync(NOTIFICATION_CHANNEL_ID, {
     name: NOTIFICATION_CHANNEL_ID,
     importance: Notifications.AndroidImportance.MAX,
@@ -121,8 +125,18 @@ export const registerForPushNotificationsAsync = async () => {
     return null;
   }
 
-  const tokenData = await Notifications.getExpoPushTokenAsync();
-  return tokenData.data;
+  if (!projectId) {
+    console.warn('Push notifikace: projectId nebyl nalezen v app config, token nelze získat.');
+    return null;
+  }
+
+  try {
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    return tokenData.data;
+  } catch (error) {
+    console.warn('Push notifikace: získání tokenu selhalo.', error?.message || error);
+    return null;
+  }
 };
 
 export const showLocalMessageNotification = async ({

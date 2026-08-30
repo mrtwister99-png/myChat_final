@@ -26,6 +26,7 @@ const KeyboardWrapper = KeyboardAvoidingView;
 
 const MUTE_ICON = require('../assets/icons/timeout.png');
 const SECRET_MUTE_ICON = require('../assets/icons/psss.png');
+const FUCKER_ICON = require('../assets/icons/fuckerr.png');
 const BACK_ICON = require('../assets/icons/backsipka.png');
 const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
 const EXIT_ICON = require('../assets/icons/exit.png');
@@ -438,6 +439,7 @@ useEffect(() => {
   const isMuted = muteUntil > nowTick;
   const muteTimeLeft = isMuted ? formatMuteTimeLeft(muteUntil) : 'není umlčen';
   const isSecretMuted = Boolean(secretMutedUsers[userId]);
+  const isFuckerLocked = Boolean(currentUserData?.avatarLocked);
   const isServerOnline = socket.connected;
 
   const saveMessages = (nextMessages) => {
@@ -619,6 +621,29 @@ useEffect(() => {
     sendSystemMessage(`Uživatel ${userName} už není umlčen.`);
 
     closeMuteModal();
+  };
+
+  const toggleFuckerLock = () => {
+    const nextEnabled = !Boolean(currentUserData?.avatarLocked);
+
+    setCurrentUserData((prev) =>
+      prev
+        ? { ...prev, avatarLocked: nextEnabled, avatarIcon: nextEnabled ? 'fuckerr' : 'uzivatel' }
+        : prev
+    );
+
+    if (socket.connected) {
+      socket.emit('admin:setUserFuckerAvatar', {
+        userId,
+        enabled: nextEnabled,
+      });
+    }
+
+    sendSystemMessage(
+      nextEnabled
+        ? `Uživatel ${userName} má uzamčenou ikonku - musí splnit úkol, aby mohl psát.`
+        : `Uživatel ${userName} už nemá uzamčenou ikonku.`
+    );
   };
 
   const goBack = () => {
@@ -866,6 +891,8 @@ useEffect(() => {
               <View style={styles.userNameRow}>
                 <Text style={styles.userName}>{userName}</Text>
 
+                {isFuckerLocked ? <Text style={styles.userNameFuckerText}> (úkol)</Text> : null}
+
                 {isSecretMuted ? <Text style={styles.userNameSecretText}> (potají­)</Text> : null}
 
                 {isMuted ? <Text style={styles.userNameMuteText}> ({muteTimeLeft})</Text> : null}
@@ -889,22 +916,45 @@ useEffect(() => {
               <Pressable
                 style={({ pressed }) => [
                   styles.muteButton,
+                  isFuckerLocked && styles.fuckerButtonActive,
+                  pressed && styles.xpButtonPressed,
+                ]}
+                onPress={toggleFuckerLock}
+              >
+                <Image source={FUCKER_ICON} style={styles.muteButtonIcon} resizeMode="contain" />
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.muteButton,
+                  isMuted && styles.eyeToggleButtonMuted,
+                  pressed && styles.xpButtonPressed,
+                ]}
+                onPress={openMuteModal}
+              >
+                <Image source={MUTE_ICON} style={styles.muteButtonIcon} resizeMode="contain" />
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.muteButton,
                   isSecretMuted && styles.eyeToggleButtonActive,
-                  !isSecretMuted && isMuted && styles.eyeToggleButtonMuted,
                   pressed && styles.xpButtonPressed,
                 ]}
                 onPress={toggleSecretMute}
-                onLongPress={openMuteModal}
-                delayLongPress={260}
               >
-                <Image
-                  source={isSecretMuted ? SECRET_MUTE_ICON : MUTE_ICON}
-                  style={styles.muteButtonIcon}
-                  resizeMode="contain"
-                />
+                <Image source={SECRET_MUTE_ICON} style={styles.muteButtonIcon} resizeMode="contain" />
               </Pressable>
             </View>
           </View>
+
+          {isFuckerLocked ? (
+            <View style={styles.fuckerLockedBanner}>
+              <Text style={styles.fuckerLockedBannerText}>
+                Uživatel má uzamčenou ikonku - musí splnit úkol, aby mohl psát.
+              </Text>
+            </View>
+          ) : null}
 
           {isSecretMuted ? (
             <View style={styles.secretMutedBanner}>
@@ -1943,5 +1993,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     textAlign: 'center',
+  },
+
+  fuckerLockedBanner: {
+    backgroundColor: '#d7ffd8',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1d7f2c',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+
+  fuckerLockedBannerText: {
+    color: '#0d4d1a',
+    fontSize: 12,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  userNameFuckerText: {
+    color: '#0d4d1a',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 3,
   },
 });
