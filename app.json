@@ -24,8 +24,6 @@
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "package": "com.yourneme.blbechat"
@@ -38,12 +36,17 @@
         "expo-notifications",
         {
           "sounds": [
-            "./src/assets/sounds/notification.mp3",
-            "./src/assets/sounds/notification.caf"
+            "./src/assets/sounds/notification.mp3"
           ]
         }
       ],
-      "expo-audio"
-    ]
+      "expo-audio",
+      "expo-asset"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e52b8afd-4144-4a3c-9200-5e0f7ba0fb40"
+      }
+    }
   }
 }
