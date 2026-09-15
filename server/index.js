@@ -18,8 +18,8 @@ const io = new Server(server, {
 });
 
 const state = {
-  userPin: '1111',
-  adminPin: '8831',
+  userPin: '02468',
+  adminPin: '98764',
   adminStatus: 'off',
   adminProfile: {
     icon: 'admin',
@@ -595,7 +595,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('auth:checkPin', ({ pin, lastUserId }) => {
-    const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 4);
+    const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 5);
     const cleanLastId = String(lastUserId || socket.data.lastUserId || '').trim();
     const specialPinForLastId = cleanLastId ? state.userPinsById[cleanLastId] : null;
     const isSpecialPinLogin = Boolean(
@@ -1086,11 +1086,11 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 4);
+    const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 5);
 
-    if (cleanPin.length !== 4) {
+    if (cleanPin.length !== 5) {
       socket.emit('admin:error', {
-        message: 'Uživatelský PIN musí mít 4 číslice.',
+        message: 'Uživatelský PIN musí mít 5 číslic.',
       });
       return;
     }
@@ -1107,11 +1107,11 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 4);
+    const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 5);
 
-    if (cleanPin.length !== 4) {
+    if (cleanPin.length !== 5) {
       socket.emit('admin:error', {
-        message: 'Admin PIN musí mít 4 číslice.',
+        message: 'Admin PIN musí mít 5 číslic.',
       });
       return;
     }
@@ -1157,13 +1157,13 @@ io.on('connection', (socket) => {
     }
 
     const cleanUserId = String(userId || '');
-    const cleanPin = String(newPin || '').replace(/[^0-9]/g, '').slice(0, 4);
+    const cleanPin = String(newPin || '').replace(/[^0-9]/g, '').slice(0, 5);
 
     if (!cleanUserId) {
       return;
     }
 
-    const targetPin = cleanPin.length === 4 ? cleanPin : '0008';
+    const targetPin = cleanPin.length === 5 ? cleanPin : '00221';
     state.userPinsById[cleanUserId] = targetPin;
 
     kickUser(cleanUserId, `Byl jsi vyhozen adminem z roomky. Tvůj PIN je ${targetPin}.`);

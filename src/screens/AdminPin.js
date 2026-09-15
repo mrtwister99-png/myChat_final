@@ -44,8 +44,8 @@ const STAT_ICON = require('../assets/icons/buttonStat.png');
 
 
 
-const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '1111';
-const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '8831';
+const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '02468';
+const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '98764';
 const DEFAULT_ADMIN_STATUS = globalThis.CUSIIK_ADMIN_STATUS || 'off';
 const ANNOUNCEMENT_PREFIX = '[[ANNOUNCEMENT]]';
 
@@ -470,7 +470,7 @@ const NumericKeypad = ({ value, onChange, maxLength = 4 }) => {
   );
 };
 
-const PinDots = ({ length, maxLength = 4 }) => {
+const PinDots = ({ length, maxLength = 5 }) => {
   return (
     <View style={styles.pinDotsRow}>
       {Array.from({ length: maxLength }).map((_, index) => (
@@ -567,7 +567,7 @@ const AdminPin = ({ navigation }) => {
   const [announcementUserIds, setAnnouncementUserIds] = useState([]);
   const [announcementError, setAnnouncementError] = useState('');
   const [kickPinModalVisible, setKickPinModalVisible] = useState(false);
-  const [kickPin, setKickPin] = useState('0008');
+  const [kickPin, setKickPin] = useState('00221');
   const [kickPinError, setKickPinError] = useState('');
 
 
@@ -1176,7 +1176,7 @@ const AdminPin = ({ navigation }) => {
     }
 
     setActionUser(user);
-    setKickPin('0008');
+    setKickPin('00221');
     setKickPinError('');
     setUserMenuVisible(false);
     setKickPinModalVisible(true);
@@ -1184,15 +1184,15 @@ const AdminPin = ({ navigation }) => {
 
   const closeKickPinModal = () => {
     setKickPinModalVisible(false);
-    setKickPin('0008');
+    setKickPin('00221');
     setKickPinError('');
   };
 
   const confirmKickUser = () => {
-    const cleanedPin = kickPin.replace(/[^0-9]/g, '').slice(0, 4);
+    const cleanedPin = kickPin.replace(/[^0-9]/g, '').slice(0, 5);
 
-    if (cleanedPin.length !== 4) {
-      setKickPinError('PIN musí mít přesně 4 číslice.');
+    if (cleanedPin.length !== 5) {
+      setKickPinError('Heslo musí mít přesně 5 číslic.');
       return;
     }
 
@@ -1201,10 +1201,10 @@ const AdminPin = ({ navigation }) => {
   };
 
   const saveChangeAndKickUsers = () => {
-    const cleanedPin = newPin.replace(/[^0-9]/g, '').slice(0, 4);
+    const cleanedPin = newPin.replace(/[^0-9]/g, '').slice(0, 5);
 
-    if (cleanedPin.length !== 4) {
-      setChangeError('PIN musí mít přesně 4 číslice.');
+    if (cleanedPin.length !== 5) {
+      setChangeError('PIN musí mít přesně 5 číslic.');
       return;
     }
 
@@ -1221,10 +1221,10 @@ const AdminPin = ({ navigation }) => {
   };
 
   const confirmHardResetFinal = () => {
-    const cleanPin = String(pendingHardResetPin || '').replace(/[^0-9]/g, '').slice(0, 4);
+    const cleanPin = String(pendingHardResetPin || '').replace(/[^0-9]/g, '').slice(0, 5);
 
-    if (cleanPin.length !== 4) {
-      setChangeError('PIN musí mít přesně 4 číslice.');
+    if (cleanPin.length !== 5) {
+      setChangeError('PIN musí mít přesně 5 číslic.');
       setHardResetStep('pin');
       return;
     }
@@ -1346,7 +1346,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
       return;
     }
 
-    const targetPin = String(options.newPin || '').replace(/[^0-9]/g, '').slice(0, 4) || '0008';
+    const targetPin = String(options.newPin || '').replace(/[^0-9]/g, '').slice(0, 5) || '00221';
 
     if (socket.connected) {
       socket.emit('admin:kickUser', {
@@ -1363,10 +1363,10 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
   };
 
   const saveNewAdminPin = () => {
-    const cleanedPin = newAdminPin.replace(/[^0-9]/g, '').slice(0, 4);
+    const cleanedPin = newAdminPin.replace(/[^0-9]/g, '').slice(0, 5);
 
-    if (cleanedPin.length !== 4) {
-      setAdminPinError('Admin PIN musí mít přesně 4 číslice.');
+    if (cleanedPin.length !== 5) {
+      setAdminPinError('Admin PIN musí mít přesně 5 číslic.');
       return;
     }
 

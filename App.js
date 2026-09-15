@@ -227,7 +227,7 @@ const App = () => {
         const cleanUserId = String(userId);
         globalThis.CUSIIK_LAST_USER_ID = cleanUserId;
         await AsyncStorage.setItem('lastUserId', cleanUserId);
-        globalThis.CUSIIK_SPECIAL_RELOGIN_PIN = specialPin || '0008';
+        globalThis.CUSIIK_SPECIAL_RELOGIN_PIN = specialPin || '00221';
       } else {
         await AsyncStorage.multiRemove(['lastUserId', 'lastUserName']);
         globalThis.CUSIIK_LAST_USER_ID = null;

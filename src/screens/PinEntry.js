@@ -6,8 +6,8 @@ import { socket } from '../socket';
 import { StatusAnimation } from '../components/StatusAnimations';
 import { playInAppMessageSound, playXpStartSound } from '../utils/inAppSound';
 
-const DEFAULT_USER_PIN = '1111';
-const DEFAULT_ADMIN_PIN = '8831';
+const DEFAULT_USER_PIN = '02468';
+const DEFAULT_ADMIN_PIN = '98764';
 const USER_SCREEN = 'UzivatelPin';
 const ADMIN_SCREEN = 'AdminPin';
 const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
@@ -194,7 +194,7 @@ const PinEntry = ({ navigation }) => {
         const cleanUserId = String(userId);
         globalThis.CUSIIK_LAST_USER_ID = cleanUserId;
         await AsyncStorage.setItem('lastUserId', cleanUserId);
-        globalThis.CUSIIK_SPECIAL_RELOGIN_PIN = specialPin || '0008';
+        globalThis.CUSIIK_SPECIAL_RELOGIN_PIN = specialPin || '00221';
       } else {
         await AsyncStorage.multiRemove(['lastUserId', 'lastUserName']);
         globalThis.CUSIIK_LAST_USER_ID = null;
@@ -293,12 +293,12 @@ const PinEntry = ({ navigation }) => {
       return;
     }
 
-    const cleanValue = value.replace(/[^0-9]/g, '').slice(0, 4);
+    const cleanValue = value.replace(/[^0-9]/g, '').slice(0, 5);
 
     setPin(cleanValue);
     setErrorText('');
 
-    if (cleanValue.length !== 4) {
+    if (cleanValue.length !== 5) {
       return;
     }
 
@@ -416,7 +416,7 @@ const PinEntry = ({ navigation }) => {
               onChangeText={handlePinChange}
               keyboardType="number-pad"
               inputMode="numeric"
-              maxLength={4}
+              maxLength={5}
               autoFocus
               caretHidden
               secureTextEntry
@@ -476,7 +476,7 @@ const PinEntry = ({ navigation }) => {
                   <Text style={styles.heading}>Zadej 4místný PIN</Text>
 
                   <Text style={styles.description}>
-                    Po zadání 4 číslic tě systém automaticky pustí dál.
+                    Po zadání 5 číslic tě systém automaticky pustí dál.
                   </Text>
 
                   <View style={styles.pinRow}>

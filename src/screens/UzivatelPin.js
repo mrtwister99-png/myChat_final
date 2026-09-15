@@ -98,6 +98,12 @@ const HELPER_MESSAGE_GM = 'GM sem lvl 80 a spadl sem pod texturu na 49.2 62.8 v 
 const ANNOUNCEMENT_PREFIX = '[[ANNOUNCEMENT]]';
 const ANNOUNCEMENT_TIMEOUT_MS = 10 * 60 * 1000;
 
+const WALL_MESSAGE_MAX_LENGTH = 100;
+
+const getGlobalWallMessage = () => {
+  return globalThis.CUSIIK_WALL_MESSAGE || null;
+};
+
 const formatAnnouncementCountdown = (expiresAt) => {
   const remainingSeconds = Math.max(0, Math.ceil((Number(expiresAt || 0) - Date.now()) / 1000));
   const minutes = Math.floor(remainingSeconds / 60);
@@ -503,6 +509,9 @@ const UzivatelPin=({ navigation,route })=>{
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [ratingCharisma, setRatingCharisma] = useState(5);
   const [ratingStesti, setRatingStesti] = useState(5);
+
+  const [wallMessage, setWallMessage] = useState(getGlobalWallMessage);
+  const [wallDraft, setWallDraft] = useState('');
 
   const [eggVisible, setEggVisible] = useState(false);
   const [eggPos, setEggPos] = useState({ top: 100, left: 50 });
@@ -1085,6 +1094,33 @@ const UzivatelPin=({ navigation,route })=>{
     };
   }, [currentUserId]);
 
+  useEffect(() => {
+    const handleWallMessage = (data) => {
+      if (!data || !data.text) {
+        return;
+      }
+
+      const nextWallMessage = {
+        text: String(data.text).slice(0, WALL_MESSAGE_MAX_LENGTH),
+        author: data.author || 'Anonym',
+        createdAt: data.createdAt || Date.now(),
+      };
+
+      globalThis.CUSIIK_WALL_MESSAGE = nextWallMessage;
+      setWallMessage(nextWallMessage);
+    };
+
+    socket.on('wall:message', handleWallMessage);
+
+    if (socket.connected) {
+      socket.emit('wall:get');
+    }
+
+    return () => {
+      socket.off('wall:message', handleWallMessage);
+    };
+  }, []);
+
 
 
   useEffect(() => {
@@ -1360,6 +1396,32 @@ const UzivatelPin=({ navigation,route })=>{
 
     setRatingModalVisible(false);
     setRatingUnlocked(false);
+  };
+
+  const sendWallMessage = () => {
+    const trimmedText = wallDraft.trim();
+
+    if (!trimmedText) {
+      return;
+    }
+
+    const nextWallMessage = {
+      text: trimmedText.slice(0, WALL_MESSAGE_MAX_LENGTH),
+      author: currentUserName,
+      createdAt: Date.now(),
+    };
+
+    globalThis.CUSIIK_WALL_MESSAGE = nextWallMessage;
+    setWallMessage(nextWallMessage);
+    setWallDraft('');
+
+    if (socket.connected) {
+      socket.emit('wall:post', {
+        userId: currentUserId,
+        author: currentUserName,
+        text: nextWallMessage.text,
+      });
+    }
   };
 
 
@@ -1742,31 +1804,48 @@ const UzivatelPin=({ navigation,route })=>{
             </View>
 
             <View style={styles.menuMiddleSection}>
-              <View style={styles.terminalBox}>
-                <Animated.View
-                  style={[
-                    styles.terminalScanline,
-                    {
-                      transform: [
-                        {
-                          translateY: terminalScanAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0, 240],
-                          }),
-                        },
-                      ],
-                    },
-                  ]}
-                />
+              <View style={styles.wallBox}>
+                <Text style={styles.wallBoxTitle}>Nástěnka</Text>
 
-                <Text style={styles.terminalLine}>{'> system.boot()'}</Text>
-                <Text style={styles.terminalLine}>{'> loading module: minichat.exe'}</Text>
-                <Text style={styles.terminalLine}>{'> status: [##########----] 68%'}</Text>
-                <View style={styles.terminalPromptRow}>
-                  <Text style={styles.terminalPrompt}>{'C:\\GM> '}</Text>
-                  <Animated.Text style={[styles.terminalCursor, { opacity: terminalCursorAnim }]}>
-                    {'█'}
-                  </Animated.Text>
+                <View style={styles.wallMessagePreview}>
+                  {wallMessage?.text ? (
+                    <>
+                      <Text style={styles.wallMessageText} numberOfLines={2}>
+                        {wallMessage.text}
+                      </Text>
+                      <Text style={styles.wallMessageAuthor}>— {wallMessage.author}</Text>
+                    </>
+                  ) : (
+                    <Text style={styles.wallEmptyText}>Zatím tu nikdo nic nenechal...</Text>
+                  )}
+                </View>
+
+                <View style={styles.wallInputWrap}>
+                  <TextInput
+                    value={wallDraft}
+                    onChangeText={setWallDraft}
+                    placeholder="Napiš vzkaz na nástěnku..."
+                    placeholderTextColor="#8a8a8a"
+                    style={styles.wallInput}
+                    multiline
+                    maxLength={WALL_MESSAGE_MAX_LENGTH}
+                  />
+
+                  <View style={styles.wallInputFooter}>
+                    <Text style={styles.wallCharCount}>
+                      {wallDraft.length}/{WALL_MESSAGE_MAX_LENGTH}
+                    </Text>
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.wallSendButton,
+                        pressed && styles.sendButtonPressed,
+                      ]}
+                      onPress={sendWallMessage}
+                    >
+                      <Text style={styles.wallSendButtonText}>Přidat</Text>
+                    </Pressable>
+                  </View>
                 </View>
               </View>
 
@@ -2706,6 +2785,113 @@ const styles = StyleSheet.create({
   terminalCursor: {
     color: '#00ff66',
     fontSize: 12,
+    fontWeight: '900',
+  },
+
+  wallBox: {
+    flex: 1,
+    marginRight: 8,
+    backgroundColor: '#fffdf5',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#c9a227',
+    borderBottomColor: '#c9a227',
+    padding: 10,
+    justifyContent: 'space-between',
+  },
+
+  wallBoxTitle: {
+    color: '#5c3300',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 8,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+
+  wallMessagePreview: {
+    minHeight: 44,
+    backgroundColor: '#fff8e0',
+    borderWidth: 1,
+    borderColor: '#e0c680',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+
+  wallMessageText: {
+    color: '#3a2a00',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+
+  wallMessageAuthor: {
+    color: '#8a6a1f',
+    fontSize: 10,
+    fontWeight: '900',
+    marginTop: 3,
+    textAlign: 'right',
+  },
+
+  wallEmptyText: {
+    color: '#9a8a5f',
+    fontSize: 11,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+
+  wallInputWrap: {
+    marginTop: 'auto',
+  },
+
+  wallInput: {
+    minHeight: 54,
+    maxHeight: 70,
+    backgroundColor: '#ffffff',
+    color: '#000000',
+    fontSize: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderWidth: 2,
+    borderTopColor: '#6e6e6e',
+    borderLeftColor: '#6e6e6e',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+    textAlignVertical: 'top',
+  },
+
+  wallInputFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+
+  wallCharCount: {
+    color: '#8a8a8a',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
+  wallSendButton: {
+    height: 30,
+    backgroundColor: '#ece9d8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+
+  wallSendButtonText: {
+    color: '#000000',
+    fontSize: 11,
     fontWeight: '900',
   },
 
