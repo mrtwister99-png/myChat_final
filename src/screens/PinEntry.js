@@ -6,10 +6,14 @@ import { socket } from '../socket';
 import { StatusAnimation } from '../components/StatusAnimations';
 import { playInAppMessageSound, playXpStartSound } from '../utils/inAppSound';
 
-const DEFAULT_USER_PIN = '02468';
-const DEFAULT_ADMIN_PIN = '98764';
+const DEFAULT_USER_PIN = '33065';
+const DEFAULT_ADMIN_PIN = '66601';
+const ADMIN_SETUP_QUESTION = 'OTÁZKA? (MÁŠ 1 POKUS !)';
+const ADMIN_SETUP_ANSWER = '.:?!-_bReKKkekkKkE9977';
 const USER_SCREEN = 'UzivatelPin';
 const ADMIN_SCREEN = 'AdminPin';
+const MAX_PIN_ATTEMPTS = 5;
+const PIN_BLOCK_MS = 15 * 60 * 1000;
 const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
 const MAXIMIZE_ICON = require('../assets/icons/maximalize.png');
 const EXIT_ICON = require('../assets/icons/exit.png');
@@ -57,6 +61,18 @@ const PinEntry = ({ navigation }) => {
   const [errorText, setErrorText] = useState('');
   const [serverStatusText, setServerStatusText] = useState('Připojuji server...');
   const [isCheckingPin, setIsCheckingPin] = useState(false);
+  const [adminSetupVisible, setAdminSetupVisible] = useState(false);
+  const [adminSetupStep, setAdminSetupStep] = useState('question');
+  const [adminSetupAnswer, setAdminSetupAnswer] = useState('');
+  const [adminSetupPin, setAdminSetupPin] = useState('');
+  const [adminSetupPinConfirm, setAdminSetupPinConfirm] = useState('');
+  const [adminSetupPassword, setAdminSetupPassword] = useState('');
+  const [adminSetupPasswordConfirm, setAdminSetupPasswordConfirm] = useState('');
+  const [pinAttempts, setPinAttempts] = useState(0);
+  const [pinBlockedUntil, setPinBlockedUntil] = useState(0);
+
+  const pinAttemptsRef = useRef(0);
+  const pinBlockedUntilRef = useRef(0);
 
   const getServerStatusType = (value) => {
     const normalized = String(value || '').toLowerCase();
@@ -150,6 +166,11 @@ const PinEntry = ({ navigation }) => {
       setIsCheckingPin(false);
       setPin('');
       setErrorText('');
+      pinAttemptsRef.current = 0;
+      pinBlockedUntilRef.current = 0;
+      setPinAttempts(0);
+      setPinBlockedUntil(0);
+      await savePinAttemptState(0, 0);
       playXpStartSound();
 
       if (payload?.role === 'user') {
@@ -166,6 +187,18 @@ const PinEntry = ({ navigation }) => {
       if (payload?.role === 'admin') {
         globalThis.CUSIIK_CURRENT_ROLE = 'admin';
         globalThis.CUSIIK_CURRENT_USER_ID = null;
+
+        const adminSetupComplete = (await AsyncStorage.getItem('adminSetupComplete')) === 'true';
+        if (!adminSetupComplete) {
+          setAdminSetupVisible(true);
+          setAdminSetupStep('question');
+          setAdminSetupAnswer('');
+          setAdminSetupPin('');
+          setAdminSetupPinConfirm('');
+          setAdminSetupPassword('');
+          setAdminSetupPasswordConfirm('');
+          return;
+        }
       }
 
       if (globalThis.CUSIIK_EXPO_PUSH_TOKEN) {
@@ -183,6 +216,14 @@ const PinEntry = ({ navigation }) => {
 
     const handleAuthError = (payload) => {
       setIsCheckingPin(false);
+
+      if (payload?.code === 'PIN_BLOCKED' && payload?.blockedUntil) {
+        const blockedUntil = Number(payload.blockedUntil);
+        pinBlockedUntilRef.current = blockedUntil;
+        setPinBlockedUntil(blockedUntil);
+        savePinAttemptState(MAX_PIN_ATTEMPTS, blockedUntil);
+      }
+
       setErrorText(payload?.message || 'Špatný PIN.');
       playInAppMessageSound();
       shakeWindow();
@@ -240,6 +281,41 @@ const PinEntry = ({ navigation }) => {
 
   const getCurrentUserPin = () => globalThis.CUSIIK_USER_PIN || DEFAULT_USER_PIN;
   const getCurrentAdminPin = () => globalThis.CUSIIK_ADMIN_PIN || DEFAULT_ADMIN_PIN;
+
+  const refreshPinAttemptState = async () => {
+    try {
+      const [storedAttempts, storedBlockedUntil, setupDone] = await Promise.all([
+        AsyncStorage.getItem('pinAttemptCount'),
+        AsyncStorage.getItem('pinBlockedUntil'),
+        AsyncStorage.getItem('adminSetupComplete'),
+      ]);
+
+      const nextAttempts = Number(storedAttempts || 0);
+      const nextBlockedUntil = Number(storedBlockedUntil || 0);
+
+      pinAttemptsRef.current = Number.isFinite(nextAttempts) ? nextAttempts : 0;
+      pinBlockedUntilRef.current = Number.isFinite(nextBlockedUntil) ? nextBlockedUntil : 0;
+
+      setPinAttempts(pinAttemptsRef.current);
+      setPinBlockedUntil(pinBlockedUntilRef.current);
+      globalThis.CUSIIK_ADMIN_SETUP_COMPLETE = setupDone === 'true';
+    } catch {}
+  };
+
+  const isPinBlocked = () => {
+    const blockedUntil = pinBlockedUntilRef.current || 0;
+    return Date.now() < blockedUntil;
+  };
+
+  const savePinAttemptState = async (count, until) => {
+    try {
+      await AsyncStorage.multiSet([
+        ['pinAttemptCount', String(count)],
+        ['pinBlockedUntil', String(until || 0)],
+      ]);
+    } catch {}
+  };
+
   const focusKeyboard = () => { 
     if (easterActive) return;
     inputRef.current?.blur(); 
@@ -258,7 +334,21 @@ const PinEntry = ({ navigation }) => {
   };
 
   const handleWrongPin = () => {
-    setErrorText('Špatný PIN.');
+    const nextAttemptCount = pinAttemptsRef.current + 1;
+    pinAttemptsRef.current = nextAttemptCount;
+    setPinAttempts(nextAttemptCount);
+
+    if (nextAttemptCount >= MAX_PIN_ATTEMPTS) {
+      const blockUntil = Date.now() + PIN_BLOCK_MS;
+      pinBlockedUntilRef.current = blockUntil;
+      setPinBlockedUntil(blockUntil);
+      savePinAttemptState(nextAttemptCount, blockUntil);
+      setErrorText(`Příliš mnoho chyb. PIN je blokovaný na 15 minut.`);
+    } else {
+      savePinAttemptState(nextAttemptCount, pinBlockedUntilRef.current || 0);
+      setErrorText(`Špatný PIN. Zbývá ${MAX_PIN_ATTEMPTS - nextAttemptCount} pokusů.`);
+    }
+
     playInAppMessageSound();
     shakeWindow();
   };
@@ -289,7 +379,10 @@ const PinEntry = ({ navigation }) => {
   };
 
   const handlePinChange = (value) => {
-    if (isCheckingPin || easterActive) {
+    if (isCheckingPin || easterActive || isPinBlocked()) {
+      if (isPinBlocked()) {
+        setErrorText('PIN je zablokovaný na 15 minut.');
+      }
       return;
     }
 
@@ -320,6 +413,83 @@ const PinEntry = ({ navigation }) => {
       playInAppMessageSound();
       shakeWindow();
     }, 150);
+  };
+
+  const resetAdminSetup = () => {
+    setAdminSetupVisible(false);
+    setAdminSetupStep('question');
+    setAdminSetupAnswer('');
+    setAdminSetupPin('');
+    setAdminSetupPinConfirm('');
+    setAdminSetupPassword('');
+    setAdminSetupPasswordConfirm('');
+  };
+
+  const handleAdminSetupAnswer = () => {
+    if (adminSetupAnswer.trim() !== ADMIN_SETUP_ANSWER) {
+      setErrorText('Špatná odpověď. Blokováno pro tento přístup.');
+      setAdminSetupVisible(false);
+      setAdminSetupAnswer('');
+      return;
+    }
+
+    setAdminSetupStep('pin');
+    setErrorText('');
+  };
+
+  const finalizeAdminSetup = async () => {
+    const cleanedNewPin = adminSetupPin.replace(/[^0-9]/g, '').slice(0, 5);
+    const cleanedConfirmPin = adminSetupPinConfirm.replace(/[^0-9]/g, '').slice(0, 5);
+    const cleanedPassword = adminSetupPassword.trim();
+    const cleanedPasswordConfirm = adminSetupPasswordConfirm.trim();
+
+    if (cleanedNewPin.length !== 5) {
+      setErrorText('PIN musí mít přesně 5 číslic.');
+      return;
+    }
+
+    if (cleanedNewPin !== cleanedConfirmPin) {
+      setErrorText('PIN se neshoduje.');
+      return;
+    }
+
+    if (cleanedPassword.length < 4) {
+      setErrorText('Heslo pro obnovu musí mít alespoň 4 znaky.');
+      return;
+    }
+
+    if (cleanedPassword !== cleanedPasswordConfirm) {
+      setErrorText('Heslo pro obnovu se neshoduje.');
+      return;
+    }
+
+    globalThis.CUSIIK_ADMIN_PIN = cleanedNewPin;
+    globalThis.CUSIIK_ADMIN_PW = cleanedPassword;
+    globalThis.CUSIIK_ADMIN_SETUP_COMPLETE = true;
+
+    try {
+      await AsyncStorage.multiSet([
+        ['adminSetupComplete', 'true'],
+        ['adminPin', cleanedNewPin],
+        ['adminPw', cleanedPassword],
+      ]);
+    } catch {}
+
+    if (socket.connected) {
+      socket.emit('admin:setAdminPin', { pin: cleanedNewPin });
+      socket.emit('admin:setAdminPw', { pw: cleanedPassword });
+    }
+
+    setAdminSetupVisible(false);
+    setAdminSetupStep('question');
+    setPin('');
+    setErrorText('');
+    setAdminSetupAnswer('');
+    setAdminSetupPin('');
+    setAdminSetupPinConfirm('');
+    setAdminSetupPassword('');
+    setAdminSetupPasswordConfirm('');
+    navigation.replace(ADMIN_SCREEN);
   };
 
   // Windows titleBar handlers
@@ -391,6 +561,8 @@ const PinEntry = ({ navigation }) => {
   };
 
   useEffect(() => {
+    refreshPinAttemptState();
+
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -473,14 +645,14 @@ const PinEntry = ({ navigation }) => {
                     <Text style={styles.dialogIconText}>🔐</Text>
                   </View>
 
-                  <Text style={styles.heading}>Zadej 4místný PIN</Text>
+                  <Text style={styles.heading}>Zadej 5místný PIN</Text>
 
                   <Text style={styles.description}>
                     Po zadání 5 číslic tě systém automaticky pustí dál.
                   </Text>
 
                   <View style={styles.pinRow}>
-                    {[0, 1, 2, 3].map((index) => {
+                    {[0, 1, 2, 3, 4].map((index) => {
                       const filled = pin.length > index;
                       return (
                         <Pressable
@@ -538,6 +710,101 @@ const PinEntry = ({ navigation }) => {
           </ScrollView>
         </KeyboardAvoidingView>
       </Pressable>
+
+      <Modal visible={adminSetupVisible} transparent animationType="fade" onRequestClose={resetAdminSetup}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalWindow}>
+            <View style={styles.modalTitleBar}>
+              <Text style={styles.modalTitleText}>Admin setup</Text>
+              <Pressable style={styles.modalCloseButton} onPress={resetAdminSetup}>
+                <Text style={styles.modalCloseButtonText}>×</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.modalBody}>
+              {adminSetupStep === 'question' ? (
+                <>
+                  <Text style={styles.modalQuestionTitle}>{ADMIN_SETUP_QUESTION}</Text>
+                  <TextInput
+                    value={adminSetupAnswer}
+                    onChangeText={setAdminSetupAnswer}
+                    placeholder="Odpověď"
+                    style={styles.modalInput}
+                    autoFocus
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <Pressable style={[styles.xpButton, { marginTop: 12 }]} onPress={handleAdminSetupAnswer}>
+                    <Text style={styles.xpButtonText}>Potvrdit</Text>
+                  </Pressable>
+                </>
+              ) : null}
+
+              {adminSetupStep === 'pin' ? (
+                <>
+                  <Text style={styles.modalQuestionTitle}>Nastav nový admin PIN</Text>
+
+                  <TextInput
+                    value={adminSetupPin}
+                    onChangeText={(value) => setAdminSetupPin(value.replace(/[^0-9]/g, '').slice(0, 5))}
+                    placeholder="PIN 1x"
+                    style={styles.modalInput}
+                    keyboardType="number-pad"
+                    inputMode="numeric"
+                    maxLength={5}
+                    autoFocus
+                  />
+
+                  <TextInput
+                    value={adminSetupPinConfirm}
+                    onChangeText={(value) => setAdminSetupPinConfirm(value.replace(/[^0-9]/g, '').slice(0, 5))}
+                    placeholder="PIN znovu"
+                    style={styles.modalInput}
+                    keyboardType="number-pad"
+                    inputMode="numeric"
+                    maxLength={5}
+                  />
+
+                  <Pressable style={[styles.xpButton, { marginTop: 8 }]} onPress={() => setAdminSetupStep('password')}>
+                    <Text style={styles.xpButtonText}>Pokračovat</Text>
+                  </Pressable>
+                </>
+              ) : null}
+
+              {adminSetupStep === 'password' ? (
+                <>
+                  <Text style={styles.modalQuestionTitle}>Nastav heslo pro obnovu PINu</Text>
+
+                  <TextInput
+                    value={adminSetupPassword}
+                    onChangeText={setAdminSetupPassword}
+                    placeholder="Heslo 1x"
+                    style={styles.modalInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry
+                    autoFocus
+                  />
+
+                  <TextInput
+                    value={adminSetupPasswordConfirm}
+                    onChangeText={setAdminSetupPasswordConfirm}
+                    placeholder="Heslo znovu"
+                    style={styles.modalInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry
+                  />
+
+                  <Pressable style={[styles.xpButton, { marginTop: 8 }]} onPress={finalizeAdminSetup}>
+                    <Text style={styles.xpButtonText}>Uložit a pokračovat</Text>
+                  </Pressable>
+                </>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Easter egg timer on top */}
       {easterActive && (
@@ -649,7 +916,7 @@ const styles = StyleSheet.create({
   heading: { fontSize: 22, fontWeight: '900', color: '#000000', textAlign: 'center', marginBottom: 7 },
   description: { fontSize: 13, color: '#222222', textAlign: 'center', lineHeight: 18, marginBottom: 18 },
   pinRow: { flexDirection: 'row', marginBottom: 18 },
-  pinBox: { width: 50, height: 54, backgroundColor: '#ffffff', borderWidth: 2, borderTopColor: '#6e6e6e', borderLeftColor: '#6e6e6e', borderRightColor: '#ffffff', borderBottomColor: '#ffffff', alignItems: 'center', justifyContent: 'center', marginHorizontal: 5 },
+  pinBox: { width: 42, height: 54, backgroundColor: '#ffffff', borderWidth: 2, borderTopColor: '#6e6e6e', borderLeftColor: '#6e6e6e', borderRightColor: '#ffffff', borderBottomColor: '#ffffff', alignItems: 'center', justifyContent: 'center', marginHorizontal: 3 },
   pinBoxFilled: { backgroundColor: '#eaf2ff' },
   pinDot: { fontSize: 24, color: '#000000', fontWeight: '900' },
   infoBox: { width: '100%', backgroundColor: '#fff8d7', borderWidth: 1, borderColor: '#b9a85c', paddingVertical: 8, paddingHorizontal: 10, marginBottom: 14 },
@@ -683,6 +950,8 @@ const styles = StyleSheet.create({
   modalTitleText: { color: '#ffffff', fontSize: 14, fontWeight: '900' },
   modalCloseButton: { width: 22, height: 22, backgroundColor: '#e04b31', borderWidth: 1, borderTopColor: '#ffffff', borderLeftColor: '#ffffff', borderRightColor: '#8f1d10', borderBottomColor: '#8f1d10', alignItems: 'center', justifyContent: 'center' },
   modalCloseButtonText: { color: '#ffffff', fontSize: 18, fontWeight: '900', lineHeight: 19 },
-  modalBody: { padding: 16, alignItems: 'center' },
+  modalBody: { padding: 16, alignItems: 'center', minWidth: 280 },
+  modalQuestionTitle: { color: '#000000', fontSize: 18, fontWeight: '900', textAlign: 'center', marginBottom: 12 },
+  modalInput: { width: '100%', height: 42, backgroundColor: '#ffffff', color: '#000000', fontSize: 14, paddingHorizontal: 10, borderWidth: 2, borderTopColor: '#6e6e6e', borderLeftColor: '#6e6e6e', borderRightColor: '#ffffff', borderBottomColor: '#ffffff', marginBottom: 10 },
   modalMessage: { color: '#000000', fontSize: 16, fontWeight: '900', textAlign: 'center' },
 });

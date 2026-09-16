@@ -1553,17 +1553,19 @@ const UzivatelPin=({ navigation,route })=>{
             </Pressable>
           </View>
 
-                 <View style={styles.windowButton}>
-            <Pressable
-              style={styles.closePressable}
-              onPress={() => {
-                closeReactionPicker();
-                setHelpModalVisible(true);
-              }}
-            >
-              <Image source={HELP_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
-            </Pressable>
-          </View>
+          {screenMode !== 'chat' ? (
+            <View style={styles.windowButton}>
+              <Pressable
+                style={styles.closePressable}
+                onPress={() => {
+                  closeReactionPicker();
+                  setHelpModalVisible(true);
+                }}
+              >
+                <Image source={HELP_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
+              </Pressable>
+            </View>
+          ) : null}
 
           <View style={[styles.windowButton, styles.windowButtonGapLeft]}>
             <Pressable

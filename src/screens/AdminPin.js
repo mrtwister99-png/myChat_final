@@ -44,7 +44,7 @@ const STAT_ICON = require('../assets/icons/buttonStat.png');
 
 
 
-const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '02468';
+const DEFAULT_USER_PIN = globalThis.CUSIIK_USER_PIN || '33065';
 const DEFAULT_ADMIN_PIN = globalThis.CUSIIK_ADMIN_PIN || '98764';
 const DEFAULT_ADMIN_STATUS = globalThis.CUSIIK_ADMIN_STATUS || 'off';
 const ANNOUNCEMENT_PREFIX = '[[ANNOUNCEMENT]]';
@@ -559,13 +559,13 @@ const AdminPin = ({ navigation }) => {
   const [changeError, setChangeError] = useState('');
   const [pendingHardResetPin, setPendingHardResetPin] = useState('');
   const [broadcastModalVisible, setBroadcastModalVisible] = useState(false);
+  const [preparationModalVisible, setPreparationModalVisible] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastError, setBroadcastError] = useState('');
-  const [announcementModalVisible, setAnnouncementModalVisible] = useState(false);
-  const [announcementMessage, setAnnouncementMessage] = useState('');
+  const [broadcastMode, setBroadcastMode] = useState('message');
   const [announcementTarget, setAnnouncementTarget] = useState('all');
   const [announcementUserIds, setAnnouncementUserIds] = useState([]);
-  const [announcementError, setAnnouncementError] = useState('');
+  const [preparationUserIds, setPreparationUserIds] = useState([]);
   const [kickPinModalVisible, setKickPinModalVisible] = useState(false);
   const [kickPin, setKickPin] = useState('00221');
   const [kickPinError, setKickPinError] = useState('');
@@ -1078,7 +1078,33 @@ const AdminPin = ({ navigation }) => {
   const openBroadcastModal = () => {
     setBroadcastMessage('');
     setBroadcastError('');
+    setBroadcastMode('message');
+    setAnnouncementTarget('all');
+    setAnnouncementUserIds([]);
     setBroadcastModalVisible(true);
+  };
+
+  const openPreparationChecklist = () => {
+    const onlineUserIds = users
+      .filter((user) => Boolean(user.online))
+      .map((user) => String(user.id));
+
+    setPreparationUserIds(onlineUserIds);
+    setPreparationModalVisible(true);
+  };
+
+  const closePreparationChecklist = () => {
+    setPreparationModalVisible(false);
+    setPreparationUserIds([]);
+  };
+
+  const togglePreparationUser = (userId) => {
+    const cleanUserId = String(userId);
+    setPreparationUserIds((currentIds) =>
+      currentIds.includes(cleanUserId)
+        ? currentIds.filter((currentId) => currentId !== cleanUserId)
+        : [...currentIds, cleanUserId]
+    );
   };
 
   const closeBroadcastModal = () => {
@@ -1089,9 +1115,17 @@ const AdminPin = ({ navigation }) => {
 
   const sendBroadcastMessage = () => {
     const trimmedMessage = broadcastMessage.trim();
+    const targetUsers = announcementTarget === 'all'
+      ? users
+      : users.filter((user) => announcementUserIds.includes(String(user.id)));
 
     if (!trimmedMessage) {
-      setBroadcastError('Napiš zprávu, kterou chceš odeslat.');
+      setBroadcastError(broadcastMode === 'announcement' ? 'Napiš text oznámení.' : 'Napiš zprávu, kterou chceš odeslat.');
+      return;
+    }
+
+    if (targetUsers.length === 0) {
+      setBroadcastError('Vyber alespoň jednoho uživatele.');
       return;
     }
 
@@ -1100,36 +1134,21 @@ const AdminPin = ({ navigation }) => {
       return;
     }
 
-    users.forEach((user) => {
+    targetUsers.forEach((user) => {
       socket.emit('chat:send', {
         userId: user.id,
-        sender: 'admin',
-        text: trimmedMessage,
+        sender: broadcastMode === 'announcement' ? 'system' : 'admin',
+        text: broadcastMode === 'announcement' ? `${ANNOUNCEMENT_PREFIX}${trimmedMessage}` : trimmedMessage,
       });
     });
 
-    logAction(`Zpráva všem byla odeslána ${users.length} uživatelům.`);
+    logAction(`${broadcastMode === 'announcement' ? 'Oznámení' : 'Zpráva'} bylo odesláno ${targetUsers.length} uživatelům.`);
     closeBroadcastModal();
-  };
-
-  const openAnnouncementModal = () => {
-    setAnnouncementMessage('');
-    setAnnouncementTarget('all');
-    setAnnouncementUserIds([]);
-    setAnnouncementError('');
-    setAnnouncementModalVisible(true);
-  };
-
-  const closeAnnouncementModal = () => {
-    setAnnouncementModalVisible(false);
-    setAnnouncementMessage('');
-    setAnnouncementUserIds([]);
-    setAnnouncementError('');
   };
 
   const toggleAnnouncementUser = (userId) => {
     const cleanUserId = String(userId);
-    setAnnouncementError('');
+    setBroadcastError('');
     setAnnouncementUserIds((currentIds) =>
       currentIds.includes(cleanUserId)
         ? currentIds.filter((currentId) => currentId !== cleanUserId)
@@ -1137,38 +1156,6 @@ const AdminPin = ({ navigation }) => {
     );
   };
 
-  const sendAnnouncement = () => {
-    const trimmedMessage = announcementMessage.trim();
-    const targetUsers = announcementTarget === 'all'
-      ? users
-      : users.filter((user) => announcementUserIds.includes(String(user.id)));
-
-    if (!trimmedMessage) {
-      setAnnouncementError('Napiš text oznámení.');
-      return;
-    }
-
-    if (targetUsers.length === 0) {
-      setAnnouncementError('Vyber alespoň jednoho uživatele.');
-      return;
-    }
-
-    if (!socket.connected) {
-      setAnnouncementError('Server je offline. Oznámení nyní nelze odeslat.');
-      return;
-    }
-
-    targetUsers.forEach((user) => {
-      socket.emit('chat:send', {
-        userId: user.id,
-        sender: 'system',
-        text: `${ANNOUNCEMENT_PREFIX}${trimmedMessage}`,
-      });
-    });
-
-    logAction(`Oznámení bylo odesláno ${targetUsers.length} uživatelům.`);
-    closeAnnouncementModal();
-  };
 
   const openKickPinModal = (user) => {
     if (!user) {
@@ -2018,31 +2005,38 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
               ) : null}
             </Pressable>
 
-
-            <View style={styles.broadcastButtonsRow}>
+            <View style={styles.smallActionRow}>
               <Pressable
                 style={({ pressed }) => [
-                  styles.broadcastButton,
+                  styles.smallActionButton,
                   pressed && styles.xpButtonPressed,
                 ]}
-                onPress={openBroadcastModal}
+                onPress={openPreparationChecklist}
               >
-                <Text style={styles.bigActionButtonTitle}>Zpráva všem</Text>
+                <Text style={styles.smallActionButtonTitle}>Příprava</Text>
               </Pressable>
 
               <Pressable
                 style={({ pressed }) => [
-                  styles.broadcastButton,
+                  styles.smallActionButton,
+                  styles.smallActionButtonWide,
                   pressed && styles.xpButtonPressed,
                 ]}
-                onPress={openAnnouncementModal}
+                onPress={() => {
+                  setAnnouncementTarget('all');
+                  setAnnouncementUserIds([]);
+                  setBroadcastMode('announcement');
+                  setBroadcastMessage('');
+                  setBroadcastError('');
+                  setBroadcastModalVisible(true);
+                }}
               >
-                <Text style={styles.bigActionButtonTitle}>Oznámení</Text>
+                <Text style={styles.smallActionButtonTitle}>Všem</Text>
               </Pressable>
             </View>
 
-                      <View style={styles.bottomButtons}>
-                           <Pressable
+            <View style={styles.bottomButtons}>
+              <Pressable
                 style={({ pressed }) => [
                   styles.bigActionButton,
                   pressed && styles.xpButtonPressed,
@@ -2087,6 +2081,69 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
         </View>
 
         <Modal
+          visible={preparationModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closePreparationChecklist}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Příprava</Text>
+
+                <Pressable style={styles.modalCloseButton} onPress={closePreparationChecklist}>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
+                </Pressable>
+              </View>
+
+              <View style={styles.modalBody}>
+                <Text style={styles.modalLabel}>Vyber uživatele pro přípravu:</Text>
+
+                <ScrollView style={styles.announcementUsersList} nestedScrollEnabled>
+                  {users.length === 0 ? (
+                    <View style={styles.smallEmptyBox}>
+                      <Text style={styles.smallEmptyText}>Žádní uživatelé v roomce.</Text>
+                    </View>
+                  ) : (
+                    users.map((user) => {
+                      const checked = preparationUserIds.includes(String(user.id));
+                      return (
+                        <Pressable
+                          key={user.id}
+                          style={({ pressed }) => [
+                            styles.announcementUserRow,
+                            pressed && styles.xpButtonPressed,
+                          ]}
+                          onPress={() => togglePreparationUser(user.id)}
+                        >
+                          <View style={[styles.announcementCheckbox, checked && styles.announcementCheckboxChecked]}>
+                            <Text style={styles.announcementCheckmark}>{checked ? '✓' : ''}</Text>
+                          </View>
+                          <Text style={styles.announcementUserName}>{user.name}</Text>
+                          <Text style={styles.selectionStatusText}>{user.online ? 'online' : 'offline'}</Text>
+                        </Pressable>
+                      );
+                    })
+                  )}
+                </ScrollView>
+
+                <View style={styles.modalButtons}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={closePreparationChecklist}
+                  >
+                    <Text style={styles.modalButtonText}>Hotovo</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
           visible={broadcastModalVisible}
           transparent
           animationType="fade"
@@ -2098,7 +2155,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
           >
             <View style={styles.modalWindow}>
               <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>Zpráva všem uživatelům</Text>
+                <Text style={styles.modalTitleText}>Zpráva a oznámení</Text>
 
                 <Pressable style={styles.modalCloseButton} onPress={closeBroadcastModal}>
                   <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
@@ -2106,78 +2163,34 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
               </View>
 
               <View style={styles.modalBody}>
-                <Text style={styles.modalLabel}>Zpráva pro všechny uživatele v roomce:</Text>
-
-                <TextInput
-                  value={broadcastMessage}
-                  onChangeText={(value) => {
-                    setBroadcastError('');
-                    setBroadcastMessage(value);
-                  }}
-                  style={[styles.modalInput, styles.broadcastInput]}
-                  placeholder="Napiš zprávu všem..."
-                  placeholderTextColor="#666666"
-                  autoFocus
-                  multiline
-                  maxLength={500}
-                  textAlignVertical="top"
-                />
-
-                {broadcastError ? (
-                  <Text style={styles.errorText}>{broadcastError}</Text>
-                ) : null}
-
-                <View style={styles.modalButtons}>
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={sendBroadcastMessage}
-                  >
-                    <Text style={styles.modalButtonText}>Odeslat všem</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={closeBroadcastModal}
-                  >
-                    <Text style={styles.modalButtonText}>Zrušit</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
-
-        <Modal
-          visible={announcementModalVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={closeAnnouncementModal}
-        >
-          <KeyboardAvoidingView
-            style={styles.modalOverlay}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <View style={styles.modalWindow}>
-              <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>Oznámení nahoře v okně</Text>
-                <Pressable style={styles.modalCloseButton} onPress={closeAnnouncementModal}>
-                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
-                </Pressable>
-              </View>
-
-              <View style={styles.modalBody}>
-                <Text style={styles.modalLabel}>Komu se má oznámení zobrazit:</Text>
+                <Text style={styles.modalLabel}>Vyber typ a komu se má zpráva poslat:</Text>
 
                 <View style={styles.announcementTargetRow}>
                   {[
-                    { key: 'all', label: 'Všem v roomce' },
-                    { key: 'selected', label: 'Jen vybraným' },
+                    { key: 'message', label: 'Zpráva' },
+                    { key: 'announcement', label: 'Oznámení' },
+                  ].map((option) => (
+                    <Pressable
+                      key={option.key}
+                      style={({ pressed }) => [
+                        styles.announcementTargetButton,
+                        broadcastMode === option.key && styles.announcementTargetButtonActive,
+                        pressed && styles.xpButtonPressed,
+                      ]}
+                      onPress={() => {
+                        setBroadcastMode(option.key);
+                        setBroadcastError('');
+                      }}
+                    >
+                      <Text style={styles.modalButtonText}>{option.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <View style={styles.announcementTargetRow}>
+                  {[
+                    { key: 'all', label: 'Všem' },
+                    { key: 'selected', label: 'Vybraným' },
                   ].map((option) => (
                     <Pressable
                       key={option.key}
@@ -2188,7 +2201,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                       ]}
                       onPress={() => {
                         setAnnouncementTarget(option.key);
-                        setAnnouncementError('');
+                        setBroadcastError('');
                       }}
                     >
                       <Text style={styles.modalButtonText}>{option.label}</Text>
@@ -2220,31 +2233,43 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 ) : null}
 
                 <TextInput
-                  value={announcementMessage}
+                  value={broadcastMessage}
                   onChangeText={(value) => {
-                    setAnnouncementError('');
-                    setAnnouncementMessage(value);
+                    setBroadcastError('');
+                    setBroadcastMessage(value);
                   }}
                   style={[styles.modalInput, styles.broadcastInput]}
-                  placeholder="Napiš oznámení..."
+                  placeholder={broadcastMode === 'announcement' ? 'Napiš oznámení...' : 'Napiš zprávu...'}
                   placeholderTextColor="#666666"
+                  autoFocus
                   multiline
-                  maxLength={300}
+                  maxLength={500}
                   textAlignVertical="top"
                 />
 
-                {announcementError ? <Text style={styles.errorText}>{announcementError}</Text> : null}
+                {broadcastError ? (
+                  <Text style={styles.errorText}>{broadcastError}</Text>
+                ) : null}
 
                 <View style={styles.modalButtons}>
                   <Pressable
-                    style={({ pressed }) => [styles.modalButton, pressed && styles.xpButtonPressed]}
-                    onPress={sendAnnouncement}
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={sendBroadcastMessage}
                   >
-                    <Text style={styles.modalButtonText}>Zobrazit oznámení</Text>
+                    <Text style={styles.modalButtonText}>
+                      {broadcastMode === 'announcement' ? 'Zobrazit oznámení' : 'Odeslat zprávu'}
+                    </Text>
                   </Pressable>
+
                   <Pressable
-                    style={({ pressed }) => [styles.modalButton, pressed && styles.xpButtonPressed]}
-                    onPress={closeAnnouncementModal}
+                    style={({ pressed }) => [
+                      styles.modalButton,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={closeBroadcastModal}
                   >
                     <Text style={styles.modalButtonText}>Zrušit</Text>
                   </Pressable>
@@ -3918,20 +3943,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  bottomButtons: {
+  smallActionRow: {
     paddingTop: 10,
+    paddingBottom: 4,
     flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
   },
 
-  broadcastButtonsRow: {
-    flexDirection: 'row',
-    paddingTop: 10,
-  },
-
-  broadcastButton: {
-    flex: 1,
-    minHeight: 46,
-    marginHorizontal: 4,
+  smallActionButton: {
+    width: 120,
+    minHeight: 34,
     backgroundColor: '#ece9d8',
     borderWidth: 3,
     borderTopColor: '#ffffff',
@@ -3941,6 +3963,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
+  },
+
+  smallActionButtonWide: {
+    width: 150,
+  },
+
+  smallActionButtonTitle: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  bottomButtons: {
+    paddingTop: 6,
+    flexDirection: 'row',
+  },
+
+  broadcastButtonsRow: {
+    flexDirection: 'row',
+    paddingTop: 10,
   },
 
   bottomButton: {
@@ -4180,6 +4223,13 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 13,
     fontWeight: '900',
+  },
+
+  selectionStatusText: {
+    color: '#333333',
+    fontSize: 10,
+    fontWeight: '700',
+    marginLeft: 8,
   },
 
   warningBox: {

@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const cors = require('cors');
 const { Server } = require('socket.io');
+const { supabase, ensureDefaultPins, loadPersistedConfig } = require('./supabase');
 
 const PORT = process.env.PORT || 8080;
 const ANNOUNCEMENT_PREFIX = '[[ANNOUNCEMENT]]';
@@ -18,8 +19,9 @@ const io = new Server(server, {
 });
 
 const state = {
-  userPin: '02468',
-  adminPin: '98764',
+  userPin: '33065',
+  adminPin: '66601',
+  adminPw: '',
   adminStatus: 'off',
   adminProfile: {
     icon: 'admin',
@@ -37,6 +39,17 @@ const state = {
   mutedUsers: {},
 
   secretMutedUsers: {},
+
+  adminConfig: {},
+  ipHistory: [],
+  kickedIps: {},
+  pinAttemptsByIp: {},
+  recoveryRequests: [],
+  specialPins: {},
+  activePins: {
+    user: '33065',
+    admin: '66601',
+  },
 
   userPinsById: {},
   kickedRoomUserIds: {},
@@ -243,6 +256,143 @@ const createMessageId = () => {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
+const getClientIp = (socket) => {
+  const forwarded = socket?.handshake?.headers?.['x-forwarded-for'];
+  if (forwarded) {
+    return String(forwarded).split(',')[0].trim();
+  }
+
+  const remoteAddress = socket?.handshake?.address || socket?.request?.connection?.remoteAddress || 'unknown';
+  return String(remoteAddress).replace('::ffff:', '').trim() || 'unknown';
+};
+
+const addIpHistory = async ({ socket, type, reason = '', userId = null }) => {
+  const cleanIp = getClientIp(socket);
+
+  if (!cleanIp || cleanIp === 'unknown') {
+    return;
+  }
+
+  const entry = {
+    id: createMessageId(),
+    ip: cleanIp,
+    type,
+    reason,
+    userId,
+    createdAt: Date.now(),
+  };
+
+  state.ipHistory = [...state.ipHistory.slice(-999), entry];
+
+  if (supabase) {
+    try {
+      await supabase.from('ip_history').insert(entry);
+    } catch (error) {
+      console.log('ip_history sync skipped:', error?.message || error);
+    }
+  }
+};
+
+const getPinLockState = (socket) => {
+  const ip = getClientIp(socket);
+  const current = state.pinAttemptsByIp[ip] || { attempts: 0, blockedUntil: 0 };
+
+  if (current.blockedUntil && current.blockedUntil <= Date.now()) {
+    delete state.pinAttemptsByIp[ip];
+    return { ip, attempts: 0, blockedUntil: 0 };
+  }
+
+  return { ip, ...current };
+};
+
+const recordPinFailure = (socket) => {
+  const { ip, attempts } = getPinLockState(socket);
+  const nextAttempts = attempts + 1;
+  const blockedUntil = nextAttempts >= 5 ? Date.now() + (15 * 60 * 1000) : 0;
+
+  state.pinAttemptsByIp[ip] = {
+    attempts: nextAttempts,
+    blockedUntil,
+  };
+
+  return state.pinAttemptsByIp[ip];
+};
+
+const clearPinFailures = (socket) => {
+  delete state.pinAttemptsByIp[getClientIp(socket)];
+};
+
+const syncActivePinsToSupabase = async () => {
+  if (!supabase) {
+    return;
+  }
+
+  try {
+    await supabase.from('active_pins').upsert([
+      { type: 'user', pin: state.userPin || '33065' },
+      { type: 'admin', pin: state.adminPin || '66601' },
+    ], { onConflict: 'type' });
+  } catch (error) {
+    console.log('active_pins sync skipped:', error?.message || error);
+  }
+};
+
+const syncAdminConfigToSupabase = async () => {
+  if (!supabase) {
+    return;
+  }
+
+  try {
+    await supabase.from('admin_config').upsert([
+      {
+        key: 'admin_pin',
+        value: state.adminPin,
+      },
+      {
+        key: 'user_pin',
+        value: state.userPin,
+      },
+      {
+        key: 'recovery_password',
+        value: state.adminPw || '',
+      },
+    ], { onConflict: 'key' });
+  } catch (error) {
+    console.log('admin_config sync skipped:', error?.message || error);
+  }
+};
+
+const hydratePersistedConfig = async () => {
+  if (!supabase) {
+    return;
+  }
+
+  try {
+    const persisted = await loadPersistedConfig();
+    const pinByType = Object.fromEntries(persisted.pins.map((item) => [item.type, item.pin]));
+    const configByKey = Object.fromEntries(persisted.config.map((item) => [item.key, item.value]));
+
+    state.userPin = pinByType.user || configByKey.user_pin || state.userPin;
+    state.adminPin = pinByType.admin || configByKey.admin_pin || state.adminPin;
+    state.adminPw = configByKey.recovery_password || state.adminPw;
+    state.activePins.user = state.userPin;
+    state.activePins.admin = state.adminPin;
+    state.kickedIps = Object.fromEntries(
+      persisted.kickedIps.map((item) => [item.ip, {
+        reason: item.reason || '',
+        createdAt: item.created_at || Date.now(),
+      }])
+    );
+    state.recoveryRequests = persisted.recoveryRequests;
+    state.specialPins = Object.fromEntries(
+      persisted.specialPins.map((item) => [item.user_id, item.pin])
+    );
+    state.userPinsById = { ...state.userPinsById, ...state.specialPins };
+  } catch (error) {
+    console.log('Supabase config load skipped:', error?.message || error);
+  }
+};
+
 const getPublicUsers = () => {
   return state.users.map((user) => ({
     ...(() => {
@@ -273,6 +423,10 @@ const getPublicState = () => {
   return {
     userPin: state.userPin,
     adminStatus: state.adminStatus,
+    activePins: state.activePins,
+    adminConfig: state.adminConfig,
+    recoveryRequests: state.recoveryRequests,
+    kickedIps: state.kickedIps,
     adminProfile: getPublicAdminProfile(),
     users: getPublicUsers(),
     mutedUsers: state.mutedUsers,
@@ -595,6 +749,18 @@ io.on('connection', (socket) => {
   });
 
   socket.on('auth:checkPin', ({ pin, lastUserId }) => {
+    addIpHistory({ socket, type: 'pin_check', userId: lastUserId || socket.data.userId || null });
+    const lockState = getPinLockState(socket);
+
+    if (lockState.blockedUntil > Date.now()) {
+      socket.emit('auth:error', {
+        code: 'PIN_BLOCKED',
+        blockedUntil: lockState.blockedUntil,
+        message: 'PIN je zablokovaný na 15 minut.',
+      });
+      return;
+    }
+
     const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 5);
     const cleanLastId = String(lastUserId || socket.data.lastUserId || '').trim();
     const specialPinForLastId = cleanLastId ? state.userPinsById[cleanLastId] : null;
@@ -617,6 +783,7 @@ io.on('connection', (socket) => {
         role: 'admin',
       });
 
+      clearPinFailures(socket);
       emitState();
       return;
     }
@@ -736,6 +903,7 @@ io.on('connection', (socket) => {
         userName: user.name,
       });
 
+      clearPinFailures(socket);
       socket.emit('chat:messages', {
         userId: user.id,
         messages: state.chats[user.id] || [],
@@ -745,9 +913,111 @@ io.on('connection', (socket) => {
       return;
     }
 
+    const failure = recordPinFailure(socket);
     socket.emit('auth:error', {
+      code: failure.blockedUntil ? 'PIN_BLOCKED' : 'INVALID_PIN',
+      blockedUntil: failure.blockedUntil || 0,
       message: 'Špatný PIN.',
     });
+  });
+
+  socket.on('recovery:checkIp', ({ ip }) => {
+    const cleanIp = String(ip || getClientIp(socket)).trim();
+    const isBlocked = Boolean(state.kickedIps[cleanIp]);
+
+    socket.emit('recovery:checkIp:result', {
+      allowed: !isBlocked,
+      blocked: isBlocked,
+      ip: cleanIp,
+    });
+  });
+
+  socket.on('recovery:request', ({ ip, reason, userId }) => {
+    const cleanIp = String(ip || getClientIp(socket)).trim();
+    const cleanReason = String(reason || 'Žádost o obnovení přístupu').trim();
+    const cleanUserId = String(userId || socket.data.userId || '').trim();
+
+    const request = {
+      id: createMessageId(),
+      ip: cleanIp,
+      userId: cleanUserId || null,
+      reason: cleanReason,
+      createdAt: Date.now(),
+      status: 'pending',
+    };
+
+    state.recoveryRequests = [request, ...state.recoveryRequests].slice(0, 100);
+
+    if (supabase) {
+      supabase.from('recovery_requests').insert(request).catch(() => {});
+    }
+
+    io.to('admins').emit('recovery:request', request);
+    socket.emit('recovery:request:result', {
+      success: true,
+      requestId: request.id,
+      status: 'pending',
+    });
+  });
+
+  socket.on('admin:approveRecoveryRequest', ({ requestId, pin, userId }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanRequestId = String(requestId || '').trim();
+    const cleanPin = String(pin || '').replace(/[^0-9]/g, '').slice(0, 5);
+    const cleanUserId = String(userId || '').trim();
+
+    if (!cleanRequestId || cleanPin.length !== 5) {
+      socket.emit('admin:error', { message: 'Neplatný obnovovací PIN.' });
+      return;
+    }
+
+    const request = state.recoveryRequests.find((item) => item.id === cleanRequestId) || null;
+    if (request) {
+      request.status = 'approved';
+      request.approvedAt = Date.now();
+      request.approvedBy = socket.id;
+    }
+
+    if (cleanUserId) {
+      state.specialPins[cleanUserId] = cleanPin;
+      state.activePins[cleanUserId] = cleanPin;
+      state.userPinsById[cleanUserId] = cleanPin;
+      if (supabase) {
+        supabase.from('special_pins').upsert({ user_id: cleanUserId, pin: cleanPin }, { onConflict: 'user_id' }).catch(() => {});
+      }
+      io.to(`user:${cleanUserId}`).emit('user:recoveryApproved', {
+        specialPin: cleanPin,
+      });
+    }
+
+    io.to('admins').emit('recovery:approved', {
+      requestId: cleanRequestId,
+      pin: cleanPin,
+      userId: cleanUserId,
+    });
+  });
+
+  socket.on('admin:markKickedIp', ({ ip, reason }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanIp = String(ip || '').trim();
+    if (!cleanIp) {
+      return;
+    }
+
+    state.kickedIps[cleanIp] = {
+      reason: String(reason || 'IP zakázáno adminem'),
+      createdAt: Date.now(),
+    };
+
+    if (supabase) {
+      supabase.from('kicked_ips').upsert({ ip: cleanIp, reason: String(reason || 'IP zakázáno adminem') }, { onConflict: 'ip' }).catch(() => {});
+    }
   });
 
   socket.on('auth:logout', () => {
@@ -1096,6 +1366,8 @@ io.on('connection', (socket) => {
     }
 
     state.userPin = cleanPin;
+    state.activePins.user = cleanPin;
+    syncActivePinsToSupabase();
 
     kickAllUsers('PIN roomky byl změněn. Přihlaš se znovu.');
 
@@ -1117,6 +1389,29 @@ io.on('connection', (socket) => {
     }
 
     state.adminPin = cleanPin;
+    state.activePins.admin = cleanPin;
+    syncActivePinsToSupabase();
+    syncAdminConfigToSupabase();
+
+    emitState();
+  });
+
+  socket.on('admin:setAdminPw', ({ pw }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const cleanPw = String(pw || '').trim();
+
+    if (cleanPw.length < 4) {
+      socket.emit('admin:error', {
+        message: 'Heslo pro obnovu musí mít alespoň 4 znaky.',
+      });
+      return;
+    }
+
+    state.adminPw = cleanPw;
+    syncAdminConfigToSupabase();
 
     emitState();
   });
@@ -1492,6 +1787,8 @@ app.get('/health', (req, res) => {
   res.status(200).json({ ok: true, message: 'Server alive' });
 
 });
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', async () => {
+  await ensureDefaultPins();
+  await hydratePersistedConfig();
   console.log(`✅ Chat-XP server běží na portu ${PORT}`);
 });
