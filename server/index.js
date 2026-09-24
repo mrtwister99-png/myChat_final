@@ -93,8 +93,29 @@ const state = {
   approvedRoomDevices: {},
 };
 
+const APPROVAL_EXPIRY_MS = 5 * 60 * 1000; // 5 minut na zadani PINu po schvaleni
 const WALL_MESSAGE_MAX_LENGTH = 100;
 const DEVICE_BINDING_TIMEOUT_MS = 2 * 60 * 1000;
+
+// cleanup 5min timer - vyprsi pending i approved
+setInterval(() => {
+  const now = Date.now();
+  Object.entries(state.pendingRoomApprovals || {}).forEach(([key, pending]) => {
+    if (now - (pending.time || 0) > APPROVAL_EXPIRY_MS) {
+      delete state.pendingRoomApprovals[key];
+      if (pending.socketId) {
+        try {
+          io.to(pending.socketId).emit('device:rejected', { deviceId: key, message: 'Čas na schválení vypršel (5 min).' });
+        } catch {}
+      }
+    }
+  });
+  Object.entries(state.approvedRoomDevices || {}).forEach(([key, expiresAt]) => {
+    if (Number(expiresAt) < now) {
+      delete state.approvedRoomDevices[key];
+    }
+  });
+}, 60 * 1000);
 
 const SUPPORTED_AVATAR_ICONS = new Set([
   'uzivatel',
@@ -575,6 +596,10 @@ const syncAdminConfigToSupabase = async () => {
         key: 'recovery_password',
         value: state.adminPw || '',
       },
+      {
+        key: 'admin_status',
+        value: state.adminStatus || 'off',
+      },
     ], { onConflict: 'key' });
   } catch (error) {
     console.log('admin_config sync skipped:', error?.message || error);
@@ -617,6 +642,7 @@ const hydratePersistedConfig = async () => {
     state.userPin = pinByType.user || state.userPin;
     state.adminPin = pinByType.admin || state.adminPin;
     state.adminPw = configByKey.recovery_password || state.adminPw;
+    state.adminStatus = configByKey.admin_status || state.adminStatus || 'off';
     state.activePins.user = state.userPin;
     state.activePins.admin = state.adminPin;
     state.kickedIps = Object.fromEntries(
@@ -2297,15 +2323,21 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('admin:setStatus', ({ status }) => {
-    if (socket.data.role !== 'admin') {
+   socket.on('admin:setStatus', ({ status }) => {
+    if (socket.data.role!== 'admin') {
       return;
     }
 
     const nextStatus = String(status || '').toLowerCase();
-    state.adminStatus = ['on', 'off', 'job'].includes(nextStatus) ? nextStatus : 'off';
+    state.adminStatus = ['on', 'off', 'job'].includes(nextStatus)? nextStatus : 'off';
 
     emitState();
+    if (supabase) {
+      fireAndForget(
+        supabase.from('admin_config').upsert({ key: 'admin_status', value: state.adminStatus }, { onConflict: 'key' }),
+        'admin_status persist'
+      );
+    }
   });
 
   socket.on('admin:setProfile', ({ icon, silhouetteColour, bgColour }) => {

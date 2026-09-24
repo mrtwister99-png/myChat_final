@@ -317,21 +317,24 @@ const PinEntry = ({ navigation }) => {
         setRecoveryModalVisible(true);
       }
     };
-    const handleAuthWaiting = (payload) => {
+       const handleAuthWaiting = (payload) => {
       setIsCheckingPin(false);
       setAuthWaiting(true);
       setServerStatusText(payload?.message || 'Čekám na schválení adminem...');
       Alert.alert('Čekejte na potvrzení od GM.', 'Vaše zařízení čeká na schválení administrátorem.');
     };
     const handleDeviceApproved = ({ deviceId: approvedDeviceId } = {}) => {
-      if (!pendingAuthRef.current || approvedDeviceId !== pendingAuthRef.current.deviceId) {
+      // uzivatel ceka na schvaleni - prijmeme i kdyz deviceId je effective (fingerprint/socket)
+      if (!authWaiting &&!pendingAuthRef.current) {
         return;
       }
 
+      pendingAuthRef.current = null;
       setAuthWaiting(false);
-      setIsCheckingPin(true);
-      setServerStatusText('Zařízení schváleno, přihlašuji...');
-      socket.emit('auth:attempt', pendingAuthRef.current);
+      setIsCheckingPin(false);
+      setPin('');
+      setServerStatusText('Schváleno GM - zadejte PIN do 5 minut');
+      Alert.alert('Vstup povolen', 'Game master povolil váš vstup. Zadejte Pin a vstupte :)\n\nMáte 5 minut na zadání PINu.');
     };
     const handleDeviceRejected = () => {
       pendingAuthRef.current = null;
@@ -485,7 +488,7 @@ const PinEntry = ({ navigation }) => {
     shakeWindow();
   };
 
-  const handlePinChange = (value) => {
+    const handlePinChange = (value) => {
     if (isCheckingPin || authWaiting || easterActive || isPinBlocked()) {
       if (isPinBlocked()) {
         setErrorText('PIN je zablokovaný na 15 minut.');
@@ -498,7 +501,7 @@ const PinEntry = ({ navigation }) => {
     setPin(cleanValue);
     setErrorText('');
 
-    if (cleanValue.length !== 5) {
+    if (cleanValue.length!== 5) {
       return;
     }
 
@@ -517,6 +520,8 @@ const PinEntry = ({ navigation }) => {
           chosenName: globalThis.CUSIIK_CURRENT_USER_NAME || 'Pavel',
         };
         socket.emit('auth:attempt', pendingAuthRef.current);
+        // hned smazat cisla aby mohl psat znovu
+        setPin('');
 
         return;
       }
@@ -525,6 +530,7 @@ const PinEntry = ({ navigation }) => {
       setErrorText('Server musí být online pro přihlášení.');
       playInAppMessageSound();
       shakeWindow();
+      setPin('');
     }, 150);
   };
 
