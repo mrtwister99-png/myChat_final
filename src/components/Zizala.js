@@ -19,14 +19,14 @@ const SPEED_STEP = 4;
 const POINTS_PER_FOOD = 10;
 
 const COLORS = {
-  head: '#2f9e44',
-  body1: '#40c057',
-  body2: '#8ce99a',
-  tail: '#d3f9d8',
-  food: '#ff0000',
-  foodInner: '#ff6b6b',
+  head: '#ff69b4',
+  body1: '#ff8da1',
+  body2: '#ffb6c1',
+  tail: '#ffc0cb',
+  food: '#e60000',
+  foodInner: '#ff4d4d',
   bg: '#0a0a0a',
-  boardBg: '#111',
+  boardBg: '#1a1a1a',
   text: '#000',
   dim: '#666',
   countdown: '#ff3b30',
@@ -266,15 +266,33 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
                 const snakeIdx = isSnakeCell(col, row);
                 const isFood = food.x === col && food.y === row;
                 const isSnake = snakeIdx !== -1;
+                const isHead = snakeIdx === 0;
+
+                let headRotation = '0deg';
+                if (dir.x === 1) headRotation = '90deg';
+                else if (dir.x === -1) headRotation = '270deg';
+                else if (dir.y === 1) headRotation = '180deg';
+                else if (dir.y === -1) headRotation = '0deg';
+
                 return (
                   <View
                     key={`${col}-${row}`}
                     style={[
                       styles.cell,
-                      isSnake ? { backgroundColor: snakeIdx === 0 ? COLORS.head : snakeIdx === 1 ? COLORS.body1 : COLORS.body2 } : { backgroundColor: COLORS.boardBg },
+                      isSnake
+                        ? { backgroundColor: isHead ? COLORS.head : snakeIdx % 2 === 0 ? COLORS.body1 : COLORS.body2 }
+                        : { backgroundColor: COLORS.boardBg },
                       isFood && styles.foodCell,
                     ]}
                   >
+                    {isHead && (
+                      <View
+                        style={[
+                          styles.headTriangle,
+                          { transform: [{ rotate: headRotation }] },
+                        ]}
+                      />
+                    )}
                     {isFood && <View style={styles.foodInner} />}
                   </View>
                 );
@@ -448,21 +466,36 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    margin: 1,
-    borderRadius: 2,
+    margin: 0.5,
+    borderWidth: 0.5,
+    borderColor: '#2a2a2a',
+    borderRadius: 0,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headTriangle: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderBottomWidth: 10,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: '#ffffff',
+  },
   foodCell: {
-    backgroundColor: '#ff0000',
-    borderColor: '#fff',
+    backgroundColor: '#cc0000',
+    borderColor: '#ff6666',
     borderWidth: 1,
+    borderRadius: 8,
   },
   foodInner: {
-    width: '60%',
-    height: '60%',
-    backgroundColor: '#ff6b6b',
-    borderRadius: 2,
+    width: '50%',
+    height: '50%',
+    backgroundColor: '#ff4d4d',
+    borderRadius: 4,
   },
   countdownOverlay: {
     ...StyleSheet.absoluteFillObject,

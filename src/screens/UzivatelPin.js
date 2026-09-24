@@ -1746,10 +1746,6 @@ const closeZizala = () => {
     <StatusAnimation status={effectiveAdminStatus} size={22} />
   </View>
 
-  <Text style={[styles.titleStatusText, { color: effectiveAdminStatus === 'on'? '#00ff00' : effectiveAdminStatus === 'job'? '#ffcc00' : '#ff3b30' }]}>
-    {getAdminStatusLabel()}
-  </Text>
-
   {isAdminOnline? <Text style={styles.liveText}>ŽIVĚ!</Text> : null}
 
 </View>
@@ -2121,16 +2117,24 @@ const closeZizala = () => {
                 <AvatarIcon
                   source={getIconSource(adminProfile?.icon || 'admin')}
                   iconKey={normalizeAdminIcon(adminProfile?.icon || 'admin')}
-                  style={styles.chatGmIcon}
+                  style={styles.chatGmIconSquare}
                 />
                 <View style={styles.chatGmTextBox}>
-                  <Text style={styles.grayPanelChatButtonText}>
-                    {effectiveAdminStatus === 'on' ? 'Chatuj s GM' : 'Zanech info pro GM'}
-                  </Text>
                   <Text style={styles.chatGmNameText}>Game master</Text>
                      <Text style={[styles.chatGmStatusText, { color: effectiveAdminStatus === 'on'? '#2f9e44' : effectiveAdminStatus === 'job'? '#c87800' : '#b42323' }]}>
-                    {effectiveAdminStatus === 'job'? '(GM je zaneprázdněný - doba odpovědi je neurčitá)' : getAdminStatusText()}
+                    {effectiveAdminStatus === 'job'? '(GM JE ZANEPRÁZDNĚNÝ - DOBA ODPOVĚDI JE NEURČITÁ)' : getAdminStatusText()}
                   </Text>
+                </View>
+                <View style={styles.arrowStatusIndicatorWrap}>
+                  <View
+                    style={[
+                      styles.arrowStatusFill,
+                      effectiveAdminStatus === 'on' && styles.arrowStatusFillOn,
+                      effectiveAdminStatus === 'job' && styles.arrowStatusFillJob,
+                      effectiveAdminStatus === 'off' && styles.arrowStatusFillOff,
+                    ]}
+                  />
+                  <Text style={styles.arrowStatusSymbol}>➔</Text>
                 </View>
                 {unreadCount > 0 ? (
                   <View style={styles.chatNewMessageBadge}>
@@ -3076,6 +3080,59 @@ const styles = StyleSheet.create({
     borderColor: '#000000',
     borderRadius: 17,
     backgroundColor: '#ffffff',
+  },
+
+  chatGmIconSquare: {
+    width: 36,
+    height: 36,
+    marginRight: 10,
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 0,
+    backgroundColor: '#ffffff',
+  },
+
+  arrowStatusIndicatorWrap: {
+    width: 30,
+    height: 30,
+    borderWidth: 2,
+    borderColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#ffffff',
+    marginLeft: 6,
+  },
+
+  arrowStatusFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '100%',
+  },
+
+  arrowStatusFillOn: {
+    backgroundColor: '#2f9e44',
+    width: '100%',
+  },
+
+  arrowStatusFillJob: {
+    backgroundColor: '#ff9800',
+    width: '50%',
+  },
+
+  arrowStatusFillOff: {
+    backgroundColor: '#ff3b30',
+    width: '100%',
+  },
+
+  arrowStatusSymbol: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#000000',
+    zIndex: 2,
   },
 
   chatGmTextBox: {
