@@ -921,15 +921,15 @@ const AdminPin = ({ navigation, route }) => {
       }));
     };
 
-    const handlePendingDevice = (device = {}) => {
-      const cleanDeviceId = String(device.deviceId || '').trim();
+      const handlePendingDevice = (device = {}) => {
+      const cleanDeviceId = String(device.deviceId || device.fingerprint || device.socketId || '').trim();
       if (!cleanDeviceId) {
         return;
       }
 
       setPendingDevices((current) => [
-        ...current.filter((item) => item.deviceId !== cleanDeviceId),
-        { ...device, deviceId: cleanDeviceId },
+       ...current.filter((item) => item.deviceId!== cleanDeviceId),
+        {...device, deviceId: cleanDeviceId },
       ]);
     };
 

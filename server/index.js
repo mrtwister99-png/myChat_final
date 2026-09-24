@@ -1354,21 +1354,23 @@ io.on('connection', (socket) => {
     );
     const isRoomPinLogin = pinDecision.kind === 'user';
 
-    // POVINNÉ POTVRZENÍ: uživatel po zadání hesla NESMÍ rovnou do místnosti, musí čekat na potvrzení adminem
+        // POVINNÉ POTVRZENÍ: uživatel po zadání hesla NESMÍ rovnou do místnosti, musí čekat na potvrzení adminem
     if (isRoomPinLogin &&!isSpecialPinLogin) {
-      const approvalKey = cleanDeviceId || socket.id;
-      const approvedUntil = state.approvedRoomDevices[approvalKey] || 0;
+      const effectiveDeviceId = cleanDeviceId || cleanDeviceFingerprint || socket.id;
+      const approvalKey = effectiveDeviceId;
+      const approvedUntil = state.approvedRoomDevices[approvalKey] || state.approvedRoomDevices[cleanDeviceId] || state.approvedRoomDevices[socket.id] || 0;
       const isRecentlyApproved = approvedUntil > Date.now();
 
       if (!isRecentlyApproved) {
         state.pendingRoomApprovals[approvalKey] = {
-          deviceId: cleanDeviceId,
-          fingerprint: cleanDeviceFingerprint || cleanDeviceId,
+          deviceId: effectiveDeviceId,
+          fingerprint: cleanDeviceFingerprint || cleanDeviceId || effectiveDeviceId,
           model: cleanDeviceModel || 'Neznámé zařízení',
           name: cleanChosenName,
           ip: currentIp,
           time: Date.now(),
           socketId: socket.id,
+          originalDeviceId: cleanDeviceId || null,
         };
 
         if (supabase &&!trustedDevice && cleanDeviceId) {
@@ -1391,19 +1393,20 @@ io.on('connection', (socket) => {
         }
 
         io.to('admins').emit('device:pending', {
-          deviceId: cleanDeviceId,
-          fingerprint: cleanDeviceFingerprint || cleanDeviceId,
+          deviceId: effectiveDeviceId,
+          fingerprint: cleanDeviceFingerprint || cleanDeviceId || effectiveDeviceId,
           model: cleanDeviceModel || 'Neznámé zařízení',
           name: cleanChosenName,
           ip: currentIp,
           time: new Date().toISOString(),
+          socketId: socket.id,
         });
 
         await sendExpoPushAsync({
           to: Array.from(state.adminPushTokens),
           title: 'Nová žádost o přístup',
           body: `${cleanChosenName} se chce přidat do chatu.`,
-          data: { action: 'openApprovals', deviceId: cleanDeviceId },
+          data: { action: 'openApprovals', deviceId: effectiveDeviceId },
           badge: 1,
          ...(state.adminStatus === 'job'
            ? { channelId: 'admin-job', sound: null, priority: 'normal' }
@@ -1413,12 +1416,14 @@ io.on('connection', (socket) => {
         });
 
         socket.emit('auth:waiting', {
-          deviceId: cleanDeviceId,
+          deviceId: effectiveDeviceId,
           message: 'Čeká se na schválení adminem',
         });
         return;
       } else {
         delete state.approvedRoomDevices[approvalKey];
+        delete state.approvedRoomDevices[cleanDeviceId];
+        delete state.approvedRoomDevices[socket.id];
         delete state.pendingRoomApprovals[approvalKey];
       }
     }
@@ -1717,7 +1722,7 @@ io.on('connection', (socket) => {
     }
   });
 
-   socket.on('device:approve', async ({ deviceId }) => {
+  socket.on('device:approve', async ({ deviceId }) => {
     if (socket.data.role!== 'admin') {
       return;
     }
@@ -1727,9 +1732,14 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // povol vstup na 5 minut - jednorazove schvaleni pro povinne potvrzeni
+    // povol vstup na 5 minut - jednorázové schválení pro povinné potvrzení
     state.approvedRoomDevices[cleanDeviceId] = Date.now() + 5 * 60 * 1000;
+    const pending = state.pendingRoomApprovals[cleanDeviceId];
     delete state.pendingRoomApprovals[cleanDeviceId];
+    if (pending?.originalDeviceId) {
+      delete state.pendingRoomApprovals[pending.originalDeviceId];
+      state.approvedRoomDevices[pending.originalDeviceId] = Date.now() + 5 * 60 * 1000;
+    }
 
     if (supabase) {
       try {
@@ -1744,10 +1754,15 @@ io.on('connection', (socket) => {
       }
     }
 
-      io.to(`device:${cleanDeviceId}`).emit('device:approved', {
+    io.to(`device:${cleanDeviceId}`).emit('device:approved', {
+      deviceId: cleanDeviceId,
+    });
+    if (pending?.socketId) {
+      io.to(pending.socketId).emit('device:approved', {
         deviceId: cleanDeviceId,
       });
-    });
+    }
+  });
       socket.on('device:reject', async ({ deviceId, ip, reason }) => {
     if (socket.data.role!== 'admin') {
       return;
@@ -1834,21 +1849,38 @@ io.on('connection', (socket) => {
 
   socket.on('state:get', async () => {
     socket.emit('server:state', getPublicState(socket.data.role === 'admin'));
-    if (socket.data.role === 'admin' && supabase) {
+    if (socket.data.role === 'admin') {
+      // in-memory pending - POVINNE POTVRZENI musi prijit i bez Supabase a po reconnectu admina
       try {
-        const { data } = await supabase.from('trusted_devices').select('device_id, device_fingerprint, device_model, temp_name, first_ip').eq('is_pending', true).eq('is_trusted', false).limit(20);
-        if (Array.isArray(data)) {
-          data.forEach((row) => {
-            socket.emit('device:pending', {
-              deviceId: row.device_id,
-              fingerprint: row.device_fingerprint || row.device_id,
-              model: row.device_model || 'Neznámé zařízení',
-              name: row.temp_name || 'Pavel',
-              ip: row.first_ip || 'neznámá',
-            });
+        Object.values(state.pendingRoomApprovals || {}).forEach((pending) => {
+          socket.emit('device:pending', {
+            deviceId: pending.deviceId || pending.fingerprint || pending.socketId,
+            fingerprint: pending.fingerprint || pending.deviceId,
+            model: pending.model || 'Neznámé zařízení',
+            name: pending.name || 'Pavel',
+            ip: pending.ip || 'neznámá',
+            time: new Date(pending.time || Date.now()).toISOString(),
+            socketId: pending.socketId,
           });
-        }
+        });
       } catch {}
+
+      if (supabase) {
+        try {
+          const { data } = await supabase.from('trusted_devices').select('device_id, device_fingerprint, device_model, temp_name, first_ip').eq('is_pending', true).eq('is_trusted', false).limit(20);
+          if (Array.isArray(data)) {
+            data.forEach((row) => {
+              socket.emit('device:pending', {
+                deviceId: row.device_id,
+                fingerprint: row.device_fingerprint || row.device_id,
+                model: row.device_model || 'Neznámé zařízení',
+                name: row.temp_name || 'Pavel',
+                ip: row.first_ip || 'neznámá',
+              });
+            });
+          }
+        } catch {}
+      }
     }
   });
 
