@@ -87,6 +87,10 @@ const state = {
 
   // userId -> deviceId, kvuli obnove "online" po reconnectu
   deviceByUserId: {},
+
+  // POVINNE POTVRZENI: room PIN vyzaduje schvaleni adminem - kazdy vstup musi cekat
+  pendingRoomApprovals: {},
+  approvedRoomDevices: {},
 };
 
 const WALL_MESSAGE_MAX_LENGTH = 100;
@@ -1338,65 +1342,10 @@ io.on('connection', (socket) => {
       deviceId: cleanDeviceId,
     });
 
-    // FIX: bez Supabase neexistuje tabulka trusted_devices, takze
-    // isTrustedDevice byl VZDY false -> kazdy user s room PINem skoncil
-    // nastalo v 'auth:waiting' a admin o nem ani nevedel (device:pending
-    // se posilal jen kdyz supabase bezi). Bez DB tenhle gate preskakujeme.
-    if (supabase && cleanPin === state.userPin && cleanDeviceId && !isTrustedDevice) {
-      if (!trustedDevice) {
-        try {
-          await supabase.from('trusted_devices').upsert({
-            device_id: cleanDeviceId,
-            device_fingerprint: cleanDeviceFingerprint || cleanDeviceId,
-            device_model: cleanDeviceModel || null,
-            temp_name: cleanChosenName,
-            first_ip: currentIp,
-            current_ip: currentIp,
-            email: email || null,
-            is_trusted: false,
-            is_pending: true,
-            badge: 'ČEKÁ NA SCHVÁLENÍ',
-          }, { onConflict: 'device_id' });
-        } catch (error) {
-          console.log('trusted_devices pending zapis preskocen:', error?.message || error);
-        }
-      }
-
-      // FIX: admina informujeme vzdy, i kdyz uz zaznam existuje -
-      // jinak cekajici zarizeni nikdo nikdy neschvali
-      io.to('admins').emit('device:pending', {
-        deviceId: cleanDeviceId,
-        fingerprint: cleanDeviceFingerprint || cleanDeviceId,
-        model: cleanDeviceModel || 'Neznámé zařízení',
-        name: cleanChosenName,
-        ip: currentIp,
-        time: new Date().toISOString(),
-      });
-
-      await sendExpoPushAsync({
-        to: Array.from(state.adminPushTokens),
-        title: 'Nová žádost o přístup',
-        body: `${cleanChosenName} se chce přidat do chatu.`,
-        data: { action: 'openApprovals', deviceId: cleanDeviceId },
-        badge: 1,
-        ...(state.adminStatus === 'job'
-          ? { channelId: 'admin-job', sound: null, priority: 'normal' }
-          : state.adminStatus === 'off'
-            ? { channelId: 'admin-off', sound: null, priority: 'normal' }
-            : {}),
-      });
-
-      socket.emit('auth:waiting', {
-        deviceId: cleanDeviceId,
-        message: 'Čeká se na schválení adminem',
-      });
-      return;
-    }
-
-    if (isSpecialPinCandidate && cleanDeviceId && (!trustedDevice || isTrustedDevice)) {
+       if (isSpecialPinCandidate && cleanDeviceId && (!trustedDevice || isTrustedDevice)) {
       await registerTrustedDevice({ deviceId: cleanDeviceId, ip: currentIp, email });
     }
-    const specialPinForLastId = cleanLastId ? state.userPinsById[cleanLastId] : null;
+    const specialPinForLastId = cleanLastId? state.userPinsById[cleanLastId] : null;
     const isSpecialPinLogin = Boolean(
       cleanLastId && (
         (specialPinForLastId && cleanPin === specialPinForLastId) ||
@@ -1404,6 +1353,75 @@ io.on('connection', (socket) => {
       )
     );
     const isRoomPinLogin = pinDecision.kind === 'user';
+
+    // POVINNÉ POTVRZENÍ: uživatel po zadání hesla NESMÍ rovnou do místnosti, musí čekat na potvrzení adminem
+    if (isRoomPinLogin &&!isSpecialPinLogin) {
+      const approvalKey = cleanDeviceId || socket.id;
+      const approvedUntil = state.approvedRoomDevices[approvalKey] || 0;
+      const isRecentlyApproved = approvedUntil > Date.now();
+
+      if (!isRecentlyApproved) {
+        state.pendingRoomApprovals[approvalKey] = {
+          deviceId: cleanDeviceId,
+          fingerprint: cleanDeviceFingerprint || cleanDeviceId,
+          model: cleanDeviceModel || 'Neznámé zařízení',
+          name: cleanChosenName,
+          ip: currentIp,
+          time: Date.now(),
+          socketId: socket.id,
+        };
+
+        if (supabase &&!trustedDevice && cleanDeviceId) {
+          try {
+            await supabase.from('trusted_devices').upsert({
+              device_id: cleanDeviceId,
+              device_fingerprint: cleanDeviceFingerprint || cleanDeviceId,
+              device_model: cleanDeviceModel || null,
+              temp_name: cleanChosenName,
+              first_ip: currentIp,
+              current_ip: currentIp,
+              email: email || null,
+              is_trusted: false,
+              is_pending: true,
+              badge: 'ČEKÁ NA SCHVÁLENÍ',
+            }, { onConflict: 'device_id' });
+          } catch (error) {
+            console.log('trusted_devices pending zapis preskocen:', error?.message || error);
+          }
+        }
+
+        io.to('admins').emit('device:pending', {
+          deviceId: cleanDeviceId,
+          fingerprint: cleanDeviceFingerprint || cleanDeviceId,
+          model: cleanDeviceModel || 'Neznámé zařízení',
+          name: cleanChosenName,
+          ip: currentIp,
+          time: new Date().toISOString(),
+        });
+
+        await sendExpoPushAsync({
+          to: Array.from(state.adminPushTokens),
+          title: 'Nová žádost o přístup',
+          body: `${cleanChosenName} se chce přidat do chatu.`,
+          data: { action: 'openApprovals', deviceId: cleanDeviceId },
+          badge: 1,
+         ...(state.adminStatus === 'job'
+           ? { channelId: 'admin-job', sound: null, priority: 'normal' }
+            : state.adminStatus === 'off'
+             ? { channelId: 'admin-off', sound: null, priority: 'normal' }
+              : {}),
+        });
+
+        socket.emit('auth:waiting', {
+          deviceId: cleanDeviceId,
+          message: 'Čeká se na schválení adminem',
+        });
+        return;
+      } else {
+        delete state.approvedRoomDevices[approvalKey];
+        delete state.pendingRoomApprovals[approvalKey];
+      }
+    }
 
     if (pinDecision.kind === 'admin') {
       socket.leave('users');
@@ -1699,8 +1717,8 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('device:approve', async ({ deviceId }) => {
-    if (socket.data.role !== 'admin' || !supabase) {
+   socket.on('device:approve', async ({ deviceId }) => {
+    if (socket.data.role!== 'admin') {
       return;
     }
 
@@ -1709,20 +1727,29 @@ io.on('connection', (socket) => {
       return;
     }
 
-    await supabase.from('trusted_devices').update({
-      is_trusted: true,
-      is_pending: false,
-      badge: 'DŮVĚRYHODNÝ',
-      last_seen: new Date().toISOString(),
-    }).eq('device_id', cleanDeviceId);
+    // povol vstup na 5 minut - jednorazove schvaleni pro povinne potvrzeni
+    state.approvedRoomDevices[cleanDeviceId] = Date.now() + 5 * 60 * 1000;
+    delete state.pendingRoomApprovals[cleanDeviceId];
 
-    io.to(`device:${cleanDeviceId}`).emit('device:approved', {
-      deviceId: cleanDeviceId,
+    if (supabase) {
+      try {
+        await supabase.from('trusted_devices').update({
+          is_trusted: true,
+          is_pending: false,
+          badge: 'DŮVĚRYHODNÝ',
+          last_seen: new Date().toISOString(),
+        }).eq('device_id', cleanDeviceId);
+      } catch (error) {
+        console.log('trusted_devices approve preskocen:', error?.message || error);
+      }
+    }
+
+      io.to(`device:${cleanDeviceId}`).emit('device:approved', {
+        deviceId: cleanDeviceId,
+      });
     });
-  });
-
-  socket.on('device:reject', async ({ deviceId, ip, reason }) => {
-    if (socket.data.role !== 'admin' || !supabase) {
+      socket.on('device:reject', async ({ deviceId, ip, reason }) => {
+    if (socket.data.role!== 'admin') {
       return;
     }
 
@@ -1730,18 +1757,30 @@ io.on('connection', (socket) => {
     const cleanIp = String(ip || '').trim();
     const cleanReason = String(reason || 'Zařízení zamítnuto adminem');
 
-    await supabase.from('trusted_devices').update({
-      is_trusted: false,
-      is_pending: false,
-      badge: 'ZAMÍTNUTO',
-    }).eq('device_id', cleanDeviceId);
+    delete state.approvedRoomDevices[cleanDeviceId];
+    delete state.pendingRoomApprovals[cleanDeviceId];
+
+    if (supabase) {
+      try {
+        await supabase.from('trusted_devices').update({
+          is_trusted: false,
+          is_pending: false,
+          badge: 'ZAMÍTNUTO',
+        }).eq('device_id', cleanDeviceId);
+
+        if (cleanIp) {
+          await supabase.from('kicked_ips').upsert({
+            ip: cleanIp,
+            reason: cleanReason,
+            is_active: true,
+          }, { onConflict: 'ip' });
+        }
+      } catch (error) {
+        console.log('trusted_devices reject preskocen:', error?.message || error);
+      }
+    }
 
     if (cleanIp) {
-      await supabase.from('kicked_ips').upsert({
-        ip: cleanIp,
-        reason: cleanReason,
-        is_active: true,
-      }, { onConflict: 'ip' });
       state.kickedIps[cleanIp] = { reason: cleanReason, createdAt: Date.now() };
     }
 
@@ -1750,7 +1789,6 @@ io.on('connection', (socket) => {
       message: 'Zařízení bylo zamítnuto adminem.',
     });
   });
-
   socket.on('admin:createTestUser', () => {
     if (socket.data.role !== 'admin') {
       return;

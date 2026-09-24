@@ -557,10 +557,13 @@ const UzivatelPin=({ navigation,route })=>{
 
   const [wallMessage, setWallMessage] = useState(getGlobalWallMessage);
   const [wallDraft, setWallDraft] = useState('');
+
 const [showZizala, setShowZizala] = useState(false);
 const ratingOpacity = useRef(new Animated.Value(1)).current;
+const zizalaDirRef = useRef(null);
 
 const openZizala = () => {
+
   Animated.timing(ratingOpacity, {
     toValue: 0,
     duration: 250,
@@ -2022,62 +2025,97 @@ const closeZizala = () => {
               </Pressable>
             </View>
 
-            <View style={styles.menuMiddleSection}>
+                        <View style={styles.menuMiddleSection}>
               <View style={styles.wallBox}>
-                <Text style={styles.wallBoxTitle}>Minigame</Text>
-                <Text style={styles.minigameSubtitle}>old school - pixelové</Text>
-                <Text style={styles.topScoreTitle}>TOP SCORE</Text>
-
-                <View style={styles.topScoreList}>
-                  {TOP_SCORE_ROWS.map((name, index) => (
-                    <View key={`${name}-${index}`} style={styles.topScoreRow}>
-                      <Text style={styles.topScoreRank}>{`${index + 1}.`}</Text>
-                      <Text style={styles.topScoreName}>{name}</Text>
-                      <Text style={styles.topScoreValue}>{String(1000 - index * 73).padStart(4, '0')}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                <Pressable
-                  style={({ pressed }) => [styles.minigamePlayButton, pressed && styles.sendButtonPressed]}
-                  onPress={openZizala} // <<< NAHRADIT
-                >
-                  <Text style={styles.minigamePlayButtonText}>HRÁT</Text>
-                </Pressable>
-              </View>
-
-                        {showZizala ? (
-              <View style={[styles.menuMiddleRatingBox, { flex: 1, padding: 0, overflow: 'hidden' }]}>
-                <ZizalaGame
-                  userId={currentUserId}
-                  deviceId={globalThis.CUSIIK_DEVICE_ID}
-                  onClose={closeZizala}
-                />
-              </View>
-            ) : (
-              <Animated.View style={{ flex: 1, opacity: ratingOpacity }}>
-                <Pressable
-                  style={styles.menuMiddleRatingBox}
-                  onPress={() => ratingUnlocked && setRatingModalVisible(true)}
-                  disabled={!ratingUnlocked}
-                >
-                  <Text style={styles.ratingBoxTitle}>
-                    {ratingUnlocked ? 'Hodnocení (odemčeno)' : 'Hodnocení (zamčeno)'}
-                  </Text>
-
-                  {RATING_STATS.map((stat) => (
-                    <RatingSlider key={stat.key} label={stat.label} value={stat.value} locked={!ratingUnlocked} />
-                  ))}
-
-                  <View style={ratingUnlocked ? styles.ratingSubmitButton : styles.ratingSubmitDisabledButton}>
-                    <Text style={styles.ratingSubmitDisabledIcon}>{ratingUnlocked ? '✎' : '🔒'}</Text>
-                    <Text style={styles.ratingSubmitDisabledText}>{ratingUnlocked ? 'Vyplnit a odeslat' : 'Odeslat'}</Text>
+                {showZizala ? (
+                  <View style={{ flex: 1, padding: 0, overflow: 'hidden' }}>
+                    <ZizalaGame
+                      userId={currentUserId}
+                      deviceId={globalThis.CUSIIK_DEVICE_ID}
+                      onClose={closeZizala}
+                      hideControls={true}
+                      onDirRef={zizalaDirRef}
+                    />
                   </View>
-                </Pressable>
-              </Animated.View>
-            )}
+                ) : (
+                  <>
+                    <Text style={styles.wallBoxTitle}>Minigame</Text>
+                    <Text style={styles.minigameSubtitle}>old school - pixelové</Text>
+                    <Text style={styles.topScoreTitle}>TOP SCORE</Text>
+
+                    <View style={styles.topScoreList}>
+                      {TOP_SCORE_ROWS.map((name, index) => (
+                        <View key={`${name}-${index}`} style={styles.topScoreRow}>
+                          <Text style={styles.topScoreRank}>{`${index + 1}.`}</Text>
+                          <Text style={styles.topScoreName}>{name}</Text>
+                          <Text style={styles.topScoreValue}>{String(1000 - index * 73).padStart(4, '0')}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <Pressable
+                      style={({ pressed }) => [styles.minigamePlayButton, pressed && styles.sendButtonPressed]}
+                      onPress={openZizala}
+                    >
+                      <Text style={styles.minigamePlayButtonText}>HRÁT</Text>
+                    </Pressable>
+                  </>
+                )}
+              </View>
+
+              <View style={styles.menuMiddleRatingBox}>
+                {showZizala ? (
+                  <View style={{ flex: 1, justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1 }} />
+                    <View style={{ alignItems: 'center', paddingBottom: 4 }}>
+                      <View style={{ alignItems: 'center' }}>
+                        <Pressable style={{ width: 64, height: 48, backgroundColor: '#1E1E1E', borderWidth: 2, borderColor: '#333', borderRadius: 8, justifyContent: 'center', alignItems: 'center', margin: 4 }} onPress={() => zizalaDirRef.current?.({ x: 0, y: -1 })}>
+                          <Text style={{ color: '#FFF', fontSize: 20, fontWeight: 'bold' }}>▲</Text>
+                        </Pressable>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                          <Pressable style={{ width: 64, height: 48, backgroundColor: '#1E1E1E', borderWidth: 2, borderColor: '#333', borderRadius: 8, justifyContent: 'center', alignItems: 'center', margin: 4 }} onPress={() => zizalaDirRef.current?.({ x: -1, y: 0 })}>
+                            <Text style={{ color: '#FFF', fontSize: 20, fontWeight: 'bold' }}>◀</Text>
+                          </Pressable>
+                          <View style={{ width: 64, height: 48, margin: 4 }} />
+                          <Pressable style={{ width: 64, height: 48, backgroundColor: '#1E1E1E', borderWidth: 2, borderColor: '#333', borderRadius: 8, justifyContent: 'center', alignItems: 'center', margin: 4 }} onPress={() => zizalaDirRef.current?.({ x: 1, y: 0 })}>
+                            <Text style={{ color: '#FFF', fontSize: 20, fontWeight: 'bold' }}>▶</Text>
+                          </Pressable>
+                        </View>
+                        <Pressable style={{ width: 64, height: 48, backgroundColor: '#1E1E1E', borderWidth: 2, borderColor: '#333', borderRadius: 8, justifyContent: 'center', alignItems: 'center', margin: 4 }} onPress={() => zizalaDirRef.current?.({ x: 0, y: 1 })}>
+                          <Text style={{ color: '#FFF', fontSize: 20, fontWeight: 'bold' }}>▼</Text>
+                        </Pressable>
+                      </View>
+                      <Pressable onPress={closeZizala} style={{ marginTop: 12, paddingVertical: 8, paddingHorizontal: 16, backgroundColor: '#ece9d8', borderWidth: 2, borderTopColor: '#ffffff', borderLeftColor: '#ffffff', borderRightColor: '#777777', borderBottomColor: '#777777' }}>
+                        <Text style={{ color: '#000', fontWeight: '900', fontSize: 12 }}>← ZPĚT</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
+                  <Animated.View style={{ flex: 1, opacity: ratingOpacity }}>
+                    <Pressable
+                      style={styles.menuMiddleRatingBox}
+                      onPress={() => ratingUnlocked && setRatingModalVisible(true)}
+                      disabled={!ratingUnlocked}
+                    >
+                      <Text style={styles.ratingBoxTitle}>
+                        {ratingUnlocked ? 'Hodnocení (odemčeno)' : 'Hodnocení (zamčeno)'}
+                      </Text>
+
+                      {RATING_STATS.map((stat) => (
+                        <RatingSlider key={stat.key} label={stat.label} value={stat.value} locked={!ratingUnlocked} />
+                      ))}
+
+                      <View style={ratingUnlocked ? styles.ratingSubmitButton : styles.ratingSubmitDisabledButton}>
+                        <Text style={styles.ratingSubmitDisabledIcon}>{ratingUnlocked ? '✎' : '🔒'}</Text>
+                        <Text style={styles.ratingSubmitDisabledText}>{ratingUnlocked ? 'Vyplnit a odeslat' : 'Odeslat'}</Text>
+                      </View>
+                    </Pressable>
+                  </Animated.View>
+                )}
+              </View>
             </View>
             
+
             <ChatButtonPulseWrapper active={isAdminOnline} style={styles.chatButtonRight}>
               <Pressable
                 disabled={isAvatarLocked}

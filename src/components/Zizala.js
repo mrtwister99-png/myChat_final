@@ -58,7 +58,7 @@ const getRandomFood = (snake) => {
   return pos;
 };
 
-const ZizalaGame = ({ onClose, userId, deviceId }) => {
+const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef }) => {
   const [snake, setSnake] = useState([
     { x: 7, y: 10 },
     { x: 6, y: 10 },
@@ -179,6 +179,12 @@ const ZizalaGame = ({ onClose, userId, deviceId }) => {
     nextDirRef.current = newDir;
     setDir(newDir);
   };
+
+  useEffect(() => {
+    if (onDirRef) {
+      onDirRef.current = changeDir;
+    }
+  }, [isPlaying, onDirRef]);
 
   const handleNickChange = (index, val) => {
     const clean = val.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-1);
@@ -310,7 +316,7 @@ const ZizalaGame = ({ onClose, userId, deviceId }) => {
         </View>
       )}
 
-      {isPlaying && (
+      {isPlaying && !hideControls && (
         <View style={styles.controls}>
           <View style={styles.controlsRow}>
             <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: 0, y: -1 })}>
