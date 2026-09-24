@@ -563,21 +563,11 @@ const ratingOpacity = useRef(new Animated.Value(1)).current;
 const zizalaDirRef = useRef(null);
 
 const openZizala = () => {
-
-  Animated.timing(ratingOpacity, {
-    toValue: 0,
-    duration: 250,
-    useNativeDriver: true,
-  }).start(() => setShowZizala(true));
+  setShowZizala(true);
 };
 
 const closeZizala = () => {
   setShowZizala(false);
-  Animated.timing(ratingOpacity, {
-    toValue: 1,
-    duration: 250,
-    useNativeDriver: true,
-  }).start();
 };
 
   const [eggVisible, setEggVisible] = useState(false);
@@ -1752,16 +1742,17 @@ const closeZizala = () => {
 
           <Text style={styles.titleText}>{title}</Text>
 
-                    <View style={styles.titleStatusAnimWrap}>
-            <StatusAnimation status={effectiveAdminStatus} size={22} />
-          </View>
+        <View style={styles.titleStatusAnimWrap}>
+    <StatusAnimation status={effectiveAdminStatus} size={22} />
+  </View>
 
-          <Text style={styles.titleStatusText}>
-            {getAdminStatusLabel()}
-          </Text>
+  <Text style={[styles.titleStatusText, { color: effectiveAdminStatus === 'on'? '#00ff00' : effectiveAdminStatus === 'job'? '#ffcc00' : '#ff3b30' }]}>
+    {getAdminStatusLabel()}
+  </Text>
 
- 
-        </View>
+  {isAdminOnline? <Text style={styles.liveText}>ŽIVĚ!</Text> : null}
+
+</View>
 
                <View style={styles.windowButtons}>
                <View style={styles.windowButton}>
@@ -2026,9 +2017,9 @@ const closeZizala = () => {
             </View>
 
                         <View style={styles.menuMiddleSection}>
-              <View style={styles.wallBox}>
-                {showZizala ? (
-                  <View style={{ flex: 1, padding: 0, overflow: 'hidden' }}>
+                          <View style={[styles.wallBox, showZizala && { padding: 0, flex: 1, justifyContent: 'flex-start' }]}>
+                {showZizala? (
+                  <View style={{ flex: 1, padding: 0, overflow: 'hidden', width: '100%', height: '100%' }}>
                     <ZizalaGame
                       userId={currentUserId}
                       deviceId={globalThis.CUSIIK_DEVICE_ID}
@@ -2084,10 +2075,7 @@ const closeZizala = () => {
                         <Pressable style={{ width: 64, height: 48, backgroundColor: '#1E1E1E', borderWidth: 2, borderColor: '#333', borderRadius: 8, justifyContent: 'center', alignItems: 'center', margin: 4 }} onPress={() => zizalaDirRef.current?.({ x: 0, y: 1 })}>
                           <Text style={{ color: '#FFF', fontSize: 20, fontWeight: 'bold' }}>▼</Text>
                         </Pressable>
-                      </View>
-                      <Pressable onPress={closeZizala} style={{ marginTop: 12, paddingVertical: 8, paddingHorizontal: 16, backgroundColor: '#ece9d8', borderWidth: 2, borderTopColor: '#ffffff', borderLeftColor: '#ffffff', borderRightColor: '#777777', borderBottomColor: '#777777' }}>
-                        <Text style={{ color: '#000', fontWeight: '900', fontSize: 12 }}>← ZPĚT</Text>
-                      </Pressable>
+                                            </View>
                     </View>
                   </View>
                 ) : (
@@ -2140,8 +2128,8 @@ const closeZizala = () => {
                     {effectiveAdminStatus === 'on' ? 'Chatuj s GM' : 'Zanech info pro GM'}
                   </Text>
                   <Text style={styles.chatGmNameText}>Game master</Text>
-                  <Text style={styles.chatGmStatusText}>
-                    {effectiveAdminStatus === 'job' ? '(GM je zaneprázdněný - doba odpovědi je neurčitá)' : getAdminStatusText()}
+                     <Text style={[styles.chatGmStatusText, { color: effectiveAdminStatus === 'on'? '#2f9e44' : effectiveAdminStatus === 'job'? '#c87800' : '#b42323' }]}>
+                    {effectiveAdminStatus === 'job'? '(GM je zaneprázdněný - doba odpovědi je neurčitá)' : getAdminStatusText()}
                   </Text>
                 </View>
                 {unreadCount > 0 ? (
@@ -2795,6 +2783,26 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
+  liveText: {
+    color: '#00ff00',
+    fontSize: 11,
+    fontWeight: '900',
+    marginLeft: 8,
+    textShadowColor: '#000000',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 1,
+  },
+
+  liveText: {
+    color: '#00ff00',
+    fontSize: 11,
+    fontWeight: '900',
+    marginLeft: 8,
+    textShadowColor: '#000000',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 1,
+  },
+
     titleMuteIconBox: {
     width: 22,
     height: 22,
@@ -3028,8 +3036,8 @@ const styles = StyleSheet.create({
   },
 
   chatButtonRight: {
-    alignSelf: 'flex-end',
-    width: '94%',
+    alignSelf: 'stretch',
+    width: '100%',
   },
 
   grayPanelChatButtonOnline: {
@@ -3056,12 +3064,18 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 13,
     fontWeight: '900',
+    marginLeft: 12,
+    textAlign: 'left',
   },
 
-  chatGmIcon: {
+   chatGmIcon: {
     width: 34,
     height: 34,
     marginRight: 10,
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 17,
+    backgroundColor: '#ffffff',
   },
 
   chatGmTextBox: {

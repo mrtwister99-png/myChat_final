@@ -52,7 +52,7 @@ const getRandomFood = (snake) => {
   return pos;
 };
 
-const ZizalaGame = ({ onClose, userId, deviceId }) => {
+const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef = null }) => {
   const [snake, setSnake] = useState([
     { x: 7, y: 7 },
     { x: 6, y: 7 },
@@ -68,6 +68,7 @@ const ZizalaGame = ({ onClose, userId, deviceId }) => {
   const [nick, setNick] = useState(['', '', '']);
   const [highScores, setHighScores] = useState([]);
   const [speed, setSpeed] = useState(SPEED_START);
+  const [showHighScoreAfterSave, setShowHighScoreAfterSave] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const loopRef = useRef(null);
   const countdownRef = useRef(null);
@@ -77,6 +78,21 @@ const ZizalaGame = ({ onClose, userId, deviceId }) => {
   useEffect(() => {
     dirRef.current = dir;
   }, [dir]);
+
+  useEffect(() => {
+    if (onDirRef) {
+      onDirRef.current = (d) => changeDir(d);
+    }
+    return () => {
+      if (onDirRef) onDirRef.current = null;
+    };
+  }, [onDirRef, isPlaying]);
+
+  useEffect(() => {
+    if (onDirRef) {
+      onDirRef.current = (d) => changeDir(d);
+    }
+  }, [onDirRef, isPlaying, dir]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -141,18 +157,18 @@ const ZizalaGame = ({ onClose, userId, deviceId }) => {
     }, 1000);
   };
 
-  const move = useCallback(() => {
+    const move = useCallback(() => {
     setSnake((prevSnake) => {
       const head = prevSnake[0];
       const newDir = nextDirRef.current;
-      const newHead = { x: head.x + newDir.x, y: head.y + newDir.y };
+      let newHead = { x: head.x + newDir.x, y: head.y + newDir.y };
 
-      if (newHead.x < 0 || newHead.x >= BOARD_COLS || newHead.y < 0 || newHead.y >= BOARD_ROWS) {
-        setIsPlaying(false);
-        setGameOver(true);
-        clearInterval(loopRef.current);
-        return prevSnake;
-      }
+      // WRAP - projedu nahoru = vyjizdim dole, doleva = vpravo atd
+      if (newHead.x < 0) newHead.x = BOARD_COLS - 1;
+      if (newHead.x >= BOARD_COLS) newHead.x = 0;
+      if (newHead.y < 0) newHead.y = BOARD_ROWS - 1;
+      if (newHead.y >= BOARD_ROWS) newHead.y = 0;
+
       if (prevSnake.some((s) => s.x === newHead.x && s.y === newHead.y)) {
         setIsPlaying(false);
         setGameOver(true);
@@ -198,9 +214,9 @@ const ZizalaGame = ({ onClose, userId, deviceId }) => {
     }
   };
 
-  const saveScore = async () => {
+ const saveScore = async () => {
     const finalNick = nick.join('').trim();
-    if (finalNick.length !== 3) {
+    if (finalNick.length!== 3) {
       Alert.alert('Chyba', 'Vyplň 3 písmena - _ _ _');
       return;
     }
@@ -215,12 +231,17 @@ const ZizalaGame = ({ onClose, userId, deviceId }) => {
         if (error) throw error;
       }
       await fetchScores();
-      Alert.alert('Uloženo', `${finalNick} - ${score} bodů!`);
       setNick(['', '', '']);
       setGameOver(false);
+      setShowHighScoreAfterSave(true);
     } catch (e) {
       Alert.alert('Chyba', e?.message || 'Nepodařilo se uložit');
     }
+  };
+
+  const handleOkHighScore = () => {
+    setShowHighScoreAfterSave(false);
+    resetGameState();
   };
 
   const isSnakeCell = (x, y) => {
@@ -228,7 +249,7 @@ const ZizalaGame = ({ onClose, userId, deviceId }) => {
   };
 
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
+    <Animated.View style={[styles.container, { opacity: fadeAnim }, hideControls && { padding: 0, borderWidth: 0, flex: 1, height: '100%' }]}>
       <View style={styles.header}>
         <Text style={styles.title}>ŽÍŽALA</Text>
         <View style={styles.scoreBox}>
@@ -237,7 +258,7 @@ const ZizalaGame = ({ onClose, userId, deviceId }) => {
         </View>
       </View>
 
-      <View style={styles.boardWrapper}>
+      <View style={[styles.boardWrapper, hideControls && { flex: 1, aspectRatio: undefined, height: '100%', width: '100%' }]}>
         <View style={styles.board}>
           {Array.from({ length: BOARD_ROWS }).map((_, row) => (
             <View key={row} style={styles.row}>
@@ -307,7 +328,7 @@ const ZizalaGame = ({ onClose, userId, deviceId }) => {
         </View>
       )}
 
-      {(isPlaying || countdown !== null) && (
+           {!hideControls && (isPlaying || countdown!== null) && (
         <View style={styles.controlsPanel}>
           <Text style={styles.controlsTitle}>OVLÁDÁNÍ - panel hodnocení</Text>
           <View style={styles.controls}>
