@@ -422,8 +422,8 @@ useEffect(() => {
         globalThis.CUSIIK_ADMIN_READ_COUNTS = nextReadCounts;
         if (Number.isFinite(Number(readAt))) setUserReadAt(Number(readAt));
         setMessages(safeMessages);
-        safeMessages.filter((item) => item.selfDestruct).forEach((item) => {
-          setTimeout(() => { socket.emit('message:read', { userId, messageId: item.id }); }, 15 * 60 * 1000);
+        safeMessages.filter((item) => item.selfDestruct && item.sender === 'user').forEach((item) => {
+          socket.emit('message:read', { userId, messageId: item.id });
         });
       }
     };
@@ -899,7 +899,7 @@ useEffect(() => {
       <KeyboardWrapper
         style={styles.page}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
+        keyboardVerticalOffset={90}
         enabled
       >
               <Animated.View
@@ -1199,7 +1199,10 @@ useEffect(() => {
           <View style={styles.inputPanel}>
             <TextInput
               value={message}
-              onFocus={() => setReactingMessageId(null)}
+              onFocus={() => {
+                setReactingMessageId(null);
+                setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
+              }}
               onChangeText={setMessage}
               placeholder={`Napiš zprávu pro ${userName}...`}
               placeholderTextColor="#666666"

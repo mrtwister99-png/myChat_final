@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, BackHandler, Dimensions, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Keyboard, Modal } from 'react-native';
+import { Alert, Animated, BackHandler, Dimensions, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Keyboard, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { socket } from '../socket';
 import { getOrCreateDeviceId } from '../deviceId';
@@ -96,7 +97,6 @@ const PinEntry = ({ navigation }) => {
     const inputRef = useRef(null);
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const entranceAnim = useRef(new Animated.Value(-Dimensions.get('window').width)).current;
-  const windowTranslateX = Animated.add(entranceAnim, shakeAnim);
 
 
   // Easter egg states
@@ -204,13 +204,12 @@ const PinEntry = ({ navigation }) => {
       setPinAttempts(0);
       setPinBlockedUntil(0);
       await savePinAttemptState(0, 0);
-      playXpStartSound();
-
       // FIX: zapamatovat si PIN, kterym se prihlaseni opravdu povedlo.
       // Obrazovky ho pak pouziji pro re-auth po reconnectu socketu.
       const usedPin = String(pendingAuthRef.current?.pin || '').replace(/[^0-9]/g, '').slice(0, 5);
 
       if (payload?.role === 'user') {
+        playXpStartSound();
         globalThis.CUSIIK_CURRENT_ROLE = 'user';
         globalThis.CUSIIK_CURRENT_USER_ID = payload.userId;
         globalThis.CUSIIK_CURRENT_USER_NAME = payload.userName;
@@ -246,6 +245,8 @@ const PinEntry = ({ navigation }) => {
           setAdminSetupPasswordConfirm('');
           return;
         }
+
+        playXpStartSound();
       }
 
       if (globalThis.CUSIIK_EXPO_PUSH_TOKEN) {
@@ -282,6 +283,7 @@ const PinEntry = ({ navigation }) => {
       setIsCheckingPin(false);
       setAuthWaiting(true);
       setServerStatusText(payload?.message || 'Čekám na schválení adminem...');
+      Alert.alert('Čekejte na potvrzení od GM.', 'Vaše zařízení čeká na schválení administrátorem.');
     };
     const handleDeviceApproved = ({ deviceId: approvedDeviceId } = {}) => {
       if (!pendingAuthRef.current || approvedDeviceId !== pendingAuthRef.current.deviceId) {
@@ -467,6 +469,8 @@ const PinEntry = ({ navigation }) => {
           pin: cleanValue,
           lastUserId: globalThis.CUSIIK_LAST_USER_ID || null,
           deviceId: deviceId || null,
+          deviceFingerprint: deviceId || null,
+          deviceModel: [Device.manufacturer, Device.modelName].filter(Boolean).join(' ') || Device.deviceName || 'Neznámé zařízení',
           chosenName: globalThis.CUSIIK_CURRENT_USER_NAME || 'Pavel',
         };
         socket.emit('auth:attempt', pendingAuthRef.current);
@@ -557,6 +561,7 @@ const PinEntry = ({ navigation }) => {
       setAdminSetupPassword('');
       setAdminSetupPasswordConfirm('');
       navigation.replace(ADMIN_SCREEN);
+      playXpStartSound();
     } catch (error) {
       setErrorText('Uložení se nepodařilo. Zkus to znovu.');
     } finally {
@@ -686,7 +691,7 @@ const PinEntry = ({ navigation }) => {
                             <Animated.View
                 style={[
                   styles.window,
-                  { transform: [{ translateX: windowTranslateX }] },
+                  { transform: [{ translateX: entranceAnim }, { translateX: shakeAnim }] },
                 ]}
               >
 

@@ -61,6 +61,31 @@ const MUTE_OPTIONS = [
   { label: '2 dny', milliseconds: 2 * 24 * 60 * 60 * 1000 },
 ];
 
+const SELF_DELETE_OPTIONS = [
+  { label: 'Po přečtení', delayMs: 0 },
+  { label: '15 min', delayMs: 15 * 60 * 1000 },
+  { label: '30 min', delayMs: 30 * 60 * 1000 },
+  { label: '1 hod', delayMs: 60 * 60 * 1000 },
+  { label: '2 hod', delayMs: 2 * 60 * 60 * 1000 },
+  { label: '3 hod', delayMs: 3 * 60 * 60 * 1000 },
+  { label: '4 hod', delayMs: 4 * 60 * 60 * 1000 },
+  { label: '5 hod', delayMs: 5 * 60 * 60 * 1000 },
+  { label: '6 hod', delayMs: 6 * 60 * 60 * 1000 },
+  { label: '7 hod', delayMs: 7 * 60 * 60 * 1000 },
+  { label: '8 hod', delayMs: 8 * 60 * 60 * 1000 },
+  { label: '9 hod', delayMs: 9 * 60 * 60 * 1000 },
+  { label: '10 hod', delayMs: 10 * 60 * 60 * 1000 },
+  { label: '11 hod', delayMs: 11 * 60 * 60 * 1000 },
+  { label: '12 hod', delayMs: 12 * 60 * 60 * 1000 },
+  { label: '1 d', delayMs: 24 * 60 * 60 * 1000 },
+  { label: '2 d', delayMs: 2 * 24 * 60 * 60 * 1000 },
+  { label: '3 d', delayMs: 3 * 24 * 60 * 60 * 1000 },
+  { label: '4 d', delayMs: 4 * 24 * 60 * 60 * 1000 },
+  { label: '5 d', delayMs: 5 * 24 * 60 * 60 * 1000 },
+  { label: '6 d', delayMs: 6 * 24 * 60 * 60 * 1000 },
+  { label: '7 d', delayMs: 7 * 24 * 60 * 60 * 1000 },
+];
+
 
 const USER_COLOURS = [
   { label: 'Zelená', value: '#35c759' },
@@ -341,7 +366,11 @@ const areUsersEqual = (a, b) => {
       cur.silhouetteColour !== nxt.silhouetteColour ||
       cur.bgColour !== nxt.bgColour ||
       cur.avatarIcon !== nxt.avatarIcon ||
-      Boolean(cur.avatarLocked) !== Boolean(nxt.avatarLocked)
+      Boolean(cur.avatarLocked) !== Boolean(nxt.avatarLocked) ||
+      cur.deviceFingerprint !== nxt.deviceFingerprint ||
+      cur.deviceModel !== nxt.deviceModel ||
+      Boolean(cur.trustedDevice) !== Boolean(nxt.trustedDevice) ||
+      cur.trustedDeviceBadge !== nxt.trustedDeviceBadge
     ) return false;
   }
   return true;
@@ -547,7 +576,7 @@ const SwipeToUnlockRow = ({ children, onUnlock, disabled }) => {
   );
 };
 
-const AdminPin = ({ navigation }) => {
+const AdminPin = ({ navigation, route }) => {
   const [users, setUsers] = useState([
   ]);
 
@@ -601,17 +630,47 @@ const AdminPin = ({ navigation }) => {
   const [adminFillModalVisible, setAdminFillModalVisible] = useState(false);
   const [adminPinModalVisible, setAdminPinModalVisible] = useState(false);
   const [adminPwModalVisible, setAdminPwModalVisible] = useState(false);
+  const [selfDeleteModalVisible, setSelfDeleteModalVisible] = useState(false);
+  const [selfDeleteEnabled, setSelfDeleteEnabled] = useState(false);
+  const [selfDeleteDelayMs, setSelfDeleteDelayMs] = useState(0);
   const [newAdminPw, setNewAdminPw] = useState('');
   const [adminPwError, setAdminPwError] = useState('');
     const [currentAdminPw, setCurrentAdminPw] = useState(globalThis.CUSIIK_ADMIN_PW || '');
   const [actionHistory, setActionHistory] = useState([]);
   const [actionHistoryExpanded, setActionHistoryExpanded] = useState(false);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
+  const [informationModalVisible, setInformationModalVisible] = useState(false);
+  const [pendingDevices, setPendingDevices] = useState([]);
+  const pendingBadgePulse = useRef(new Animated.Value(1)).current;
   const [statsModalVisible, setStatsModalVisible] = useState(false);
   const [unlockedRatingUsers, setUnlockedRatingUsers] = useState({});
   const [userRatings, setUserRatings] = useState({});
-  const [ratingConfirmVisible, setRatingConfirmVisible] = useState(false);
-  const [ratingConfirmUser, setRatingConfirmUser] = useState(null);
+  const [expandedRatingUsers, setExpandedRatingUsers] = useState({});
+
+  useEffect(() => {
+    if (pendingDevices.length === 0) {
+      pendingBadgePulse.setValue(1);
+      return undefined;
+    }
+
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pendingBadgePulse, { toValue: 1.18, duration: 500, useNativeDriver: true }),
+        Animated.timing(pendingBadgePulse, { toValue: 1, duration: 500, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [pendingDevices.length, pendingBadgePulse]);
+
+  useEffect(() => {
+    if (route?.params?.openApprovals) {
+      setInformationModalVisible(true);
+    }
+    if (route?.params?.openRatings) {
+      setStatsModalVisible(true);
+    }
+  }, [route?.params?.openApprovals, route?.params?.openRatings]);
 
   const [connectionText, setConnectionText] = useState(
     socket.connected ? 'Server online' : 'Připojuji server...'
@@ -763,6 +822,13 @@ const AdminPin = ({ navigation }) => {
         globalThis.CUSIIK_ADMIN_PROFILE = normalizedAdminProfile;
       }
 
+      if (typeof serverState?.selfDeleteEnabled === 'boolean') {
+        setSelfDeleteEnabled(serverState.selfDeleteEnabled);
+      }
+      if (Number.isFinite(Number(serverState?.selfDeleteDelayMs))) {
+        setSelfDeleteDelayMs(Number(serverState.selfDeleteDelayMs));
+      }
+
       if (Array.isArray(serverState?.users)) {
         const normalizedUsers = serverState.users.map((user) => ({
             ...user,
@@ -772,6 +838,10 @@ const AdminPin = ({ navigation }) => {
             bgColour: user.bgColour || '#ece9d8',
             avatarIcon: normalizeAvatarIcon(user.avatarIcon),
             avatarLocked: Boolean(user.avatarLocked),
+            deviceFingerprint: user.deviceFingerprint || null,
+            deviceModel: user.deviceModel || null,
+            trustedDevice: Boolean(user.trustedDevice),
+            trustedDeviceBadge: user.trustedDeviceBadge || null,
         }));
           setUsers((currentUsers) => {
             if (areUsersEqual(currentUsers, normalizedUsers)) return currentUsers;
@@ -842,22 +912,22 @@ const AdminPin = ({ navigation }) => {
       }));
     };
 
-    const handlePendingDevice = ({ deviceId, name, ip } = {}) => {
-      Alert.alert(
-        'Povolit nové zařízení',
-        `Uživatel ${name || 'Pavel'} - IP ${ip || 'neznámá'}`,
-        [
-          {
-            text: 'Zamítnout',
-            style: 'destructive',
-            onPress: () => socket.emit('device:reject', { deviceId, ip }),
-          },
-          {
-            text: 'Povolit',
-            onPress: () => socket.emit('device:approve', { deviceId }),
-          },
-        ]
-      );
+    const handlePendingDevice = (device = {}) => {
+      const cleanDeviceId = String(device.deviceId || '').trim();
+      if (!cleanDeviceId) {
+        return;
+      }
+
+      setPendingDevices((current) => [
+        ...current.filter((item) => item.deviceId !== cleanDeviceId),
+        { ...device, deviceId: cleanDeviceId },
+      ]);
+    };
+
+    const handleTestUserCreated = ({ user } = {}) => {
+      if (user?.name) {
+        logAction(`Testovací uživatel ${user.name} byl přidán.`);
+      }
     };
 
     socket.on('connect', handleConnect);
@@ -875,6 +945,7 @@ const AdminPin = ({ navigation }) => {
     socket.on('room:hardReset', handleHardReset);
     socket.on('user:ratingUpdate', handleUserRatingUpdate);
     socket.on('device:pending', handlePendingDevice);
+    socket.on('admin:testUserCreated', handleTestUserCreated);
 
 
     if (!socket.connected) {
@@ -906,6 +977,7 @@ const AdminPin = ({ navigation }) => {
       socket.off('room:hardReset', handleHardReset);
       socket.off('user:ratingUpdate', handleUserRatingUpdate);
       socket.off('device:pending', handlePendingDevice);
+      socket.off('admin:testUserCreated', handleTestUserCreated);
     };
   }, []);
 
@@ -1264,6 +1336,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     setAdminFillModalVisible(false);
     setAdminPinModalVisible(false);
     setAdminPwModalVisible(false);
+    setSelfDeleteModalVisible(false);
   };
 
   const openAdminPinModal = () => {
@@ -1276,6 +1349,16 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     setNewAdminPw('');
     setAdminPwError('');
     setAdminPwModalVisible(true);
+  };
+
+  const setSelfDeleteSetting = (option) => {
+    setSelfDeleteEnabled(true);
+    setSelfDeleteDelayMs(option.delayMs);
+    setSelfDeleteModalVisible(false);
+    if (socket.connected) {
+      socket.emit('admin:setSelfDeleteDelay', { delayMs: option.delayMs, enabled: true });
+    }
+    logAction(`SELFDELETE nastaveno: ${option.label}.`);
   };
 
 
@@ -1518,28 +1601,6 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     logAction(`Hodnocení uživatele ${user.name} bylo odemčeno.`);
   };
 
-  const openRatingConfirm = (user) => {
-    if (!user) {
-      return;
-    }
-
-    setRatingConfirmUser(user);
-    setRatingConfirmVisible(true);
-  };
-
-  const closeRatingConfirm = () => {
-    setRatingConfirmVisible(false);
-    setRatingConfirmUser(null);
-  };
-
-  const confirmRatingUnlock = () => {
-    if (ratingConfirmUser) {
-      unlockUserRating(ratingConfirmUser);
-    }
-
-    closeRatingConfirm();
-  };
-
   const openQuickActionsModal = (user) => {
     if (!user) {
       return;
@@ -1722,11 +1783,27 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     0
   );
 
+  const createTestUser = () => {
+    if (socket.connected) {
+      socket.emit('admin:createTestUser');
+    }
+  };
+
+  const approveDevice = (device) => {
+    socket.emit('device:approve', { deviceId: device.deviceId });
+    setPendingDevices((current) => current.filter((item) => item.deviceId !== device.deviceId));
+  };
+
+  const rejectDevice = (device) => {
+    socket.emit('device:reject', { deviceId: device.deviceId, ip: device.ip });
+    setPendingDevices((current) => current.filter((item) => item.deviceId !== device.deviceId));
+  };
+
   // cislo na ikonce appky = soucet neprectenych od vsech uzivatelu
   // (secret mute se nepocita, stejne jako v seznamu)
   useEffect(() => {
-    setAppBadgeCount(totalUnreadCount);
-  }, [totalUnreadCount]);
+    setAppBadgeCount(totalUnreadCount + pendingDevices.length);
+  }, [totalUnreadCount, pendingDevices.length]);
 
   return (
 
@@ -1758,6 +1835,12 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 </Pressable>
               </View>
 
+              <View style={styles.windowButton}>
+                <Pressable style={styles.closePressable} onPress={createTestUser}>
+                  <Text style={styles.windowButtonText}>+</Text>
+                </Pressable>
+              </View>
+
               <View style={[styles.windowButton, styles.windowButtonGapLeft]}>
                 <Pressable style={styles.closePressable} onPress={() => setStatsModalVisible(true)}>
                   <Image source={STAT_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
@@ -1777,8 +1860,13 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
               </View>
 
               <View style={styles.windowButton}>
-                <Pressable style={styles.closePressable} onPress={closeApp}>
+                <Pressable style={styles.closePressable} onPress={() => setInformationModalVisible(true)}>
                   <Image source={EXIT_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
+                  {pendingDevices.length > 0 ? (
+                    <Animated.View style={[styles.pendingBadge, { transform: [{ scale: pendingBadgePulse }] }] }>
+                      <Text style={styles.pendingBadgeText}>{pendingDevices.length}</Text>
+                    </Animated.View>
+                  ) : null}
                 </Pressable>
               </View>
             </View>
@@ -1904,7 +1992,7 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   <SwipeToUnlockRow
                     key={user.id}
                     disabled={isUserSecretMuted}
-                    onUnlock={() => openRatingConfirm(user)}
+                    onUnlock={() => unlockUserRating(user)}
                   >
                   <View
                         style={[
@@ -1957,6 +2045,9 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                           <View style={styles.userTextBox}>
                             <View style={styles.userNameRow}>
                               {renderUserNameWithMute(user, styles.userName)}
+                              {user.trustedDevice ? (
+                                <Text style={styles.trustedDeviceBadge}>{user.trustedDeviceBadge || 'DŮVĚRYHODNÝ'}</Text>
+                              ) : null}
                               {renderMuteTag(user)}
                             </View>
 
@@ -2368,6 +2459,17 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Text style={styles.selectedUserText}>
                   {actionUser ? actionUser.name : ''}
                 </Text>
+
+                {actionUser ? (
+                  <View style={styles.deviceInfoBox}>
+                    <Text style={styles.settingsOptionTitle}>Zařízení</Text>
+                    <Text style={styles.settingsOptionText}>Fingerprint: {actionUser.deviceFingerprint || 'neznámý'}</Text>
+                    <Text style={styles.settingsOptionText}>Model telefonu: {actionUser.deviceModel || 'neznámý'}</Text>
+                    {actionUser.trustedDevice ? (
+                      <Text style={styles.trustedDeviceBadge}>{actionUser.trustedDeviceBadge || 'DŮVĚRYHODNÝ'}</Text>
+                    ) : null}
+                  </View>
+                ) : null}
 
                 <Pressable
                   style={({ pressed }) => [
@@ -2870,6 +2972,22 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   </Text>
                 </Pressable>
 
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    selfDeleteEnabled && styles.settingsOptionActive,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => setSelfDeleteModalVisible(true)}
+                >
+                  <Text style={styles.settingsOptionTitle}>SELFDELETE</Text>
+                  <Text style={styles.settingsOptionText}>
+                    {selfDeleteEnabled
+                      ? `Automatické odstranění: ${SELF_DELETE_OPTIONS.find((option) => option.delayMs === selfDeleteDelayMs)?.label || 'nastaveno'}`
+                      : 'Automatické odstranění zpráv je vypnuté.'}
+                  </Text>
+                </Pressable>
+
                 <View style={styles.modalButtons}>
                   <Pressable
                     style={({ pressed }) => [
@@ -2882,6 +3000,58 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   </Pressable>
                 </View>
               </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={selfDeleteModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setSelfDeleteModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>SELFDELETE</Text>
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setSelfDeleteModalVisible(false)}
+                >
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
+                </Pressable>
+              </View>
+
+              <ScrollView style={styles.modalBody} contentContainerStyle={styles.selfDeleteOptions}>
+                <Text style={styles.modalLabel}>Od přečtení zprávy odstranit po:</Text>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingsOption,
+                    !selfDeleteEnabled && styles.settingsOptionActive,
+                    pressed && styles.xpButtonPressed,
+                  ]}
+                  onPress={() => {
+                    setSelfDeleteEnabled(false);
+                    setSelfDeleteModalVisible(false);
+                    socket.emit('admin:setSelfDeleteDelay', { delayMs: 0, enabled: false });
+                  }}
+                >
+                  <Text style={styles.settingsOptionTitle}>Vypnuto</Text>
+                </Pressable>
+                {SELF_DELETE_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option.delayMs}
+                    style={({ pressed }) => [
+                      styles.settingsOption,
+                      selfDeleteEnabled && selfDeleteDelayMs === option.delayMs && styles.settingsOptionActive,
+                      pressed && styles.xpButtonPressed,
+                    ]}
+                    onPress={() => setSelfDeleteSetting(option)}
+                  >
+                    <Text style={styles.settingsOptionTitle}>{option.label}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -3316,6 +3486,55 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
           </View>
         </Modal>
         <Modal
+          visible={informationModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setInformationModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Informační středisko</Text>
+                <Pressable
+                  style={styles.modalCloseButton}
+                  onPress={() => setInformationModalVisible(false)}
+                >
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
+                </Pressable>
+              </View>
+
+              <ScrollView style={styles.modalBody}>
+                {pendingDevices.length === 0 ? (
+                  <Text style={styles.settingsOptionText}>Žádné čekající žádosti.</Text>
+                ) : pendingDevices.map((device) => (
+                  <View key={device.deviceId} style={styles.pendingRequestBox}>
+                    <Text style={styles.settingsOptionTitle}>
+                      Uživatel {device.name || 'Pavel'} se chce přidat do aplikace
+                    </Text>
+                    <Text style={styles.settingsOptionText}>Fingerprint: {device.fingerprint || device.deviceId}</Text>
+                    <Text style={styles.settingsOptionText}>Model telefonu: {device.model || 'neznámý'}</Text>
+                    <View style={styles.modalButtons}>
+                      <Pressable
+                        style={({ pressed }) => [styles.modalButton, pressed && styles.xpButtonPressed]}
+                        onPress={() => approveDevice(device)}
+                      >
+                        <Text style={styles.modalButtonText}>Povolit ANO</Text>
+                      </Pressable>
+                      <Pressable
+                        style={({ pressed }) => [styles.modalButton, pressed && styles.xpButtonPressed]}
+                        onPress={() => rejectDevice(device)}
+                      >
+                        <Text style={styles.modalButtonText}>NE</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
           visible={helpModalVisible}
           transparent
           animationType="fade"
@@ -3386,107 +3605,54 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
               </View>
 
               <ScrollView style={styles.modalBody}>
-                <Text style={styles.modalLabel}>
-                  Podržením a přetažením uživatele doleva odemkneš jeho hodnocení.
+                <Text style={styles.settingsOptionTitle}>Odesláno</Text>
+                <Text style={styles.settingsOptionText}>
+                  Uživatelé, kterým bylo hodnocení odemčeno a čeká se na jejich odeslání.
                 </Text>
+                {users.filter((user) => unlockedRatingUsers[String(user.id)] && !userRatings[String(user.id)]).map((user) => (
+                  <Pressable
+                    key={user.id}
+                    style={styles.settingsUserRow}
+                    onPress={() => setExpandedRatingUsers((current) => ({ ...current, [user.id]: !current[user.id] }))}
+                  >
+                    <View style={styles.settingsUserTextBox}>
+                      <Text style={styles.settingsUserName}>{user.name}</Text>
+                      {expandedRatingUsers[user.id] ? (
+                        <Text style={styles.settingsUserSubText}>Hodnocení je odemčené, čeká na odeslání.</Text>
+                      ) : null}
+                    </View>
+                  </Pressable>
+                ))}
+                {users.filter((user) => unlockedRatingUsers[String(user.id)] && !userRatings[String(user.id)]).length === 0 ? (
+                  <Text style={styles.smallEmptyText}>Žádné čekající hodnocení.</Text>
+                ) : null}
 
-                {Object.keys(unlockedRatingUsers).length === 0 ? (
-                  <View style={styles.smallEmptyBox}>
-                    <Text style={styles.smallEmptyText}>
-                      Zatím nemáš odemčené hodnocení žádného uživatele.
-                    </Text>
-                  </View>
-                ) : (
-                  users
-                    .filter((user) => unlockedRatingUsers[String(user.id)])
-                    .map((user) => {
-                      const rating = userRatings[String(user.id)];
-
-                      return (
-                        <View key={user.id} style={styles.settingsUserRow}>
-                          <View
-                            style={[
-                              styles.smallUserIconBox,
-                              {
-                                backgroundColor: user.bgColour || '#dceaff',
-                                borderTopColor: user.silhouetteColour || '#0b3d91',
-                                borderLeftColor: user.silhouetteColour || '#0b3d91',
-                                borderRightColor: user.silhouetteColour || '#0b3d91',
-                                borderBottomColor: user.silhouetteColour || '#0b3d91',
-                              },
-                            ]}
-                          >
-                            <Image
-                              source={getUserIconSource(user.avatarIcon)}
-                              style={styles.smallUserIconImage}
-                              resizeMode="contain"
-                            />
-                          </View>
-
-                          <View style={styles.settingsUserTextBox}>
-                            <Text style={styles.settingsUserName}>{user.name}</Text>
-                            <Text style={styles.settingsUserSubText}>
-                              {rating
-                                ? `Charisma: ${rating.charisma ?? '-'}/10  •  Štěstí: ${rating.stesti ?? '-'}/10`
-                                : 'Čeká na odeslání hodnocení od uživatele...'}
-                            </Text>
-                          </View>
-                        </View>
-                      );
-                    })
-                )}
+                <View style={{ height: 18 }} />
+                <Text style={styles.settingsOptionTitle}>Odevzdáno</Text>
+                <Text style={styles.settingsOptionText}>Odeslaná hodnocení uživatelů.</Text>
+                {users.filter((user) => userRatings[String(user.id)]).map((user) => {
+                  const rating = userRatings[String(user.id)];
+                  return (
+                    <Pressable
+                      key={user.id}
+                      style={styles.settingsUserRow}
+                      onPress={() => setExpandedRatingUsers((current) => ({ ...current, [user.id]: !current[user.id] }))}
+                    >
+                      <View style={styles.settingsUserTextBox}>
+                        <Text style={styles.settingsUserName}>{user.name}</Text>
+                        <Text style={styles.settingsUserSubText}>
+                          {expandedRatingUsers[user.id]
+                            ? `Charisma: ${rating.charisma ?? '-'}/10  •  Štěstí: ${rating.stesti ?? '-'}/10`
+                            : 'Klepnutím zobrazíš detail hodnocení.'}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+                {users.filter((user) => userRatings[String(user.id)]).length === 0 ? (
+                  <Text style={styles.smallEmptyText}>Zatím nebylo odevzdáno žádné hodnocení.</Text>
+                ) : null}
               </ScrollView>
-            </View>
-          </View>
-        </Modal>
-
-        <Modal
-          visible={ratingConfirmVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={closeRatingConfirm}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalWindow}>
-              <View style={styles.modalTitleBar}>
-                <Text style={styles.modalTitleText}>Odemknout hodnocení</Text>
-
-                <Pressable style={styles.modalCloseButton} onPress={closeRatingConfirm}>
-                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
-                </Pressable>
-              </View>
-
-              <View style={styles.modalBody}>
-                <Text style={styles.modalLabel}>
-                  Opravdu chceš odemknout hodnocení uživateli?
-                </Text>
-
-                <Text style={styles.selectedUserText}>
-                  {ratingConfirmUser ? ratingConfirmUser.name : ''}
-                </Text>
-
-                <View style={styles.modalButtons}>
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={confirmRatingUnlock}
-                  >
-                    <Text style={styles.modalButtonText}>Ano, odemknout</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.modalButton,
-                      pressed && styles.xpButtonPressed,
-                    ]}
-                    onPress={closeRatingConfirm}
-                  >
-                    <Text style={styles.modalButtonText}>Zrušit</Text>
-                  </Pressable>
-                </View>
-              </View>
             </View>
           </View>
         </Modal>
@@ -3572,6 +3738,45 @@ const styles = StyleSheet.create({
   windowButtonIcon: {
     width: 25,
     height: 25,
+  },
+
+  windowButtonText: {
+    color: '#ffffff',
+    fontSize: 19,
+    fontWeight: '900',
+  },
+
+  pendingBadge: {
+    position: 'absolute',
+    top: -7,
+    right: -8,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    borderRadius: 8,
+    backgroundColor: '#f59e0b',
+    borderWidth: 1,
+    borderColor: '#fff3c4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ scale: 1 }],
+  },
+
+  pendingBadgeText: {
+    color: '#3b2100',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  pendingRequestBox: {
+    marginBottom: 10,
+    padding: 10,
+    backgroundColor: '#fff3c4',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#8a7b42',
+    borderBottomColor: '#8a7b42',
   },
 
 
@@ -4421,6 +4626,33 @@ const styles = StyleSheet.create({
     color: '#333333',
     fontSize: 12,
     lineHeight: 17,
+  },
+
+  settingsOptionActive: {
+    backgroundColor: '#d7ffd8',
+    borderTopColor: '#75b779',
+    borderLeftColor: '#75b779',
+    borderRightColor: '#286b2e',
+    borderBottomColor: '#286b2e',
+  },
+
+  selfDeleteOptions: {
+    paddingBottom: 8,
+  },
+
+  deviceInfoBox: {
+    backgroundColor: '#dceaff',
+    borderWidth: 2,
+    borderColor: '#7a9dcc',
+    padding: 8,
+    marginBottom: 10,
+  },
+
+  trustedDeviceBadge: {
+    color: '#146b2e',
+    fontSize: 10,
+    fontWeight: '900',
+    marginLeft: 6,
   },
 
   settingsOptionMute: {

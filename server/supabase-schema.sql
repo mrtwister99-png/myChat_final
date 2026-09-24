@@ -67,6 +67,8 @@ alter table messages add column if not exists self_destruct boolean not null def
 
 create table if not exists trusted_devices (
   device_id text primary key,
+  device_fingerprint text,
+  device_model text,
   temp_name text,
   first_ip text,
   current_ip text,
@@ -103,6 +105,8 @@ alter table kicked_ips add column if not exists is_active boolean default true;
 alter table trusted_devices add column if not exists temp_name text;
 alter table trusted_devices add column if not exists current_ip text;
 alter table trusted_devices add column if not exists is_pending boolean default true;
+alter table trusted_devices add column if not exists device_fingerprint text;
+alter table trusted_devices add column if not exists device_model text;
 
 alter table active_pins enable row level security;
 alter table admin_config enable row level security;

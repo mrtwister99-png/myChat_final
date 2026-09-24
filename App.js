@@ -80,6 +80,22 @@ const App = () => {
       try {
         const lastResponse = await Notifications.getLastNotificationResponseAsync();
         const lastData = lastResponse?.notification?.request?.content?.data;
+          if (lastData?.action === 'openApprovals') {
+            setTimeout(() => {
+              if (navigationRef.isReady()) {
+                navigationRef.navigate('AdminPin', { openApprovals: Date.now() });
+              }
+            }, 1200);
+            return;
+          }
+          if (lastData?.action === 'openRatings') {
+            setTimeout(() => {
+              if (navigationRef.isReady()) {
+                navigationRef.navigate('AdminPin', { openRatings: Date.now() });
+              }
+            }, 1200);
+            return;
+          }
         if (lastData?.userId && lastData?.action === 'openChat') {
           setTimeout(() => {
             if (navigationRef.isReady()) {
@@ -99,6 +115,15 @@ const App = () => {
       const replyText = String(response?.userText || '').trim();
       const normalizedRole = String(globalThis.CUSIIK_CURRENT_ROLE || data?.role || 'user').trim().toLowerCase();
       const role = normalizedRole === 'admin' ? 'admin' : 'user';
+
+      if (data?.action === 'openApprovals' && navigationRef.isReady()) {
+        navigationRef.navigate('AdminPin', { openApprovals: Date.now() });
+        return;
+      }
+      if (data?.action === 'openRatings' && navigationRef.isReady()) {
+        navigationRef.navigate('AdminPin', { openRatings: Date.now() });
+        return;
+      }
 
       // FIX: admin ma chat v AdminChat, uzivatel v UzivatelPin.
       // Driv se oboji posilalo do UzivatelPin -> admin skoncil na spatne obrazovce.

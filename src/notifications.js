@@ -29,6 +29,23 @@ export async function registerForPushNotificationsAsync() {
 }
 
 export async function registerNotificationCategories() {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('chat-messages', {
+      name: 'Chat a žádosti',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 150, 250],
+      sound: 'notification.caf',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+    await Notifications.setNotificationChannelAsync('admin-ratings', {
+      name: 'Hodnocení uživatelů',
+      importance: Notifications.AndroidImportance.DEFAULT,
+      vibrationPattern: [0, 150],
+      sound: 'notification.caf',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+  }
+
   await Notifications.setNotificationCategoryAsync('chat_reply', [
     {
       identifier: 'reply',

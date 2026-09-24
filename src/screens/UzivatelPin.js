@@ -2,6 +2,7 @@
 
 import React,{ useEffect,useRef,useState } from 'react';
 import {
+Alert,
 Animated,
 AppState,
 BackHandler,
@@ -423,6 +424,19 @@ const RATING_STATS = [
   { key: 'stesti', label: 'Štěstí', value: 5 },
 ];
 
+const TOP_SCORE_ROWS = [
+  'Tomáš',
+  'Pavel',
+  'Lucie',
+  'Martin',
+  'Karel',
+  'Jana',
+  'David',
+  'Eva',
+  'Milan',
+  'Ondřej',
+];
+
 const RatingSlider = ({ label, value, locked }) => {
   const percent = Math.max(0, Math.min(100, ((value - 1) / 9) * 100));
 
@@ -448,6 +462,14 @@ const RatingSlider = ({ label, value, locked }) => {
       </View>
     </View>
   );
+};
+
+const getUnreadMessageLabel = (count) => {
+  if (count === 1) {
+    return '+1 nová zpráva';
+  }
+
+  return `+${count} nové zprávy`;
 };
 
 const UzivatelPin=({ navigation,route })=>{
@@ -974,10 +996,8 @@ const UzivatelPin=({ navigation,route })=>{
       chats[currentUserId] = safeMessages;
       setMessages(safeMessages);
 
-      safeMessages.filter((item) => item.selfDestruct).forEach((item) => {
-        setTimeout(() => {
-          socket.emit('message:read', { userId: currentUserId, messageId: item.id });
-        }, 15 * 60 * 1000);
+      safeMessages.filter((item) => item.selfDestruct && (item.sender === 'admin' || item.sender === 'system')).forEach((item) => {
+        socket.emit('message:read', { userId: currentUserId, messageId: item.id });
       });
 
       const currentReadCount = getGlobalUserReadCounts()[currentUserId] || 0;
@@ -1961,62 +1981,46 @@ const UzivatelPin=({ navigation,route })=>{
 
             <View style={styles.menuMiddleSection}>
               <View style={styles.wallBox}>
-                <Text style={styles.wallBoxTitle}>Nástěnka</Text>
+                <Text style={styles.wallBoxTitle}>Minigame</Text>
+                <Text style={styles.minigameSubtitle}>old school - pixelové</Text>
+                <Text style={styles.topScoreTitle}>TOP SCORE</Text>
 
-                <View style={styles.wallMessagePreview}>
-                  {wallMessage?.text ? (
-                    <>
-                      <Text style={styles.wallMessageText} numberOfLines={2}>
-                        {wallMessage.text}
-                      </Text>
-                      <Text style={styles.wallMessageAuthor}>— {wallMessage.author}</Text>
-                    </>
-                  ) : (
-                    <Text style={styles.wallEmptyText}>Zatím tu nikdo nic nenechal...</Text>
-                  )}
+                <View style={styles.topScoreList}>
+                  {TOP_SCORE_ROWS.map((name, index) => (
+                    <View key={`${name}-${index}`} style={styles.topScoreRow}>
+                      <Text style={styles.topScoreRank}>{`${index + 1}.`}</Text>
+                      <Text style={styles.topScoreName}>{name}</Text>
+                      <Text style={styles.topScoreValue}>{String(1000 - index * 73).padStart(4, '0')}</Text>
+                    </View>
+                  ))}
                 </View>
 
-                <View style={styles.wallInputWrap}>
-                  <TextInput
-                    value={wallDraft}
-                    onChangeText={setWallDraft}
-                    placeholder="Napiš vzkaz na nástěnku..."
-                    placeholderTextColor="#8a8a8a"
-                    style={styles.wallInput}
-                    multiline
-                    maxLength={WALL_MESSAGE_MAX_LENGTH}
-                  />
-
-                  <View style={styles.wallInputFooter}>
-                    <Text style={styles.wallCharCount}>
-                      {wallDraft.length}/{WALL_MESSAGE_MAX_LENGTH}
-                    </Text>
-
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.wallSendButton,
-                        pressed && styles.sendButtonPressed,
-                      ]}
-                      onPress={sendWallMessage}
-                    >
-                      <Text style={styles.wallSendButtonText}>Přidat</Text>
-                    </Pressable>
-                  </View>
-                </View>
+                <Pressable
+                  style={({ pressed }) => [styles.minigamePlayButton, pressed && styles.sendButtonPressed]}
+                  onPress={() => Alert.alert('Minigame', 'Hra bude brzy spuštěna.')}
+                >
+                  <Text style={styles.minigamePlayButtonText}>HRÁT</Text>
+                </Pressable>
               </View>
 
-              <View style={styles.menuMiddleRatingBox}>
-                <Text style={styles.ratingBoxTitle}>Hodnocení (zamčeno)</Text>
+              <Pressable
+                style={styles.menuMiddleRatingBox}
+                onPress={() => ratingUnlocked && setRatingModalVisible(true)}
+                disabled={!ratingUnlocked}
+              >
+                <Text style={styles.ratingBoxTitle}>
+                  {ratingUnlocked ? 'Hodnocení (odemčeno)' : 'Hodnocení (zamčeno)'}
+                </Text>
 
                 {RATING_STATS.map((stat) => (
-                  <RatingSlider key={stat.key} label={stat.label} value={stat.value} locked />
+                  <RatingSlider key={stat.key} label={stat.label} value={stat.value} locked={!ratingUnlocked} />
                 ))}
 
-                <View style={styles.ratingSubmitDisabledButton}>
-                  <Text style={styles.ratingSubmitDisabledIcon}>🔒</Text>
-                  <Text style={styles.ratingSubmitDisabledText}>Odeslat</Text>
+                <View style={ratingUnlocked ? styles.ratingSubmitButton : styles.ratingSubmitDisabledButton}>
+                  <Text style={styles.ratingSubmitDisabledIcon}>{ratingUnlocked ? '✎' : '🔒'}</Text>
+                  <Text style={styles.ratingSubmitDisabledText}>{ratingUnlocked ? 'Vyplnit a odeslat' : 'Odeslat'}</Text>
                 </View>
-              </View>
+              </Pressable>
             </View>
 
             <ChatButtonPulseWrapper active={isAdminOnline}>
@@ -2030,8 +2034,21 @@ const UzivatelPin=({ navigation,route })=>{
                 ]}
                 onPress={openChat}
               >
-                <Text style={styles.grayPanelChatButtonText}>Chatuj S GM</Text>
-                <UnreadBadge count={unreadCount} />
+                <AvatarIcon
+                  source={getIconSource(adminProfile?.icon || 'admin')}
+                  iconKey={normalizeAdminIcon(adminProfile?.icon || 'admin')}
+                  style={styles.chatGmIcon}
+                />
+                <View style={styles.chatGmTextBox}>
+                  <Text style={styles.grayPanelChatButtonText}>Chatuj s GM</Text>
+                  <Text style={styles.chatGmNameText}>Game master</Text>
+                  <Text style={styles.chatGmStatusText}>{getAdminStatusText()}</Text>
+                </View>
+                {unreadCount > 0 ? (
+                  <View style={styles.chatNewMessageBadge}>
+                    <Text style={styles.chatNewMessageBadgeText}>{getUnreadMessageLabel(unreadCount)}</Text>
+                  </View>
+                ) : null}
               </Pressable>
             </ChatButtonPulseWrapper>
             </View>
@@ -2085,7 +2102,7 @@ const UzivatelPin=({ navigation,route })=>{
                           style={styles.iconPreview}
                           resizeMode="contain"
                         />
-                        <Text style={styles.colourButtonText}>{iconItem.label}</Text>
+                        <Text style={styles.colourButtonText}>{`  ${iconItem.label}`}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -2109,7 +2126,7 @@ const UzivatelPin=({ navigation,route })=>{
               <KeyboardWrapper
         style={styles.page}
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
+        keyboardVerticalOffset={90}
               enabled
       >
 
@@ -2340,7 +2357,10 @@ const UzivatelPin=({ navigation,route })=>{
           <View style={styles.inputPanel}>
                                <TextInput
               value={message}
-              onFocus={closeReactionPicker}
+              onFocus={() => {
+                closeReactionPicker();
+                setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
+              }}
               onChangeText={(value) => {
                 setBlockedInfo('');
                 setMessage(value);
@@ -2867,7 +2887,51 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 13,
     fontWeight: '900',
-    marginRight: 6,
+  },
+
+  chatGmIcon: {
+    width: 34,
+    height: 34,
+    marginRight: 10,
+  },
+
+  chatGmTextBox: {
+    flex: 1,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+
+  chatGmNameText: {
+    color: '#444444',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  chatGmStatusText: {
+    color: '#0058d8',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+
+  chatNewMessageBadge: {
+    minHeight: 28,
+    paddingHorizontal: 8,
+    backgroundColor: '#ffcc00',
+    borderWidth: 2,
+    borderTopColor: '#fff3a3',
+    borderLeftColor: '#fff3a3',
+    borderRightColor: '#8a6d00',
+    borderBottomColor: '#8a6d00',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  chatNewMessageBadgeText: {
+    color: '#3b2b00',
+    fontSize: 11,
+    fontWeight: '900',
+    textAlign: 'center',
   },
 
   capabilitiesSection: {
@@ -2980,6 +3044,81 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textAlign: 'center',
     textTransform: 'uppercase',
+  },
+
+  minigameSubtitle: {
+    color: '#7a4b00',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'lowercase',
+    marginBottom: 6,
+  },
+
+  topScoreTitle: {
+    color: '#d23b00',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+
+  topScoreList: {
+    borderWidth: 2,
+    borderTopColor: '#fff8d6',
+    borderLeftColor: '#fff8d6',
+    borderRightColor: '#8d6d38',
+    borderBottomColor: '#8d6d38',
+    backgroundColor: '#fff3c4',
+    padding: 6,
+  },
+
+  topScoreRow: {
+    minHeight: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#d8bd74',
+  },
+
+  topScoreRank: {
+    width: 30,
+    color: '#7a4b00',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  topScoreName: {
+    flex: 1,
+    color: '#3e2a08',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  topScoreValue: {
+    color: '#d23b00',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  minigamePlayButton: {
+    marginTop: 10,
+    minHeight: 54,
+    backgroundColor: '#d23b00',
+    borderWidth: 3,
+    borderTopColor: '#ffb36b',
+    borderLeftColor: '#ffb36b',
+    borderRightColor: '#7a1f00',
+    borderBottomColor: '#7a1f00',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  minigamePlayButtonText: {
+    color: '#ffffff',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
 
   wallMessagePreview: {
@@ -3169,6 +3308,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     opacity: 0.75,
+  },
+
+  ratingSubmitButton: {
+    marginTop: 6,
+    height: 36,
+    backgroundColor: '#d7ffd8',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#4f8f54',
+    borderBottomColor: '#4f8f54',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   ratingSubmitDisabledIcon: {
@@ -3769,7 +3922,7 @@ const styles = StyleSheet.create({
   iconPreview: {
     width: 26,
     height: 26,
-    marginBottom: 6,
+    marginRight: 4,
   },
 
     colourButtonText: {

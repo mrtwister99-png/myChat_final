@@ -39,6 +39,8 @@ const state = {
   adminPin: configuredPins.admin,
   adminPw: '',
   destructiveMode: false,
+  selfDeleteEnabled: true,
+  selfDeleteDelayMs: 30 * 60 * 1000,
   adminStatus: 'off',
   adminProfile: {
     icon: 'admin',
@@ -52,6 +54,7 @@ const state = {
 
   chats: {},
   chatReadAtByUserId: {},
+  selfDeleteTimers: {},
 
   mutedUsers: {},
 
@@ -87,6 +90,7 @@ const state = {
 };
 
 const WALL_MESSAGE_MAX_LENGTH = 100;
+const DEVICE_BINDING_TIMEOUT_MS = 2 * 60 * 1000;
 
 const SUPPORTED_AVATAR_ICONS = new Set([
   'uzivatel',
@@ -158,7 +162,7 @@ const getPublicAdminProfile = () => {
 
 const PUSH_COOLDOWN_MS = 5 * 60 * 1000;
 
-const sendExpoPushAsync = async ({ to, title, body, data = {}, badge }) => {
+const sendExpoPushAsync = async ({ to, title, body, data = {}, badge, channelId = 'chat-messages' }) => {
   if (!to) return;
   const tokens = Array.isArray(to) ? to : [to];
   if (tokens.length === 0) return;
@@ -173,7 +177,7 @@ const sendExpoPushAsync = async ({ to, title, body, data = {}, badge }) => {
         ...(data || {}),
         action: data?.action || 'openChat',
       },
-      channelId: 'chat-messages',
+      channelId,
       categoryId: 'chat_reply',
       // cislo na ikonce kdyz je appka zavrena (iOS; Android pocita notifikace sam)
       ...(Number.isFinite(badge) ? { badge } : {}),
@@ -720,6 +724,10 @@ const getPublicUsers = () => {
     colour: user.silhouetteColour,
     online: user.online,
     lastSeenAt: user.lastSeenAt,
+    deviceFingerprint: user.deviceFingerprint || null,
+    deviceModel: user.deviceModel || null,
+    trustedDevice: Boolean(user.trustedDevice),
+    trustedDeviceBadge: user.trustedDeviceBadge || null,
   }));
 };
 
@@ -736,6 +744,8 @@ const getPublicState = (isAdmin = true) => {
   const commonState = {
     adminStatus: state.adminStatus,
     destructiveMode: state.destructiveMode,
+    selfDeleteEnabled: state.selfDeleteEnabled,
+    selfDeleteDelayMs: state.selfDeleteDelayMs,
     adminProfile: getPublicAdminProfile(),
     users: getPublicUsers(),
     mutedUsers: state.mutedUsers,
@@ -850,6 +860,10 @@ const createUserForSocket = (socket) => {
     online: true,
     lastSeenAt: Date.now(),
     socketId: socket.id,
+    deviceFingerprint: socket.data.deviceFingerprint || socket.data.deviceId || null,
+    deviceModel: socket.data.deviceModel || null,
+    trustedDevice: Boolean(socket.data.trustedDevice),
+    trustedDeviceBadge: socket.data.trustedDeviceBadge || null,
    };
 
   state.users.push(user);
@@ -863,6 +877,26 @@ const createUserForSocket = (socket) => {
 
   ensureChatForUser(user);
 
+  return user;
+};
+
+const createTestUser = () => {
+  const userId = `test_${Date.now()}`;
+  const user = {
+    id: userId,
+    name: `Test ${pickRandomUserName()}`,
+    silhouetteColour: '#0b3d91',
+    bgColour: '#ece9d8',
+    avatarIcon: 'uzivatel',
+    avatarLocked: false,
+    online: false,
+    lastSeenAt: Date.now(),
+    socketId: null,
+  };
+
+  state.users.push(user);
+  rememberUserProfile(user);
+  ensureChatForUser(user);
   return user;
 };
 
@@ -888,6 +922,10 @@ const createUserWithKnownIdForSocket = (socket, userId) => {
     online: true,
     lastSeenAt: Date.now(),
     socketId: socket.id,
+    deviceFingerprint: socket.data.deviceFingerprint || socket.data.deviceId || null,
+    deviceModel: socket.data.deviceModel || null,
+    trustedDevice: Boolean(socket.data.trustedDevice),
+    trustedDeviceBadge: socket.data.trustedDeviceBadge || null,
   };
 
   state.users.push(user);
@@ -947,6 +985,10 @@ const markUserOnline = (userId, socket) => {
           online: true,
           lastSeenAt: Date.now(),
           socketId: socket.id,
+          deviceFingerprint: socket.data.deviceFingerprint || socket.data.deviceId || null,
+          deviceModel: socket.data.deviceModel || null,
+          trustedDevice: Boolean(socket.data.trustedDevice),
+          trustedDeviceBadge: socket.data.trustedDeviceBadge || null,
         }
       : user
   );
@@ -960,12 +1002,37 @@ const markUserOnline = (userId, socket) => {
 
   // zapamatovat, ze tenhle uzivatel patri tomuhle zarizeni (SecureStore deviceId)
   if (socket.data.deviceId) {
-    state.deviceByUserId[String(userId)] = String(socket.data.deviceId);
+    state.deviceByUserId[String(userId)] = {
+      deviceId: String(socket.data.deviceId),
+      lastSeenAt: Date.now(),
+    };
   }
 
   const currentUser = getUserById(userId);
   rememberUserProfile(currentUser);
 };
+
+const expireDeviceBindings = () => {
+  const now = Date.now();
+  const cutoff = now - DEVICE_BINDING_TIMEOUT_MS;
+
+  Object.entries(state.deviceByUserId).forEach(([userId, binding]) => {
+    const lastSeenAt = typeof binding === 'object' ? binding.lastSeenAt : 0;
+    const user = getUserById(userId);
+    const activeSocket = user?.online && user.socketId ? io?.sockets?.sockets?.get(user.socketId) : null;
+
+    if (activeSocket?.connected && typeof binding === 'object') {
+      binding.lastSeenAt = now;
+      return;
+    }
+
+    if (!lastSeenAt || lastSeenAt < cutoff) {
+      delete state.deviceByUserId[userId];
+    }
+  });
+};
+
+setInterval(expireDeviceBindings, 30 * 1000);
 
 const markUserOfflineBySocket = (socket) => {
   const userId = socket.data.userId;
@@ -1102,6 +1169,7 @@ io.on('connection', (socket) => {
   socket.emit('server:state', getPublicState(socket.data.role === 'admin'));
 
   socket.on('client:ready', ({ lastUserId, deviceId }) => {
+    expireDeviceBindings();
     const cleanLastId = String(lastUserId || '').trim();
     const cleanDeviceId = String(deviceId || '').trim();
 
@@ -1118,7 +1186,8 @@ io.on('connection', (socket) => {
     // FIX: uzivatel se po reconnectu (appka na pozadi, vypadek site) ukazoval
     // jako offline, dokud nenapsal zpravu. Kdyz stejne zarizeni hlasi stejne
     // userId, session hned obnovime a oznacime online.
-    const knownDeviceId = state.deviceByUserId[cleanLastId];
+    const knownBinding = state.deviceByUserId[cleanLastId];
+    const knownDeviceId = typeof knownBinding === 'object' ? knownBinding.deviceId : knownBinding;
     const existingUser = getUserById(cleanLastId);
 
     if (
@@ -1134,7 +1203,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('auth:attempt', async ({ pin, lastUserId, deviceId, email, chosenName }) => {
+  socket.on('auth:attempt', async ({ pin, lastUserId, deviceId, deviceFingerprint, deviceModel, email, chosenName }) => {
     addIpHistory({ socket, type: 'pin_check', userId: lastUserId || socket.data.userId || null });
     const lockState = getPinLockState(socket);
 
@@ -1152,6 +1221,8 @@ io.on('connection', (socket) => {
     const rawDeviceId = String(deviceId || '').trim();
     const cleanDeviceId = isValidDeviceId(rawDeviceId)? rawDeviceId : '';
     const cleanChosenName = String(chosenName || 'Pavel').trim().slice(0, 40) || 'Pavel';
+    const cleanDeviceFingerprint = String(deviceFingerprint || cleanDeviceId || '').trim().slice(0, 200);
+    const cleanDeviceModel = String(deviceModel || '').trim().slice(0, 120);
     const currentIp = getClientIp(socket);
     const pinDecision = classifyPin(cleanPin, state.activePins);
 
@@ -1162,6 +1233,9 @@ io.on('connection', (socket) => {
       socket.data.deviceId = cleanDeviceId;
       socket.join(`device:${cleanDeviceId}`);
     }
+
+    socket.data.deviceFingerprint = cleanDeviceFingerprint || cleanDeviceId || null;
+    socket.data.deviceModel = cleanDeviceModel || null;
 
     if (pinDecision.kind === 'honey') {
       if (supabase) {
@@ -1239,6 +1313,8 @@ io.on('connection', (socket) => {
 
     const trustedDevice = await getTrustedDevice(cleanDeviceId);
     const isTrustedDevice = Boolean(trustedDevice?.is_trusted && !trustedDevice?.is_pending);
+    socket.data.trustedDevice = isTrustedDevice;
+    socket.data.trustedDeviceBadge = isTrustedDevice ? (trustedDevice.badge || 'DŮVĚRYHODNÝ') : (trustedDevice?.badge || 'ČEKÁ NA SCHVÁLENÍ');
     const isSpecialPinCandidate = Boolean(
       cleanLastId && state.userPinsById[cleanLastId] === cleanPin
     ) || await isValidSpecialPin({
@@ -1256,6 +1332,8 @@ io.on('connection', (socket) => {
         try {
           await supabase.from('trusted_devices').upsert({
             device_id: cleanDeviceId,
+            device_fingerprint: cleanDeviceFingerprint || cleanDeviceId,
+            device_model: cleanDeviceModel || null,
             temp_name: cleanChosenName,
             first_ip: currentIp,
             current_ip: currentIp,
@@ -1273,9 +1351,19 @@ io.on('connection', (socket) => {
       // jinak cekajici zarizeni nikdo nikdy neschvali
       io.to('admins').emit('device:pending', {
         deviceId: cleanDeviceId,
+        fingerprint: cleanDeviceFingerprint || cleanDeviceId,
+        model: cleanDeviceModel || 'Neznámé zařízení',
         name: cleanChosenName,
         ip: currentIp,
         time: new Date().toISOString(),
+      });
+
+      await sendExpoPushAsync({
+        to: Array.from(state.adminPushTokens),
+        title: 'Nová žádost o přístup',
+        body: `${cleanChosenName} se chce přidat do chatu.`,
+        data: { action: 'openApprovals', deviceId: cleanDeviceId },
+        badge: 1,
       });
 
       socket.emit('auth:waiting', {
@@ -1606,6 +1694,16 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('admin:createTestUser', () => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const user = createTestUser();
+    emitState();
+    socket.emit('admin:testUserCreated', { user });
+  });
+
   socket.on('auth:logout', () => {
     if (socket.data.userId) {
       removeUserById(socket.data.userId);
@@ -1643,11 +1741,13 @@ io.on('connection', (socket) => {
     socket.emit('server:state', getPublicState(socket.data.role === 'admin'));
     if (socket.data.role === 'admin' && supabase) {
       try {
-        const { data } = await supabase.from('trusted_devices').select('device_id, temp_name, first_ip').eq('is_pending', true).eq('is_trusted', false).limit(20);
+        const { data } = await supabase.from('trusted_devices').select('device_id, device_fingerprint, device_model, temp_name, first_ip').eq('is_pending', true).eq('is_trusted', false).limit(20);
         if (Array.isArray(data)) {
           data.forEach((row) => {
             socket.emit('device:pending', {
               deviceId: row.device_id,
+              fingerprint: row.device_fingerprint || row.device_id,
+              model: row.device_model || 'Neznámé zařízení',
               name: row.temp_name || 'Pavel',
               ip: row.first_ip || 'neznámá',
             });
@@ -1792,7 +1892,12 @@ io.on('connection', (socket) => {
     sender: cleanSender,
     text: trimmedText,
     createdAt: Date.now(),
-    selfDestruct: Boolean(state.destructiveMode),
+    selfDestruct: Boolean(state.destructiveMode || state.selfDeleteEnabled),
+    selfDestructDelayMs: state.selfDeleteEnabled
+      ? state.selfDeleteDelayMs
+      : state.destructiveMode
+        ? 15 * 60 * 1000
+        : 0,
   };
 
   if (!state.chats[cleanUserId]) {
@@ -1880,6 +1985,18 @@ io.on('connection', (socket) => {
     emitState();
   });
 
+  socket.on('admin:setSelfDeleteDelay', ({ delayMs, enabled = true }) => {
+    if (socket.data.role !== 'admin') {
+      return;
+    }
+
+    const nextDelayMs = Number(delayMs);
+    const maxDelayMs = 7 * 24 * 60 * 60 * 1000;
+    state.selfDeleteEnabled = Boolean(enabled);
+    state.selfDeleteDelayMs = Number.isFinite(nextDelayMs) && nextDelayMs >= 0 && nextDelayMs <= maxDelayMs ? nextDelayMs : 0;
+    emitState();
+  });
+
   socket.on('message:read', ({ userId, messageId }) => {
     const cleanUserId = String(userId || '').trim();
     const cleanMessageId = String(messageId || '').trim();
@@ -1889,18 +2006,31 @@ io.on('connection', (socket) => {
       return;
     }
 
-    state.chats[cleanUserId] = state.chats[cleanUserId].filter(
-      (item) => String(item.id) !== cleanMessageId
-    );
-    if (supabase) {
-      fireAndForget(supabase.from('messages').delete().eq('id', cleanMessageId), 'messages delete');
+    const delayMs = Number(message.selfDestructDelayMs ?? state.selfDeleteDelayMs);
+    if (!Number.isFinite(delayMs) || delayMs < 0) {
+      return;
     }
-    io.emit('message:deleted', { userId: cleanUserId, messageId: cleanMessageId });
-    io.emit('chat:messages', {
-      userId: cleanUserId,
-      messages: state.chats[cleanUserId],
-      readAt: state.chatReadAtByUserId[cleanUserId] || 0,
-    });
+
+    const timerKey = `${cleanUserId}:${cleanMessageId}`;
+    if (state.selfDeleteTimers[timerKey]) {
+      clearTimeout(state.selfDeleteTimers[timerKey]);
+    }
+
+    state.selfDeleteTimers[timerKey] = setTimeout(() => {
+      delete state.selfDeleteTimers[timerKey];
+      state.chats[cleanUserId] = (state.chats[cleanUserId] || []).filter(
+        (item) => String(item.id) !== cleanMessageId
+      );
+      if (supabase) {
+        fireAndForget(supabase.from('messages').delete().eq('id', cleanMessageId), 'self-delete message');
+      }
+      io.emit('message:deleted', { userId: cleanUserId, messageId: cleanMessageId });
+      io.emit('chat:messages', {
+        userId: cleanUserId,
+        messages: state.chats[cleanUserId],
+        readAt: state.chatReadAtByUserId[cleanUserId] || 0,
+      });
+    }, delayMs);
   });
 
   socket.on('chat:deleteMessages', ({ userId, messageIds }) => {
@@ -2362,6 +2492,15 @@ io.on('connection', (socket) => {
       userId: cleanUserId,
       charisma: cleanCharisma,
       stesti: cleanStesti,
+    });
+
+    sendExpoPushAsync({
+      to: Array.from(state.adminPushTokens),
+      title: 'Nové hodnocení',
+      body: 'Uživatel odeslal hodnocení.',
+      data: { action: 'openRatings', userId: cleanUserId },
+      badge: 1,
+      channelId: 'admin-ratings',
     });
 
     emitState();
