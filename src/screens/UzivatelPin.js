@@ -35,7 +35,7 @@ import {
 } from '../utils/inAppSound';
 import { StatusAnimation } from '../components/StatusAnimations';
 import { AvatarIcon } from '../components/AvatarIcon';
-
+import ZizalaGame from '../components/Zizala';
 
 const resolveCurrentUserId = (routeUserId) => {
   const cleanRouteUserId = String(routeUserId || '').trim();
@@ -557,6 +557,25 @@ const UzivatelPin=({ navigation,route })=>{
 
   const [wallMessage, setWallMessage] = useState(getGlobalWallMessage);
   const [wallDraft, setWallDraft] = useState('');
+const [showZizala, setShowZizala] = useState(false);
+const ratingOpacity = useRef(new Animated.Value(1)).current;
+
+const openZizala = () => {
+  Animated.timing(ratingOpacity, {
+    toValue: 0,
+    duration: 250,
+    useNativeDriver: true,
+  }).start(() => setShowZizala(true));
+};
+
+const closeZizala = () => {
+  setShowZizala(false);
+  Animated.timing(ratingOpacity, {
+    toValue: 1,
+    duration: 250,
+    useNativeDriver: true,
+  }).start();
+};
 
   const [eggVisible, setEggVisible] = useState(false);
   const [eggPos, setEggPos] = useState({ top: 100, left: 50 });
@@ -2021,32 +2040,44 @@ const UzivatelPin=({ navigation,route })=>{
 
                 <Pressable
                   style={({ pressed }) => [styles.minigamePlayButton, pressed && styles.sendButtonPressed]}
-                  onPress={() => Alert.alert('Minigame', 'Hra bude brzy spuštěna.')}
+                  onPress={openZizala} // <<< NAHRADIT
                 >
                   <Text style={styles.minigamePlayButtonText}>HRÁT</Text>
                 </Pressable>
               </View>
 
-              <Pressable
-                style={styles.menuMiddleRatingBox}
-                onPress={() => ratingUnlocked && setRatingModalVisible(true)}
-                disabled={!ratingUnlocked}
-              >
-                <Text style={styles.ratingBoxTitle}>
-                  {ratingUnlocked ? 'Hodnocení (odemčeno)' : 'Hodnocení (zamčeno)'}
-                </Text>
+                        {showZizala ? (
+              <View style={[styles.menuMiddleRatingBox, { flex: 1, padding: 0, overflow: 'hidden' }]}>
+                <ZizalaGame
+                  userId={currentUserId}
+                  deviceId={globalThis.CUSIIK_DEVICE_ID}
+                  onClose={closeZizala}
+                />
+              </View>
+            ) : (
+              <Animated.View style={{ flex: 1, opacity: ratingOpacity }}>
+                <Pressable
+                  style={styles.menuMiddleRatingBox}
+                  onPress={() => ratingUnlocked && setRatingModalVisible(true)}
+                  disabled={!ratingUnlocked}
+                >
+                  <Text style={styles.ratingBoxTitle}>
+                    {ratingUnlocked ? 'Hodnocení (odemčeno)' : 'Hodnocení (zamčeno)'}
+                  </Text>
 
-                {RATING_STATS.map((stat) => (
-                  <RatingSlider key={stat.key} label={stat.label} value={stat.value} locked={!ratingUnlocked} />
-                ))}
+                  {RATING_STATS.map((stat) => (
+                    <RatingSlider key={stat.key} label={stat.label} value={stat.value} locked={!ratingUnlocked} />
+                  ))}
 
-                <View style={ratingUnlocked ? styles.ratingSubmitButton : styles.ratingSubmitDisabledButton}>
-                  <Text style={styles.ratingSubmitDisabledIcon}>{ratingUnlocked ? '✎' : '🔒'}</Text>
-                  <Text style={styles.ratingSubmitDisabledText}>{ratingUnlocked ? 'Vyplnit a odeslat' : 'Odeslat'}</Text>
-                </View>
-              </Pressable>
+                  <View style={ratingUnlocked ? styles.ratingSubmitButton : styles.ratingSubmitDisabledButton}>
+                    <Text style={styles.ratingSubmitDisabledIcon}>{ratingUnlocked ? '✎' : '🔒'}</Text>
+                    <Text style={styles.ratingSubmitDisabledText}>{ratingUnlocked ? 'Vyplnit a odeslat' : 'Odeslat'}</Text>
+                  </View>
+                </Pressable>
+              </Animated.View>
+            )}
             </View>
-
+            
             <ChatButtonPulseWrapper active={isAdminOnline} style={styles.chatButtonRight}>
               <Pressable
                 disabled={isAvatarLocked}

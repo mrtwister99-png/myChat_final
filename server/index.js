@@ -1115,6 +1115,7 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
   state.chats = {};
   state.mutedUsers = {};
   state.secretMutedUsers = {};
+  state.specialPins = {};
   state.userPinsById = {};
   state.userProfilesById = {};
   state.kickedRoomUserIds = {};
@@ -1125,6 +1126,7 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
   // jinak by se stare chaty vratily a srazily s novymi ID od 1
   if (supabase) {
     fireAndForget(supabase.from('messages').delete().neq('id', ''), 'hard reset messages');
+    fireAndForget(supabase.from('special_pins').delete().neq('user_id', ''), 'hard reset special pins');
     fireAndForget(
       supabase.from('admin_config').upsert({ key: 'user_profiles', value: '{}' }, { onConflict: 'key' }),
       'hard reset profily'
