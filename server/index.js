@@ -91,6 +91,7 @@ const state = {
   // POVINNE POTVRZENI: room PIN vyzaduje schvaleni adminem - kazdy vstup musi cekat
   pendingRoomApprovals: {},
   approvedRoomDevices: {},
+  trustedDeviceIds: {},
 };
 
 const APPROVAL_EXPIRY_MS = 5 * 60 * 1000; // 5 minut na zadani PINu po schvaleni
@@ -110,8 +111,9 @@ setInterval(() => {
       }
     }
   });
-  Object.entries(state.approvedRoomDevices || {}).forEach(([key, expiresAt]) => {
-    if (Number(expiresAt) < now) {
+  Object.entries(state.approvedRoomDevices || {}).forEach(([key, entry]) => {
+    const exp = typeof entry === 'object'? entry.expiresAt : entry;
+    if (Number(exp) < now) {
       delete state.approvedRoomDevices[key];
     }
   });
@@ -875,9 +877,9 @@ const ensureChatForUser = (user) => {
   }
 };
 
-const createUserForSocket = (socket) => {
+const createUserForSocket = (socket, proposedName = null) => {
   const userId = String(state.nextUserNumber);
-  const userName = pickRandomUserName();
+  const userName = proposedName &&!isPlaceholderUserName(proposedName)? proposedName : pickRandomUserName();
 
   state.nextUserNumber += 1;
 
@@ -1109,7 +1111,9 @@ const kickUser = (userId, reason = 'Byl jsi vyhozen z roomky.') => {
   }
 
   rememberUserProfile(user);
-  const specialPin = state.userPinsById[cleanUserId] || null;
+  const specialPin = state.userPinsById[cleanUserId] || state.specialPins[cleanUserId] || null;
+  const binding = state.deviceByUserId[cleanUserId];
+  const deviceIdStr = typeof binding === 'object'? binding.deviceId : binding;
 
   io.to(`user:${cleanUserId}`).emit('user:kicked', {
     userId: cleanUserId,
@@ -1118,15 +1122,20 @@ const kickUser = (userId, reason = 'Byl jsi vyhozen z roomky.') => {
     specialPin,
   });
 
-  state.users = state.users.filter((item) => item.id !== cleanUserId);
+  state.users = state.users.filter((item) => item.id!== cleanUserId);
 
-  // vykopnuty uz se nesmi "vratit" pres client:ready
+  // vykopnuty uz se nesmi \"vratit\" pres client:ready a smazeme mu duveryhodnost
   delete state.deviceByUserId[cleanUserId];
   delete state.mutedUsers[cleanUserId];
   delete state.secretMutedUsers[cleanUserId];
+  if (deviceIdStr) {
+    delete state.trustedDeviceIds[deviceIdStr];
+    delete state.approvedRoomDevices[deviceIdStr];
+  }
 
   if (!specialPin) {
     delete state.userPinsById[cleanUserId];
+    delete state.specialPins[cleanUserId];
   }
 
   emitState();
@@ -1137,7 +1146,7 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
     reason,
   });
 
-   io.to('admins').emit('room:hardReset',  {
+   io.to('admins').emit('room:hardReset', {
     reason,
     timestamp: Date.now(),
   });
@@ -1151,6 +1160,9 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
   state.kickedRoomUserIds = {};
   state.nextUserNumber = 1;
   state.deviceByUserId = {};
+  state.pendingRoomApprovals = {};
+  state.approvedRoomDevices = {};
+  state.trustedDeviceIds = {};
 
   // FIX: hard reset musi smazat i to, co se po restartu obnovuje z DB,
   // jinak by se stare chaty vratily a srazily s novymi ID od 1
@@ -1381,18 +1393,23 @@ io.on('connection', (socket) => {
     const isRoomPinLogin = pinDecision.kind === 'user';
 
         // POVINNÉ POTVRZENÍ: uživatel po zadání hesla NESMÍ rovnou do místnosti, musí čekat na potvrzení adminem
+    // Po prvním schválení už trvale důvěryhodný
     if (isRoomPinLogin &&!isSpecialPinLogin) {
       const effectiveDeviceId = cleanDeviceId || cleanDeviceFingerprint || socket.id;
       const approvalKey = effectiveDeviceId;
-      const approvedUntil = state.approvedRoomDevices[approvalKey] || state.approvedRoomDevices[cleanDeviceId] || state.approvedRoomDevices[socket.id] || 0;
+      const isTrusted = isTrustedDevice || state.trustedDeviceIds[approvalKey] || state.trustedDeviceIds[cleanDeviceId] || state.trustedDeviceIds[socket.id];
+      const approvedEntry = state.approvedRoomDevices[approvalKey] || state.approvedRoomDevices[cleanDeviceId] || state.approvedRoomDevices[socket.id];
+      const approvedUntil = typeof approvedEntry === 'object'? approvedEntry.expiresAt : (approvedEntry || 0);
       const isRecentlyApproved = approvedUntil > Date.now();
 
-      if (!isRecentlyApproved) {
+      if (!isTrusted &&!isRecentlyApproved) {
+        const proposedName = pickRandomUserName();
         state.pendingRoomApprovals[approvalKey] = {
           deviceId: effectiveDeviceId,
           fingerprint: cleanDeviceFingerprint || cleanDeviceId || effectiveDeviceId,
           model: cleanDeviceModel || 'Neznámé zařízení',
-          name: cleanChosenName,
+          name: proposedName,
+          proposedName: proposedName,
           ip: currentIp,
           time: Date.now(),
           socketId: socket.id,
@@ -1422,7 +1439,8 @@ io.on('connection', (socket) => {
           deviceId: effectiveDeviceId,
           fingerprint: cleanDeviceFingerprint || cleanDeviceId || effectiveDeviceId,
           model: cleanDeviceModel || 'Neznámé zařízení',
-          name: cleanChosenName,
+          name: proposedName,
+          proposedName: proposedName,
           ip: currentIp,
           time: new Date().toISOString(),
           socketId: socket.id,
@@ -1447,10 +1465,17 @@ io.on('connection', (socket) => {
         });
         return;
       } else {
+        if (approvedEntry && typeof approvedEntry === 'object' && approvedEntry.name) {
+          socket.data.proposedName = approvedEntry.name;
+        } else if (state.pendingRoomApprovals[approvalKey]?.proposedName) {
+          socket.data.proposedName = state.pendingRoomApprovals[approvalKey].proposedName;
+        }
+        state.trustedDeviceIds[approvalKey] = true;
+        if (cleanDeviceId) state.trustedDeviceIds[cleanDeviceId] = true;
+        state.trustedDeviceIds[socket.id] = true;
         delete state.approvedRoomDevices[approvalKey];
         delete state.approvedRoomDevices[cleanDeviceId];
         delete state.approvedRoomDevices[socket.id];
-        delete state.pendingRoomApprovals[approvalKey];
       }
     }
 
@@ -1579,8 +1604,16 @@ io.on('connection', (socket) => {
         }
       }
 
-      const user = createUserForSocket(socket);
+      const effectiveForName = cleanDeviceId || cleanDeviceFingerprint || socket.id;
+      const approvedForName = state.approvedRoomDevices[effectiveForName] || state.approvedRoomDevices[cleanDeviceId] || state.approvedRoomDevices[socket.id];
+      const pendingForName = state.pendingRoomApprovals[effectiveForName] || state.pendingRoomApprovals[cleanDeviceId] || state.pendingRoomApprovals[socket.id];
+      const proposedName = socket.data.proposedName || (typeof approvedForName === 'object'? approvedForName.name : null) || pendingForName?.proposedName || pendingForName?.name || null;
+      const user = createUserForSocket(socket, proposedName);
       socket.data.lastUserId = user.id;
+      delete state.pendingRoomApprovals[effectiveForName];
+      delete state.pendingRoomApprovals[cleanDeviceId];
+      delete state.pendingRoomApprovals[socket.id];
+      delete socket.data.proposedName;
 
       socket.emit('auth:success', {
         role: 'user',
@@ -1758,23 +1791,34 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // povol vstup na 5 minut - jednorázové schválení pro povinné potvrzení
-    state.approvedRoomDevices[cleanDeviceId] = Date.now() + 5 * 60 * 1000;
     const pending = state.pendingRoomApprovals[cleanDeviceId];
-    delete state.pendingRoomApprovals[cleanDeviceId];
+    const proposedName = pending?.proposedName || pending?.name || null;
+
+    // 5 minut na zadání PINu + trvale důvěryhodný po vstupu
+    state.approvedRoomDevices[cleanDeviceId] = { expiresAt: Date.now() + APPROVAL_EXPIRY_MS, name: proposedName };
+    state.trustedDeviceIds[cleanDeviceId] = true;
     if (pending?.originalDeviceId) {
-      delete state.pendingRoomApprovals[pending.originalDeviceId];
-      state.approvedRoomDevices[pending.originalDeviceId] = Date.now() + 5 * 60 * 1000;
+      state.trustedDeviceIds[pending.originalDeviceId] = true;
+      state.approvedRoomDevices[pending.originalDeviceId] = { expiresAt: Date.now() + APPROVAL_EXPIRY_MS, name: proposedName };
+    }
+    if (pending?.socketId) {
+      state.trustedDeviceIds[pending.socketId] = true;
     }
 
     if (supabase) {
       try {
-        await supabase.from('trusted_devices').update({
+        await supabase.from('trusted_devices').upsert({
+          device_id: cleanDeviceId,
+          device_fingerprint: pending?.fingerprint || cleanDeviceId,
+          device_model: pending?.model || null,
+          temp_name: proposedName || 'Pavel',
+          first_ip: pending?.ip || null,
+          current_ip: pending?.ip || null,
           is_trusted: true,
           is_pending: false,
           badge: 'DŮVĚRYHODNÝ',
           last_seen: new Date().toISOString(),
-        }).eq('device_id', cleanDeviceId);
+        }, { onConflict: 'device_id' });
       } catch (error) {
         console.log('trusted_devices approve preskocen:', error?.message || error);
       }
@@ -2469,7 +2513,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('admin:kickUser', ({ userId, newPin }) => {
-    if (socket.data.role !== 'admin') {
+    if (socket.data.role!== 'admin') {
       return;
     }
 
@@ -2481,11 +2525,16 @@ io.on('connection', (socket) => {
     }
 
     const targetPin = cleanPin.length === 5
-      ? cleanPin
+     ? cleanPin
       : String(crypto.randomInt(10000, 100000));
     state.userPinsById[cleanUserId] = targetPin;
+    state.specialPins[cleanUserId] = targetPin;
 
-    kickUser(cleanUserId, `Byl jsi vyhozen adminem z roomky. Tvůj PIN je ${targetPin}.`);
+    if (supabase) {
+      fireAndForget(supabase.from('special_pins').upsert({ user_id: cleanUserId, pin: targetPin }, { onConflict: 'user_id' }), 'kick special_pins upsert');
+    }
+
+    kickUser(cleanUserId, `Byl jsi vyhozen adminem z roomky. Tvůj kick PIN je ${targetPin}.`);
   });
 
     socket.on('admin:muteUser', ({ userId, milliseconds }) => {

@@ -1,7 +1,4 @@
-// Zizala.js - Žížala game - samostatný soubor
-// Umísti do: src/components/Zizala.js
-// Použití v UzivatelPin.js: import ZizalaGame from '../components/Zizala'
-
+// Zizala.js - Žížala game - upraveno dle požadavku
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -16,28 +13,25 @@ import {
 import { createClient } from '@supabase/supabase-js';
 
 const BOARD_COLS = 15;
-const BOARD_ROWS = 20;
-const CELL = 18;
-const GAP = 2;
-const SPEED_START = 180;
-const SPEED_STEP = 3;
+const BOARD_ROWS = 15;
+const SPEED_START = 200;
+const SPEED_STEP = 4;
 const POINTS_PER_FOOD = 10;
 
 const COLORS = {
-  head: '#FF1493', // nejvíce růžová - hlava
-  body1: '#FF69B4',
-  body2: '#FFB6C1',
-  tail: '#FFD6E7',
-  food: '#39FF14',
-  foodInner: '#8AFF8A',
-  bg: '#0A0A0A',
-  gridLine: '#151515',
-  wall: '#1A1A1A',
-  text: '#FFFFFF',
-  dim: '#888888',
+  head: '#2f9e44',
+  body1: '#40c057',
+  body2: '#8ce99a',
+  tail: '#d3f9d8',
+  food: '#ff0000',
+  foodInner: '#ff6b6b',
+  bg: '#0a0a0a',
+  boardBg: '#111',
+  text: '#000',
+  dim: '#666',
+  countdown: '#ff3b30',
 };
 
-// Supabase client pro high score - použije EXPO_PUBLIC_ proměnné, fallback na prázdno
 let supabase = null;
 try {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -58,25 +52,26 @@ const getRandomFood = (snake) => {
   return pos;
 };
 
-const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef }) => {
+const ZizalaGame = ({ onClose, userId, deviceId }) => {
   const [snake, setSnake] = useState([
-    { x: 7, y: 10 },
-    { x: 6, y: 10 },
-    { x: 5, y: 10 },
+    { x: 7, y: 7 },
+    { x: 6, y: 7 },
+    { x: 5, y: 7 },
   ]);
-  const [food, setFood] = useState(() => getRandomFood([{ x: 7, y: 10 }, { x: 6, y: 10 }, { x: 5, y: 10 }]));
-  const [dir, setDir] = useState({ x: 1, y: 0 }); // doprava
+  const [food, setFood] = useState(() => getRandomFood([{ x: 7, y: 7 }, { x: 6, y: 7 }, { x: 5, y: 7 }]));
+  const [dir, setDir] = useState({ x: 1, y: 0 });
   const dirRef = useRef({ x: 1, y: 0 });
   const [score, setScore] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [gameOver, setGameOver] = useState(false);
+  const [countdown, setCountdown] = useState(null); // 5..0
   const [nick, setNick] = useState(['', '', '']);
   const [highScores, setHighScores] = useState([]);
   const [speed, setSpeed] = useState(SPEED_START);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const loopRef = useRef(null);
+  const countdownRef = useRef(null);
   const inputRefs = useRef([]);
-
   const nextDirRef = useRef({ x: 1, y: 0 });
 
   useEffect(() => {
@@ -84,14 +79,16 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
   }, [dir]);
 
   useEffect(() => {
-    // fade in board
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 300,
       useNativeDriver: true,
     }).start();
     fetchScores();
-    return () => clearInterval(loopRef.current);
+    return () => {
+      clearInterval(loopRef.current);
+      clearInterval(countdownRef.current);
+    };
   }, []);
 
   const fetchScores = async () => {
@@ -107,11 +104,11 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
     } catch {}
   };
 
-  const resetGame = () => {
+  const resetGameState = () => {
     const startSnake = [
-      { x: 7, y: 10 },
-      { x: 6, y: 10 },
-      { x: 5, y: 10 },
+      { x: 7, y: 7 },
+      { x: 6, y: 7 },
+      { x: 5, y: 7 },
     ];
     setSnake(startSnake);
     setFood(getRandomFood(startSnake));
@@ -121,11 +118,27 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
     setScore(0);
     setSpeed(SPEED_START);
     setGameOver(false);
-    setIsPlaying(true);
   };
 
-  const startGame = () => {
-    resetGame();
+  const startCountdown = () => {
+    resetGameState();
+    setIsPlaying(false);
+    setGameOver(false);
+    setCountdown(5);
+    clearInterval(loopRef.current);
+    clearInterval(countdownRef.current);
+    countdownRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          clearInterval(countdownRef.current);
+          setCountdown(null);
+          setIsPlaying(true);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
   };
 
   const move = useCallback(() => {
@@ -134,14 +147,12 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
       const newDir = nextDirRef.current;
       const newHead = { x: head.x + newDir.x, y: head.y + newDir.y };
 
-      // zeď = konec
       if (newHead.x < 0 || newHead.x >= BOARD_COLS || newHead.y < 0 || newHead.y >= BOARD_ROWS) {
         setIsPlaying(false);
         setGameOver(true);
         clearInterval(loopRef.current);
         return prevSnake;
       }
-      // sebe = konec
       if (prevSnake.some((s) => s.x === newHead.x && s.y === newHead.y)) {
         setIsPlaying(false);
         setGameOver(true);
@@ -151,13 +162,11 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
 
       const newSnake = [newHead, ...prevSnake];
 
-      // jídlo?
       if (newHead.x === food.x && newHead.y === food.y) {
         setScore((s) => s + POINTS_PER_FOOD);
         setSpeed((sp) => Math.max(70, sp - SPEED_STEP));
         setFood(getRandomFood(newSnake));
-        // neodebíráme ocas = roste
-        return newSnake;
+        return newSnake; // +1 ctverecek
       } else {
         newSnake.pop();
         return newSnake;
@@ -174,17 +183,10 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
 
   const changeDir = (newDir) => {
     if (!isPlaying) return;
-    // zákaz otočit se o 180°
     if (newDir.x === -dirRef.current.x && newDir.y === -dirRef.current.y) return;
     nextDirRef.current = newDir;
     setDir(newDir);
   };
-
-  useEffect(() => {
-    if (onDirRef) {
-      onDirRef.current = changeDir;
-    }
-  }, [isPlaying, onDirRef]);
 
   const handleNickChange = (index, val) => {
     const clean = val.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-1);
@@ -213,25 +215,16 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
         if (error) throw error;
       }
       await fetchScores();
-      Alert.alert('Uloženo', `${finalNick} - ${score} bodů v high score!`);
+      Alert.alert('Uloženo', `${finalNick} - ${score} bodů!`);
       setNick(['', '', '']);
       setGameOver(false);
-      // po uložení může zavřít nebo znovu hrát
     } catch (e) {
-      Alert.alert('Chyba ukládání', e?.message || 'Nepodařilo se uložit');
+      Alert.alert('Chyba', e?.message || 'Nepodařilo se uložit');
     }
   };
 
-  const getCellColor = (x, y, index) => {
-    if (index === 0) return COLORS.head; // hlava nejvíce růžová
-    if (index === 1) return COLORS.body1;
-    if (index === 2) return COLORS.body2;
-    return COLORS.tail;
-  };
-
   const isSnakeCell = (x, y) => {
-    const idx = snake.findIndex((s) => s.x === x && s.y === y);
-    return idx;
+    return snake.findIndex((s) => s.x === x && s.y === y);
   };
 
   return (
@@ -257,32 +250,35 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
                     key={`${col}-${row}`}
                     style={[
                       styles.cell,
-                      isSnake
-                        ? { backgroundColor: getCellColor(col, row, snakeIdx), borderColor: snakeIdx === 0 ? '#FFF' : 'transparent' }
-                        : { backgroundColor: COLORS.bg },
+                      isSnake ? { backgroundColor: snakeIdx === 0 ? COLORS.head : snakeIdx === 1 ? COLORS.body1 : COLORS.body2 } : { backgroundColor: COLORS.boardBg },
                       isFood && styles.foodCell,
                     ]}
                   >
                     {isFood && <View style={styles.foodInner} />}
-                    {isSnake && snakeIdx === 0 && <View style={styles.headDot} />}
                   </View>
                 );
               })}
             </View>
           ))}
         </View>
+        {countdown !== null && (
+          <View style={styles.countdownOverlay}>
+            <Text style={styles.countdownText}>{countdown}</Text>
+            <Text style={styles.countdownLabel}>START ZA</Text>
+          </View>
+        )}
       </View>
 
-      {!isPlaying && !gameOver && (
-        <TouchableOpacity style={styles.startBtn} onPress={startGame}>
-          <Text style={styles.startBtnText}>HRÁT ŽÍŽALU</Text>
+      {!isPlaying && !gameOver && countdown === null && (
+        <TouchableOpacity style={styles.startBtn} onPress={startCountdown}>
+          <Text style={styles.startBtnText}>HRÁT</Text>
         </TouchableOpacity>
       )}
 
       {gameOver && (
         <View style={styles.gameOverBox}>
           <Text style={styles.gameOverTitle}>KONEC!</Text>
-          <Text style={styles.gameOverScore}>Skóre: {score}</Text>
+          <Text style={styles.gameOverScore}>Skóre: {score} | Čtverečků: {snake.length}</Text>
           <Text style={styles.nickPrompt}>Zadej přezdívku _ _ _</Text>
           <View style={styles.nickRow}>
             {[0, 1, 2].map((i) => (
@@ -304,39 +300,38 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
             <TouchableOpacity style={[styles.btn, styles.btnSave]} onPress={saveScore}>
               <Text style={styles.btnText}>ULOŽIT DO HIGH SCORE</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.btn, styles.btnAgain]} onPress={resetGame}>
+            <TouchableOpacity style={[styles.btn, styles.btnAgain]} onPress={startCountdown}>
               <Text style={styles.btnText}>HRÁT ZNOVU</Text>
             </TouchableOpacity>
-            {onClose && (
-              <TouchableOpacity style={[styles.btn, styles.btnClose]} onPress={onClose}>
-                <Text style={styles.btnText}>ZAVŘÍT</Text>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
       )}
 
-      {isPlaying && !hideControls && (
-        <View style={styles.controls}>
-          <View style={styles.controlsRow}>
-            <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: 0, y: -1 })}>
-              <Text style={styles.arrowText}>▲</Text>
-            </TouchableOpacity>
+      {(isPlaying || countdown !== null) && (
+        <View style={styles.controlsPanel}>
+          <Text style={styles.controlsTitle}>OVLÁDÁNÍ - panel hodnocení</Text>
+          <View style={styles.controls}>
+            <View style={styles.controlsRow}>
+              <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: 0, y: -1 })}>
+                <Text style={styles.arrowText}>▲</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.controlsRow}>
+              <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: -1, y: 0 })}>
+                <Text style={styles.arrowText}>◀</Text>
+              </TouchableOpacity>
+              <View style={styles.arrowSpacer} />
+              <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: 1, y: 0 })}>
+                <Text style={styles.arrowText}>▶</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.controlsRow}>
+              <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: 0, y: 1 })}>
+                <Text style={styles.arrowText}>▼</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={styles.controlsRow}>
-            <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: -1, y: 0 })}>
-              <Text style={styles.arrowText}>◀</Text>
-            </TouchableOpacity>
-            <View style={styles.arrowSpacer} />
-            <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: 1, y: 0 })}>
-              <Text style={styles.arrowText}>▶</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.controlsRow}>
-            <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: 0, y: 1 })}>
-              <Text style={styles.arrowText}>▼</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.controlsHint}>Sbírej červená jablíčka ■ = +1 čtvereček</Text>
         </View>
       )}
 
@@ -354,116 +349,156 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
           ))
         )}
       </View>
-
-      {onClose && !isPlaying && !gameOver && (
-        <TouchableOpacity style={styles.closeLink} onPress={onClose}>
-          <Text style={styles.closeLinkText}>← Zpět do chatu</Text>
-        </TouchableOpacity>
-      )}
     </Animated.View>
   );
 };
 
+const CELL_SIZE = Dimensions.get('window').width / (BOARD_COLS + 4);
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    width: '100%',
+    backgroundColor: '#ece9d8',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 8,
     paddingHorizontal: 8,
-    borderRadius: 12,
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    width: BOARD_COLS * (CELL + GAP) + GAP,
+    width: '100%',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   title: {
-    color: COLORS.head,
-    fontSize: 22,
+    color: '#000',
+    fontSize: 18,
     fontWeight: '900',
-    letterSpacing: 3,
-    fontFamily: 'monospace',
+    letterSpacing: 2,
   },
   scoreBox: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#fffdf5',
     paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: COLORS.head,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
     alignItems: 'center',
   },
   scoreLabel: {
-    color: COLORS.dim,
-    fontSize: 10,
-    letterSpacing: 1,
+    color: '#666',
+    fontSize: 9,
+    fontWeight: '900',
   },
   scoreValue: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '900',
   },
   boardWrapper: {
+    width: '100%',
+    aspectRatio: 1,
     backgroundColor: '#000',
-    padding: GAP,
-    borderRadius: 8,
+    padding: 4,
+    borderRadius: 4,
     borderWidth: 2,
-    borderColor: '#222',
+    borderColor: '#777',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
   },
   board: {
-    backgroundColor: COLORS.bg,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#111',
   },
   row: {
+    flex: 1,
     flexDirection: 'row',
   },
   cell: {
-    width: CELL,
-    height: CELL,
-    margin: GAP / 2,
-    borderRadius: 3,
-    borderWidth: 1,
+    flex: 1,
+    margin: 1,
+    borderRadius: 2,
     justifyContent: 'center',
     alignItems: 'center',
   },
   foodCell: {
-    backgroundColor: COLORS.food,
-    borderColor: '#FFF',
-    shadowColor: COLORS.food,
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
+    backgroundColor: '#ff0000',
+    borderColor: '#fff',
+    borderWidth: 1,
   },
   foodInner: {
-    width: 8,
-    height: 8,
-    backgroundColor: COLORS.foodInner,
-    borderRadius: 4,
-  },
-  headDot: {
-    width: 4,
-    height: 4,
-    backgroundColor: '#FFF',
+    width: '60%',
+    height: '60%',
+    backgroundColor: '#ff6b6b',
     borderRadius: 2,
   },
+  countdownOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  countdownText: {
+    color: '#fff',
+    fontSize: 72,
+    fontWeight: '900',
+  },
+  countdownLabel: {
+    color: '#ff0000',
+    fontSize: 14,
+    fontWeight: '900',
+    marginTop: 8,
+    letterSpacing: 2,
+  },
   startBtn: {
-    marginTop: 16,
-    backgroundColor: COLORS.head,
-    paddingHorizontal: 28,
+    marginTop: 12,
+    backgroundColor: '#2f9e44',
+    paddingHorizontal: 32,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 4,
     borderWidth: 2,
-    borderColor: '#FFF',
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
   },
   startBtnText: {
-    color: '#FFF',
+    color: '#fff',
     fontWeight: '900',
     letterSpacing: 2,
     fontSize: 16,
   },
+  controlsPanel: {
+    marginTop: 10,
+    width: '100%',
+    backgroundColor: '#fffdf5',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    padding: 8,
+    alignItems: 'center',
+  },
+  controlsTitle: {
+    color: '#000',
+    fontSize: 10,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
   controls: {
-    marginTop: 14,
     alignItems: 'center',
   },
   controlsRow: {
@@ -473,146 +508,150 @@ const styles = StyleSheet.create({
   },
   arrowBtn: {
     width: 64,
-    height: 48,
-    backgroundColor: '#1E1E1E',
+    height: 44,
+    backgroundColor: '#ece9d8',
     borderWidth: 2,
-    borderColor: '#333',
-    borderRadius: 8,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
     justifyContent: 'center',
     alignItems: 'center',
-    margin: 4,
+    margin: 3,
   },
   arrowText: {
-    color: '#FFF',
-    fontSize: 20,
-    fontWeight: 'bold',
+    color: '#000',
+    fontSize: 18,
+    fontWeight: '900',
   },
   arrowSpacer: {
     width: 64,
-    height: 48,
-    margin: 4,
+    height: 44,
+    margin: 3,
+  },
+  controlsHint: {
+    marginTop: 6,
+    color: '#ff0000',
+    fontSize: 10,
+    fontWeight: '800',
   },
   gameOverBox: {
-    marginTop: 16,
-    backgroundColor: '#111',
+    marginTop: 12,
+    backgroundColor: '#fffdf5',
     borderWidth: 2,
-    borderColor: COLORS.head,
-    borderRadius: 12,
-    padding: 16,
-    width: BOARD_COLS * (CELL + GAP) + 16,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    padding: 12,
+    width: '100%',
     alignItems: 'center',
   },
   gameOverTitle: {
-    color: COLORS.head,
-    fontSize: 24,
+    color: '#ff0000',
+    fontSize: 20,
     fontWeight: '900',
-    letterSpacing: 2,
   },
   gameOverScore: {
-    color: '#FFF',
-    fontSize: 18,
-    marginTop: 6,
-    fontWeight: '700',
+    color: '#000',
+    fontSize: 14,
+    marginTop: 4,
+    fontWeight: '800',
   },
   nickPrompt: {
-    color: COLORS.dim,
-    marginTop: 12,
-    fontSize: 14,
-    letterSpacing: 1,
+    color: '#666',
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '800',
   },
   nickRow: {
     flexDirection: 'row',
-    marginTop: 10,
-    gap: 10,
+    marginTop: 8,
+    gap: 8,
   },
   nickInput: {
-    width: 48,
-    height: 52,
-    backgroundColor: '#000',
+    width: 44,
+    height: 48,
+    backgroundColor: '#fff',
     borderWidth: 2,
-    borderColor: COLORS.head,
-    color: '#FFF',
-    fontSize: 26,
+    borderTopColor: '#777777',
+    borderLeftColor: '#777777',
+    borderRightColor: '#ffffff',
+    borderBottomColor: '#ffffff',
+    color: '#000',
+    fontSize: 22,
     fontWeight: '900',
-    borderRadius: 6,
     textAlign: 'center',
   },
   gameOverBtns: {
     width: '100%',
-    marginTop: 14,
-    gap: 8,
+    marginTop: 12,
+    gap: 6,
   },
   btn: {
     paddingVertical: 10,
-    borderRadius: 8,
     alignItems: 'center',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
   },
   btnSave: {
-    backgroundColor: COLORS.head,
+    backgroundColor: '#2f9e44',
   },
   btnAgain: {
-    backgroundColor: '#222',
-    borderWidth: 1,
-    borderColor: '#444',
-  },
-  btnClose: {
-    backgroundColor: '#111',
+    backgroundColor: '#ece9d8',
   },
   btnText: {
-    color: '#FFF',
-    fontWeight: '800',
-    letterSpacing: 1,
-    fontSize: 13,
+    color: '#000',
+    fontWeight: '900',
+    fontSize: 12,
   },
   highScoreBox: {
-    marginTop: 18,
-    width: BOARD_COLS * (CELL + GAP) + 16,
-    backgroundColor: '#111',
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#222',
+    marginTop: 10,
+    width: '100%',
+    backgroundColor: '#fffdf5',
+    borderWidth: 2,
+    borderTopColor: '#ffffff',
+    borderLeftColor: '#ffffff',
+    borderRightColor: '#777777',
+    borderBottomColor: '#777777',
+    padding: 8,
   },
   highScoreTitle: {
-    color: COLORS.dim,
-    fontSize: 11,
-    letterSpacing: 2,
+    color: '#000',
+    fontSize: 10,
+    fontWeight: '900',
     textAlign: 'center',
     marginBottom: 6,
   },
   highScoreEmpty: {
-    color: '#555',
+    color: '#666',
     textAlign: 'center',
-    fontSize: 12,
+    fontSize: 11,
   },
   highScoreRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 3,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1A1A1A',
+    paddingVertical: 2,
   },
   highScoreRank: {
-    color: COLORS.dim,
-    width: 24,
-    fontSize: 12,
+    color: '#666',
+    width: 20,
+    fontSize: 11,
+    fontWeight: '800',
   },
   highScoreNick: {
-    color: '#FFF',
-    fontWeight: '800',
+    color: '#000',
+    fontWeight: '900',
     flex: 1,
-    letterSpacing: 1,
+    fontSize: 11,
   },
   highScorePoints: {
-    color: COLORS.head,
-    fontWeight: 'bold',
-  },
-  closeLink: {
-    marginTop: 12,
-  },
-  closeLinkText: {
-    color: COLORS.dim,
-    fontSize: 12,
+    color: '#ff0000',
+    fontWeight: '900',
+    fontSize: 11,
   },
 });
 
