@@ -638,6 +638,11 @@ const AdminPin = ({ navigation, route }) => {
     const [currentAdminPw, setCurrentAdminPw] = useState(globalThis.CUSIIK_ADMIN_PW || '');
   const [actionHistory, setActionHistory] = useState([]);
   const [actionHistoryExpanded, setActionHistoryExpanded] = useState(false);
+  const [tomobloxRequests, setTomobloxRequests] = useState([]);
+  const [recoveryRequests, setRecoveryRequests] = useState([]);
+  const [recoveryReplyRequest, setRecoveryReplyRequest] = useState(null);
+  const [recoveryReplyPin, setRecoveryReplyPin] = useState('');
+  const [recoveryReplyText, setRecoveryReplyText] = useState('');
   const [helpModalVisible, setHelpModalVisible] = useState(false);
   const [informationModalVisible, setInformationModalVisible] = useState(false);
   const [pendingDevices, setPendingDevices] = useState([]);
@@ -811,6 +816,10 @@ const AdminPin = ({ navigation, route }) => {
         setUserRatings(serverState.userRatings);
       }
 
+      if (Array.isArray(serverState?.recoveryRequests)) {
+        setRecoveryRequests(serverState.recoveryRequests.filter((item) => item.status === 'pending'));
+      }
+
       if (serverState?.adminProfile) {
         const normalizedAdminProfile = {
           icon: normalizeAdminIcon(serverState.adminProfile.icon || 'admin'),
@@ -930,6 +939,23 @@ const AdminPin = ({ navigation, route }) => {
       }
     };
 
+    const handleTomobloxInfo = (payload = {}) => {
+      if (!payload.userId) {
+        return;
+      }
+
+      setTomobloxRequests((current) => [
+        payload,
+        ...current.filter((item) => String(item.userId) !== String(payload.userId)),
+      ]);
+    };
+
+    const handleRecoveryRequest = (request = {}) => {
+      if (request.id) {
+        setRecoveryRequests((current) => [request, ...current.filter((item) => item.id !== request.id)]);
+      }
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
@@ -946,6 +972,8 @@ const AdminPin = ({ navigation, route }) => {
     socket.on('user:ratingUpdate', handleUserRatingUpdate);
     socket.on('device:pending', handlePendingDevice);
     socket.on('admin:testUserCreated', handleTestUserCreated);
+    socket.on('user:tomobloxInfo', handleTomobloxInfo);
+    socket.on('recovery:request', handleRecoveryRequest);
 
 
     if (!socket.connected) {
@@ -978,6 +1006,8 @@ const AdminPin = ({ navigation, route }) => {
       socket.off('user:ratingUpdate', handleUserRatingUpdate);
       socket.off('device:pending', handlePendingDevice);
       socket.off('admin:testUserCreated', handleTestUserCreated);
+      socket.off('user:tomobloxInfo', handleTomobloxInfo);
+      socket.off('recovery:request', handleRecoveryRequest);
     };
   }, []);
 
@@ -1799,6 +1829,34 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
     setPendingDevices((current) => current.filter((item) => item.deviceId !== device.deviceId));
   };
 
+  const openRecoveryReply = (request) => {
+    setRecoveryReplyRequest(request);
+    setRecoveryReplyPin('');
+    setRecoveryReplyText('');
+  };
+
+  const closeRecoveryReply = () => {
+    setRecoveryReplyRequest(null);
+    setRecoveryReplyPin('');
+    setRecoveryReplyText('');
+  };
+
+  const sendRecoveryReply = () => {
+    const cleanPin = recoveryReplyPin.replace(/[^0-9]/g, '').slice(0, 5);
+    if (!recoveryReplyRequest || cleanPin.length !== 5 || !recoveryReplyText.trim()) {
+      return;
+    }
+
+    socket.emit('admin:approveRecoveryRequest', {
+      requestId: recoveryReplyRequest.id,
+      userId: recoveryReplyRequest.user_id || recoveryReplyRequest.userId || '',
+      pin: cleanPin,
+      responseText: recoveryReplyText.trim(),
+    });
+    setRecoveryRequests((current) => current.filter((item) => item.id !== recoveryReplyRequest.id));
+    closeRecoveryReply();
+  };
+
   // cislo na ikonce appky = soucet neprectenych od vsech uzivatelu
   // (secret mute se nepocita, stejne jako v seznamu)
   useEffect(() => {
@@ -1866,6 +1924,11 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                     <Animated.View style={[styles.pendingBadge, { transform: [{ scale: pendingBadgePulse }] }] }>
                       <Text style={styles.pendingBadgeText}>{pendingDevices.length}</Text>
                     </Animated.View>
+                  ) : null}
+                  {recoveryRequests.length > 0 ? (
+                    <View style={styles.recoveryBadge}>
+                      <Text style={styles.pendingBadgeText}>+{recoveryRequests.length}</Text>
+                    </View>
                   ) : null}
                 </Pressable>
               </View>
@@ -2095,6 +2158,30 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
               ]}
               onPress={() => setActionHistoryExpanded((prev) => !prev)}
             >
+                      {tomobloxRequests.length > 0 ? (
+                        <View style={styles.tomobloxActionHeader}>
+                          <Text style={styles.tomobloxActionBadge}>+{tomobloxRequests.length}</Text>
+                          <Text style={styles.tomobloxActionTitle}>TomoBlox info</Text>
+                        </View>
+                      ) : null}
+                      {tomobloxRequests.map((request) => (
+                        <View key={`${request.userId}-${request.createdAt}`} style={styles.tomobloxActionRow}>
+                          <View style={styles.tomobloxActionTextBox}>
+                            <Text style={styles.tomobloxActionUser}>{request.userName || 'Uživatel'}</Text>
+                            <Text style={styles.actionHistoryItem}>
+                              {request.boxes ? `Bedny: ${request.boxes}` : ''}
+                              {request.boxes && request.coins ? ' | ' : ''}
+                              {request.coins ? `Coins: ${request.coins}` : ''}
+                            </Text>
+                          </View>
+                          <Pressable
+                            style={styles.tomobloxActionExit}
+                            onPress={() => setTomobloxRequests((current) => current.filter((item) => item !== request))}
+                          >
+                            <Image source={EXIT_ICON} style={styles.tomobloxActionExitIcon} resizeMode="contain" />
+                          </Pressable>
+                        </View>
+                      ))}
               <Text style={styles.actionText}>
                 {actionHistory.length > 0
                   ? actionHistory[0]
@@ -3529,7 +3616,77 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                     </View>
                   </View>
                 ))}
+                {recoveryRequests.length > 0 ? (
+                  <View style={styles.recoveryRequestsSection}>
+                    <Text style={styles.recoverySectionTitle}>Recovery žádosti</Text>
+                    {recoveryRequests.map((request) => (
+                      <Pressable
+                        key={request.id}
+                        style={styles.recoveryRequestBox}
+                        onPress={() => openRecoveryReply(request)}
+                      >
+                        <Text style={styles.settingsOptionTitle}>Zapomenutý PIN</Text>
+                        <Text style={styles.settingsOptionText}>2 slova: {request.secret_words || 'neuvedeno'}</Text>
+                        <Text style={styles.settingsOptionText}>Email: {request.recovery_email || 'neuvedeno'}</Text>
+                        <Text style={styles.settingsOptionText}>Heslo: {request.recovery_password || 'neuvedeno'}</Text>
+                        <Text style={styles.recoveryReplyHint}>Otevřít a odpovědět</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
               </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={Boolean(recoveryReplyRequest)}
+          transparent
+          animationType="fade"
+          onRequestClose={closeRecoveryReply}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalWindow}>
+              <View style={styles.modalTitleBar}>
+                <Text style={styles.modalTitleText}>Odpověď na recovery</Text>
+                <Pressable style={styles.modalCloseButton} onPress={closeRecoveryReply}>
+                  <Image source={EXIT_ICON} style={styles.modalCloseButtonIcon} resizeMode="contain" />
+                </Pressable>
+              </View>
+              <View style={styles.modalBody}>
+                <Text style={styles.settingsOptionTitle}>NOVÝ PIN:</Text>
+                <View style={styles.pinPreviewRow}>
+                  {['1', '2', '3', '4', '5'].map((_, index) => (
+                    <TextInput
+                      key={index}
+                      value={recoveryReplyPin[index] || ''}
+                      style={styles.recoveryPinInput}
+                      editable={false}
+                    />
+                  ))}
+                </View>
+                <TextInput
+                  value={recoveryReplyPin}
+                  onChangeText={(value) => setRecoveryReplyPin(value.replace(/[^0-9]/g, '').slice(0, 5))}
+                  style={styles.modalInput}
+                  placeholder="NOVÝ PIN (5 číslic)"
+                  keyboardType="number-pad"
+                  maxLength={5}
+                  secureTextEntry
+                />
+                <TextInput
+                  value={recoveryReplyText}
+                  onChangeText={setRecoveryReplyText}
+                  style={[styles.modalInput, styles.recoveryReplyInput]}
+                  placeholder="Text pro uživatele"
+                  multiline
+                  maxLength={2000}
+                  textAlignVertical="top"
+                />
+                <Pressable style={styles.modalButton} onPress={sendRecoveryReply}>
+                  <Text style={styles.modalButtonText}>Odeslat</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
         </Modal>
@@ -3766,6 +3923,70 @@ const styles = StyleSheet.create({
     color: '#3b2100',
     fontSize: 10,
     fontWeight: '900',
+  },
+
+  recoveryBadge: {
+    position: 'absolute',
+    right: -10,
+    top: 18,
+    minWidth: 28,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#8e44ad',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+
+  recoveryRequestsSection: {
+    marginTop: 12,
+    borderTopWidth: 2,
+    borderTopColor: '#8e44ad',
+    paddingTop: 10,
+  },
+
+  recoverySectionTitle: {
+    color: '#6d2d87',
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+
+  recoveryRequestBox: {
+    backgroundColor: '#f0ddfa',
+    borderWidth: 2,
+    borderColor: '#8e44ad',
+    padding: 10,
+    marginBottom: 10,
+  },
+
+  recoveryReplyHint: {
+    color: '#6d2d87',
+    fontSize: 12,
+    fontWeight: '900',
+    marginTop: 6,
+  },
+
+  pinPreviewRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+
+  recoveryPinInput: {
+    width: 38,
+    height: 42,
+    marginHorizontal: 3,
+    backgroundColor: '#ffffff',
+    color: '#000000',
+    borderWidth: 2,
+    borderColor: '#777777',
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '900',
+  },
+
+  recoveryReplyInput: {
+    height: 110,
   },
 
   pendingRequestBox: {
@@ -4521,6 +4742,7 @@ const styles = StyleSheet.create({
   },
 
     statusOptionOn: {
+      backgroundColor: '#d7ffd8',
     borderTopColor: '#9af5a8',
     borderLeftColor: '#9af5a8',
     borderRightColor: '#1d7f2c',
@@ -4528,13 +4750,69 @@ const styles = StyleSheet.create({
   },
 
   statusOptionJob: {
+    backgroundColor: '#fff0c2',
     borderTopColor: '#ffd699',
     borderLeftColor: '#ffd699',
     borderRightColor: '#a85c00',
     borderBottomColor: '#a85c00',
   },
 
+  tomobloxActionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+
+  tomobloxActionBadge: {
+    color: '#ffffff',
+    backgroundColor: '#2f9e44',
+    borderRadius: 10,
+    minWidth: 28,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    textAlign: 'center',
+    fontWeight: '900',
+    marginRight: 7,
+  },
+
+  tomobloxActionTitle: {
+    color: '#146b2e',
+    fontWeight: '900',
+  },
+
+  tomobloxActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e5ffe7',
+    borderWidth: 1,
+    borderColor: '#69b874',
+    padding: 6,
+    marginBottom: 5,
+  },
+
+  tomobloxActionTextBox: {
+    flex: 1,
+  },
+
+  tomobloxActionUser: {
+    color: '#146b2e',
+    fontWeight: '900',
+  },
+
+  tomobloxActionExit: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  tomobloxActionExitIcon: {
+    width: 20,
+    height: 20,
+  },
+
   statusOptionOff: {
+    backgroundColor: '#ffd6d6',
     borderTopColor: '#ff8a8a',
     borderLeftColor: '#ff8a8a',
     borderRightColor: '#a80000',

@@ -31,11 +31,24 @@ create table if not exists recovery_requests (
   ip text not null,
   user_id text,
   reason text not null default '',
+  secret_words text not null default '',
+  recovery_email text not null default '',
+  recovery_password text not null default '',
   status text not null default 'pending',
   created_at bigint not null,
   approved_at bigint,
-  approved_by text
+  approved_by text,
+  recover_special_pin text,
+  response_text text,
+  response_created_at bigint
 );
+
+alter table recovery_requests add column if not exists secret_words text not null default '';
+alter table recovery_requests add column if not exists recovery_email text not null default '';
+alter table recovery_requests add column if not exists recovery_password text not null default '';
+alter table recovery_requests add column if not exists recover_special_pin text;
+alter table recovery_requests add column if not exists response_text text;
+alter table recovery_requests add column if not exists response_created_at bigint;
 
 create table if not exists special_pins (
   user_id text primary key,

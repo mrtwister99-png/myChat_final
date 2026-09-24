@@ -162,7 +162,7 @@ const getPublicAdminProfile = () => {
 
 const PUSH_COOLDOWN_MS = 5 * 60 * 1000;
 
-const sendExpoPushAsync = async ({ to, title, body, data = {}, badge, channelId = 'chat-messages' }) => {
+const sendExpoPushAsync = async ({ to, title, body, data = {}, badge, channelId = 'chat-messages', sound = 'notification.caf', priority = 'high' }) => {
   if (!to) return;
   const tokens = Array.isArray(to) ? to : [to];
   if (tokens.length === 0) return;
@@ -170,7 +170,7 @@ const sendExpoPushAsync = async ({ to, title, body, data = {}, badge, channelId 
   try {
     const messages = tokens.map((token) => ({
       to: token,
-      sound: 'notification.caf',
+      ...(sound ? { sound } : {}),
       title: String(title || 'Nova zprava').slice(0, 120),
       body: String(body || '').slice(0, 240),
       data: {
@@ -178,6 +178,7 @@ const sendExpoPushAsync = async ({ to, title, body, data = {}, badge, channelId 
         action: data?.action || 'openChat',
       },
       channelId,
+      priority,
       categoryId: 'chat_reply',
       // cislo na ikonce kdyz je appka zavrena (iOS; Android pocita notifikace sam)
       ...(Number.isFinite(badge) ? { badge } : {}),
@@ -1201,6 +1202,18 @@ io.on('connection', (socket) => {
       markUserOnline(cleanLastId, socket);
       emitState();
     }
+
+    const pendingRecovery = state.recoveryRequests.find((item) =>
+      String(item.user_id || item.userId || '') === cleanLastId &&
+      item.status === 'answered' &&
+      item.response_text
+    );
+    if (pendingRecovery) {
+      socket.emit('recovery:message', {
+        requestId: pendingRecovery.id,
+        message: pendingRecovery.response_text,
+      });
+    }
   });
 
   socket.on('auth:attempt', async ({ pin, lastUserId, deviceId, deviceFingerprint, deviceModel, email, chosenName }) => {
@@ -1364,6 +1377,11 @@ io.on('connection', (socket) => {
         body: `${cleanChosenName} se chce přidat do chatu.`,
         data: { action: 'openApprovals', deviceId: cleanDeviceId },
         badge: 1,
+        ...(state.adminStatus === 'job'
+          ? { channelId: 'admin-job', sound: null, priority: 'normal' }
+          : state.adminStatus === 'off'
+            ? { channelId: 'admin-off', sound: null, priority: 'normal' }
+            : {}),
       });
 
       socket.emit('auth:waiting', {
@@ -1549,7 +1567,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('recovery:request', ({ ip, reason, userId }) => {
+  socket.on('recovery:request', ({ ip, reason, userId, secretWords, recoveryEmail, recoveryPassword }) => {
     const cleanIp = String(ip || getClientIp(socket)).trim();
     const cleanReason = String(reason || 'Žádost o obnovení přístupu').trim();
     const cleanUserId = String(userId || socket.data.userId || '').trim();
@@ -1557,9 +1575,13 @@ io.on('connection', (socket) => {
     const request = {
       id: createMessageId(),
       ip: cleanIp,
-      userId: cleanUserId || null,
+      user_id: cleanUserId || null,
       reason: cleanReason,
+      secret_words: String(secretWords || '').trim().slice(0, 200),
+      recovery_email: String(recoveryEmail || '').trim().slice(0, 160),
+      recovery_password: String(recoveryPassword || '').slice(0, 240),
       createdAt: Date.now(),
+      created_at: Date.now(),
       status: 'pending',
     };
 
@@ -1577,7 +1599,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('admin:approveRecoveryRequest', ({ requestId, pin, userId }) => {
+  socket.on('admin:approveRecoveryRequest', async ({ requestId, pin, userId, responseText }) => {
     if (socket.data.role !== 'admin') {
       return;
     }
@@ -1585,6 +1607,7 @@ io.on('connection', (socket) => {
     const cleanRequestId = String(requestId || '').trim();
     const cleanPin = normalizePin(pin);
     const cleanUserId = String(userId || '').trim();
+    const cleanResponseText = String(responseText || '').trim().slice(0, 2000);
 
     if (!cleanRequestId || cleanPin.length !== 5) {
       socket.emit('admin:error', { message: 'Neplatný obnovovací PIN.' });
@@ -1596,6 +1619,23 @@ io.on('connection', (socket) => {
       request.status = 'approved';
       request.approvedAt = Date.now();
       request.approvedBy = socket.id;
+      request.approved_at = request.approvedAt;
+      request.recover_special_pin = cleanPin;
+      request.response_text = cleanResponseText;
+      request.response_created_at = Date.now();
+      if (cleanResponseText) {
+        request.status = 'answered';
+      }
+      if (supabase) {
+        fireAndForget(supabase.from('recovery_requests').update({
+          status: request.status,
+          approved_at: request.approvedAt,
+          approved_by: socket.id,
+          recover_special_pin: cleanPin,
+          response_text: cleanResponseText,
+          response_created_at: request.response_created_at,
+        }).eq('id', cleanRequestId), 'recovery response update');
+      }
     }
 
     if (cleanUserId) {
@@ -1613,6 +1653,21 @@ io.on('connection', (socket) => {
       io.to(`user:${cleanUserId}`).emit('user:recoveryApproved', {
         specialPin: cleanPin,
       });
+      if (cleanResponseText) {
+        io.to(`user:${cleanUserId}`).emit('recovery:message', {
+          requestId: cleanRequestId,
+          message: cleanResponseText,
+        });
+        const userToken = await getPushTokenForUserId(cleanUserId);
+        if (userToken) {
+          await sendExpoPushAsync({
+            to: userToken,
+            title: 'Nové INFO od GM ! ! !',
+            body: cleanResponseText,
+            data: { action: 'recoveryMessage', requestId: cleanRequestId },
+          });
+        }
+      }
     }
 
     io.to('admins').emit('recovery:approved', {
@@ -1961,20 +2016,66 @@ io.on('connection', (socket) => {
   if (cleanSender === 'user' && !state.secretMutedUsers[cleanUserId]) {
     const adminOnline = state.adminStatus === 'on'
       || [...io.sockets.adapter.rooms.get('admins') || []].length > 0;
-    if (!adminOnline) {
+    if (state.adminStatus !== 'on' || !adminOnline) {
       const adminTokens = [...state.adminPushTokens];
       if (adminTokens.length > 0) {
         const senderName = user?.name || `Uzivatel ${cleanUserId}`;
+        const adminNotificationMode = state.adminStatus === 'job'
+          ? { channelId: 'admin-job', sound: null, priority: 'normal' }
+          : state.adminStatus === 'off'
+            ? { channelId: 'admin-off', sound: null, priority: 'normal' }
+            : {};
         await sendExpoPushAsync({
           to: adminTokens,
           title: `Nova zprava od ${senderName}`,
           body: trimmedText.slice(0, 120),
           data: { userId: cleanUserId, action: 'openChat', role: 'admin' },
+          ...adminNotificationMode,
         });
       }
     }
   }
 });
+
+  socket.on('user:tomobloxInfo', async ({ boxes, coins } = {}) => {
+    if (socket.data.role !== 'user' || !socket.data.userId) {
+      return;
+    }
+
+    const cleanBoxes = String(boxes ?? '').trim().slice(0, 80);
+    const cleanCoins = String(coins ?? '').trim().slice(0, 80);
+    if (!cleanBoxes && !cleanCoins) {
+      return;
+    }
+
+    const user = getUserById(String(socket.data.userId));
+    const payload = {
+      userId: String(socket.data.userId),
+      userName: user?.name || 'Uživatel',
+      boxes: cleanBoxes,
+      coins: cleanCoins,
+      createdAt: Date.now(),
+    };
+
+    io.to('admins').emit('user:tomobloxInfo', payload);
+
+    const adminTokens = [...state.adminPushTokens];
+    if (adminTokens.length > 0) {
+      const adminNotificationMode = state.adminStatus === 'job'
+        ? { channelId: 'admin-job', sound: null, priority: 'normal' }
+        : state.adminStatus === 'off'
+          ? { channelId: 'admin-off', sound: null, priority: 'normal' }
+          : {};
+      await sendExpoPushAsync({
+        to: adminTokens,
+        title: 'Nové TomoBlox info',
+        body: `${payload.userName} poslal informace o bednách/coinech.`,
+        data: { action: 'tomobloxInfo', userId: payload.userId },
+        badge: 1,
+        ...adminNotificationMode,
+      });
+    }
+  });
 
   socket.on('admin:setDestructiveMode', ({ enabled }) => {
     if (socket.data.role !== 'admin') {

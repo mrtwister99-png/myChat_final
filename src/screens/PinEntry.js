@@ -72,10 +72,37 @@ const PinEntry = ({ navigation }) => {
   const [deviceId, setDeviceId] = useState('');
   const [pinAttempts, setPinAttempts] = useState(0);
   const [pinBlockedUntil, setPinBlockedUntil] = useState(0);
+  const [recoveryModalVisible, setRecoveryModalVisible] = useState(false);
+  const [recoveryWords, setRecoveryWords] = useState('');
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryMessage, setRecoveryMessage] = useState('');
 
   const pinAttemptsRef = useRef(0);
   const pinBlockedUntilRef = useRef(0);
   const pendingAuthRef = useRef(null);
+
+  const openRecoveryModal = () => {
+    setRecoveryModalVisible(true);
+    setRecoveryMessage('');
+  };
+
+  const submitRecoveryRequest = () => {
+    if (!recoveryWords.trim() || !recoveryEmail.trim() || !recoveryPassword) {
+      setRecoveryMessage('Vyplň 2 slova, nový email a heslo k emailu.');
+      return;
+    }
+
+    socket.emit('recovery:request', {
+      userId: globalThis.CUSIIK_LAST_USER_ID || null,
+      secretWords: recoveryWords.trim(),
+      recoveryEmail: recoveryEmail.trim(),
+      recoveryPassword,
+      reason: 'Zapomenutý PIN',
+    });
+    setRecoveryMessage('Žádost byla odeslána adminovi.');
+    setRecoveryModalVisible(false);
+  };
 
   const getServerStatusType = (value) => {
     const normalized = String(value || '').toLowerCase();
@@ -275,9 +302,20 @@ const PinEntry = ({ navigation }) => {
         savePinAttemptState(MAX_PIN_ATTEMPTS, blockedUntil);
       }
 
-      setErrorText(payload?.message || 'Špatný PIN.');
-      playInAppMessageSound();
-      shakeWindow();
+      if (payload?.code === 'PIN_BLOCKED') {
+        setErrorText('Příliš mnoho chybných PINů.');
+        openRecoveryModal();
+        return;
+      }
+
+      handleWrongPin();
+      if (pinAttemptsRef.current >= MAX_PIN_ATTEMPTS) openRecoveryModal();
+    };
+    const handleRecoveryMessage = ({ message } = {}) => {
+      if (message) {
+        setRecoveryMessage(String(message));
+        setRecoveryModalVisible(true);
+      }
     };
     const handleAuthWaiting = (payload) => {
       setIsCheckingPin(false);
@@ -353,6 +391,7 @@ const PinEntry = ({ navigation }) => {
     socket.on('user:kicked', handleUserKicked);
     socket.on('room:kicked', handleRoomKicked);
     socket.on('admin:verifySetupAnswer:result', handleVerifySetupAnswer);
+    socket.on('recovery:message', handleRecoveryMessage);
 
     if (socket.connected) setServerStatusText('Server online'); else socket.connect();
 
@@ -368,6 +407,7 @@ const PinEntry = ({ navigation }) => {
       socket.off('user:kicked', handleUserKicked);
       socket.off('room:kicked', handleRoomKicked);
       socket.off('admin:verifySetupAnswer:result', handleVerifySetupAnswer);
+      socket.off('recovery:message', handleRecoveryMessage);
     };
   }, [navigation]);
 
@@ -387,6 +427,9 @@ const PinEntry = ({ navigation }) => {
 
       setPinAttempts(pinAttemptsRef.current);
       setPinBlockedUntil(pinBlockedUntilRef.current);
+      if (pinAttemptsRef.current >= MAX_PIN_ATTEMPTS) {
+        setRecoveryModalVisible(true);
+      }
       globalThis.CUSIIK_ADMIN_SETUP_COMPLETE = setupDone === 'true';
     } catch {}
   };
@@ -902,6 +945,69 @@ const PinEntry = ({ navigation }) => {
                   </Pressable>
                 </>
               ) : null}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={recoveryModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRecoveryModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalWindow}>
+            <View style={styles.modalTitleBar}>
+              <Text style={styles.modalTitleText}>Recovery</Text>
+              <Pressable style={styles.modalCloseButton} onPress={() => setRecoveryModalVisible(false)}>
+                <Text style={styles.modalCloseButtonText}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.modalBody}>
+              {recoveryMessage ? (
+                <>
+                  <Text style={styles.modalMessage}>{recoveryMessage}</Text>
+                  <Pressable style={[styles.xpButton, { marginTop: 14 }]} onPress={() => setRecoveryModalVisible(false)}>
+                    <Text style={styles.xpButtonText}>OK</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.modalQuestionTitle}>Zapomenutý PIN</Text>
+                  <Text style={styles.modalLabel}>Kontrolní 2 slova</Text>
+                  <TextInput
+                    value={recoveryWords}
+                    onChangeText={setRecoveryWords}
+                    placeholder="2 slova"
+                    style={styles.modalInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TextInput
+                    value={recoveryEmail}
+                    onChangeText={setRecoveryEmail}
+                    placeholder="Nový email"
+                    style={styles.modalInput}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TextInput
+                    value={recoveryPassword}
+                    onChangeText={setRecoveryPassword}
+                    placeholder="Heslo k novému emailu"
+                    style={styles.modalInput}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {recoveryMessage ? <Text style={styles.errorText}>{recoveryMessage}</Text> : null}
+                  <Pressable style={[styles.xpButton, { marginTop: 4 }]} onPress={submitRecoveryRequest}>
+                    <Text style={styles.xpButtonText}>Odeslat adminovi</Text>
+                  </Pressable>
+                </>
+              )}
             </View>
           </View>
         </View>

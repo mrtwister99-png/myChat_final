@@ -96,6 +96,14 @@ const App = () => {
             }, 1200);
             return;
           }
+          if (lastData?.action === 'recoveryMessage') {
+            setTimeout(() => {
+              if (navigationRef.isReady()) {
+                navigationRef.navigate('PinEntry');
+              }
+            }, 1200);
+            return;
+          }
         if (lastData?.userId && lastData?.action === 'openChat') {
           setTimeout(() => {
             if (navigationRef.isReady()) {
@@ -122,6 +130,10 @@ const App = () => {
       }
       if (data?.action === 'openRatings' && navigationRef.isReady()) {
         navigationRef.navigate('AdminPin', { openRatings: Date.now() });
+        return;
+      }
+      if (data?.action === 'recoveryMessage' && navigationRef.isReady()) {
+        navigationRef.navigate('PinEntry', { recoveryMessage: Date.now() });
         return;
       }
 

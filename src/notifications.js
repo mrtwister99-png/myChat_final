@@ -44,6 +44,20 @@ export async function registerNotificationCategories() {
       sound: 'notification.caf',
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
+    await Notifications.setNotificationChannelAsync('admin-job', {
+      name: 'Admin: zaneprázdněný',
+      importance: Notifications.AndroidImportance.DEFAULT,
+      vibrationPattern: [0, 250],
+      sound: null,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+    await Notifications.setNotificationChannelAsync('admin-off', {
+      name: 'Admin: offline',
+      importance: Notifications.AndroidImportance.DEFAULT,
+      vibrationPattern: [0],
+      sound: null,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
   }
 
   await Notifications.setNotificationCategoryAsync('chat_reply', [

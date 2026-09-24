@@ -497,6 +497,10 @@ const UzivatelPin=({ navigation,route })=>{
     }
   }, [route?.params?.openChat]);
   const [iconModalVisible, setIconModalVisible] = useState(false);
+  const [tomobloxModalVisible, setTomobloxModalVisible] = useState(false);
+  const [tomobloxBoxes, setTomobloxBoxes] = useState('');
+  const [tomobloxCoins, setTomobloxCoins] = useState('');
+  const [tomobloxError, setTomobloxError] = useState('');
   const [helpModalVisible, setHelpModalVisible] = useState(false);
   const [helperMenuVisible, setHelperMenuVisible] = useState(false);
   const [announcement, setAnnouncement] = useState(null);
@@ -787,6 +791,26 @@ const UzivatelPin=({ navigation,route })=>{
       inputRef.current?.focus();
     }, 140);
     scrollToBottom(false);
+  };
+
+  const openTomobloxInfo = () => {
+    setTomobloxError('');
+    setTomobloxModalVisible(true);
+  };
+
+  const submitTomobloxInfo = () => {
+    const boxes = tomobloxBoxes.trim();
+    const coins = tomobloxCoins.trim();
+    if (!boxes && !coins) {
+      setTomobloxError('Vyplň TomoBlox bedny nebo TomoBlox Coins.');
+      return;
+    }
+
+    socket.emit('user:tomobloxInfo', { boxes, coins });
+    setTomobloxBoxes('');
+    setTomobloxCoins('');
+    setTomobloxError('');
+    setTomobloxModalVisible(false);
   };
 
   const getMuteUntil = () => {
@@ -2023,16 +2047,19 @@ const UzivatelPin=({ navigation,route })=>{
               </Pressable>
             </View>
 
-            <ChatButtonPulseWrapper active={isAdminOnline}>
+            <ChatButtonPulseWrapper active={isAdminOnline} style={styles.chatButtonRight}>
               <Pressable
                 disabled={isAvatarLocked}
                 style={({ pressed }) => [
                   styles.grayPanelChatButton,
                   styles.grayPanelChatButtonOutlined,
+                  effectiveAdminStatus === 'on' && styles.grayPanelChatButtonOnline,
+                  effectiveAdminStatus === 'job' && styles.grayPanelChatButtonJob,
+                  effectiveAdminStatus === 'off' && styles.grayPanelChatButtonOff,
                   isAvatarLocked && styles.grayPanelChatButtonDisabled,
                   pressed && !isAvatarLocked && styles.sendButtonPressed,
                 ]}
-                onPress={openChat}
+                onPress={effectiveAdminStatus === 'on' ? openChat : openTomobloxInfo}
               >
                 <AvatarIcon
                   source={getIconSource(adminProfile?.icon || 'admin')}
@@ -2040,9 +2067,13 @@ const UzivatelPin=({ navigation,route })=>{
                   style={styles.chatGmIcon}
                 />
                 <View style={styles.chatGmTextBox}>
-                  <Text style={styles.grayPanelChatButtonText}>Chatuj s GM</Text>
+                  <Text style={styles.grayPanelChatButtonText}>
+                    {effectiveAdminStatus === 'on' ? 'Chatuj s GM' : 'Zanech info pro GM'}
+                  </Text>
                   <Text style={styles.chatGmNameText}>Game master</Text>
-                  <Text style={styles.chatGmStatusText}>{getAdminStatusText()}</Text>
+                  <Text style={styles.chatGmStatusText}>
+                    {effectiveAdminStatus === 'job' ? '(GM je zaneprázdněný - doba odpovědi je neurčitá)' : getAdminStatusText()}
+                  </Text>
                 </View>
                 {unreadCount > 0 ? (
                   <View style={styles.chatNewMessageBadge}>
@@ -2060,6 +2091,55 @@ const UzivatelPin=({ navigation,route })=>{
               </Text>
             </View>
           </Animated.View>
+
+          <Modal
+            visible={tomobloxModalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setTomobloxModalVisible(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalWindow}>
+                <View style={styles.modalTitleBar}>
+                  <Text style={styles.modalTitleText}>Info pro GM</Text>
+                  <Pressable
+                    style={styles.modalCloseButtonPlain}
+                    onPress={() => setTomobloxModalVisible(false)}
+                  >
+                    <Image source={EXIT_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
+                  </Pressable>
+                </View>
+                <View style={styles.modalBody}>
+                  <Text style={styles.modalLabel}>Vyplň alespoň jednu hodnotu:</Text>
+                  <TextInput
+                    value={tomobloxBoxes}
+                    onChangeText={setTomobloxBoxes}
+                    style={styles.modalInput}
+                    placeholder="TomoBlox beden"
+                    placeholderTextColor="#666666"
+                    keyboardType="numeric"
+                  />
+                  <TextInput
+                    value={tomobloxCoins}
+                    onChangeText={setTomobloxCoins}
+                    style={styles.modalInput}
+                    placeholder="TomoBlox Coins"
+                    placeholderTextColor="#666666"
+                    keyboardType="numeric"
+                  />
+                  {tomobloxError ? <Text style={styles.errorText}>{tomobloxError}</Text> : null}
+                  <View style={styles.modalButtons}>
+                    <Pressable style={styles.modalButton} onPress={submitTomobloxInfo}>
+                      <Text style={styles.modalButtonText}>OK</Text>
+                    </Pressable>
+                    <Pressable style={styles.modalButton} onPress={() => setTomobloxModalVisible(false)}>
+                      <Text style={styles.modalButtonText}>Zrušit</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </Modal>
 
           <Modal
 
@@ -2876,6 +2956,26 @@ const styles = StyleSheet.create({
     borderLeftColor: '#ffffff',
     borderRightColor: '#777777',
     borderBottomColor: '#777777',
+  },
+
+  chatButtonRight: {
+    alignSelf: 'flex-end',
+    width: '94%',
+  },
+
+  grayPanelChatButtonOnline: {
+    borderColor: '#2f9e44',
+    backgroundColor: '#d7ffd8',
+  },
+
+  grayPanelChatButtonJob: {
+    borderColor: '#c87800',
+    backgroundColor: '#fff0c2',
+  },
+
+  grayPanelChatButtonOff: {
+    borderColor: '#b42323',
+    backgroundColor: '#ffd6d6',
   },
 
   grayPanelChatButtonDisabled: {
