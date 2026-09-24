@@ -1,0 +1,65 @@
+{
+  "expo": {
+    "name": "blbEchat",
+    "slug": "blbechat",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yourneme.blbechat",
+      "googleServicesFile": "./GoogleService-Info.plist"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": false,
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "com.yourneme.blbechat",
+      "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0058d8",
+          "sounds": [
+            "./assets/sounds/notification.caf"
+          ]
+        }
+      ],
+      "expo-audio",
+      "expo-asset",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "firebase": {
+        "apiKey": "AIzaSyBlEWRALbwSqhNORMRApPlnnEm4Z4IJUbY",
+        "authDomain": "blbechat.firebaseapp.com",
+        "projectId": "blbechat",
+        "messagingSenderId": "84618065889",
+        "appId": "1:84618065889:web:aa59b94195dc86a67404a0"
+      },
+      "eas": {
+        "projectId": "e52b8afd-4144-4a3c-9200-5e0f7ba0fb40"
+      }
+    }
+  }
+}
