@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, BackHandler, Dimensions, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Keyboard, Modal } from 'react-native';
+import { Animated, BackHandler, Dimensions, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Keyboard, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -60,6 +60,9 @@ const PinEntry = ({ navigation }) => {
   const [errorText, setErrorText] = useState('');
   const [serverStatusText, setServerStatusText] = useState('Připojuji server...');
   const [authWaiting, setAuthWaiting] = useState(false);
+  const [waitingModalVisible, setWaitingModalVisible] = useState(false);
+  const [approvedModalVisible, setApprovedModalVisible] = useState(false);
+  const [rejectedModalVisible, setRejectedModalVisible] = useState(false);
   const [isCheckingPin, setIsCheckingPin] = useState(false);
   const [adminSetupVisible, setAdminSetupVisible] = useState(false);
   const [adminSetupStep, setAdminSetupStep] = useState('question');
@@ -321,7 +324,7 @@ const PinEntry = ({ navigation }) => {
       setIsCheckingPin(false);
       setAuthWaiting(true);
       setServerStatusText(payload?.message || 'Čekám na schválení adminem...');
-      Alert.alert('Čekejte na potvrzení od GM.', 'Vaše zařízení čeká na schválení administrátorem.');
+      setWaitingModalVisible(true);
     };
     const handleDeviceApproved = ({ deviceId: approvedDeviceId } = {}) => {
       // uzivatel ceka na schvaleni - prijmeme i kdyz deviceId je effective (fingerprint/socket)
@@ -334,13 +337,16 @@ const PinEntry = ({ navigation }) => {
       setIsCheckingPin(false);
       setPin('');
       setServerStatusText('Schváleno GM - zadejte PIN do 5 minut');
-      Alert.alert('Vstup povolen', 'Game master povolil váš vstup. Zadejte Pin a vstupte :)\n\nMáte 5 minut na zadání PINu.');
+      setWaitingModalVisible(false);
+      setApprovedModalVisible(true);
     };
     const handleDeviceRejected = () => {
       pendingAuthRef.current = null;
       setAuthWaiting(false);
       setIsCheckingPin(false);
+      setWaitingModalVisible(false);
       setErrorText('Zařízení bylo zamítnuto adminem.');
+      setRejectedModalVisible(true);
     };
     const handleUserKicked = async ({ userId, preserveIdentity, specialPin } = {}) => {
       const shouldPreserveIdentity = Boolean(preserveIdentity && userId);
@@ -1014,6 +1020,63 @@ const PinEntry = ({ navigation }) => {
                   </Pressable>
                 </>
               )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={waitingModalVisible} transparent animationType="fade" onRequestClose={() => setWaitingModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalWindow}>
+            <View style={styles.modalTitleBar}>
+              <Text style={styles.modalTitleText}>Čekejte na potvrzení od GM</Text>
+              <Pressable style={styles.modalCloseButton} onPress={() => setWaitingModalVisible(false)}>
+                <Text style={styles.modalCloseButtonText}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.modalBody}>
+              <Text style={styles.modalMessage}>Vaše zařízení čeká na schválení administrátorem.</Text>
+              <Pressable style={[styles.xpButton, { marginTop: 14 }]} onPress={() => setWaitingModalVisible(false)}>
+                <Text style={styles.xpButtonText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={approvedModalVisible} transparent animationType="fade" onRequestClose={() => setApprovedModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalWindow}>
+            <View style={styles.modalTitleBar}>
+              <Text style={styles.modalTitleText}>Vstup povolen</Text>
+              <Pressable style={styles.modalCloseButton} onPress={() => setApprovedModalVisible(false)}>
+                <Text style={styles.modalCloseButtonText}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.modalBody}>
+              <Text style={styles.modalMessage}>Game master povolil váš vstup. Zadejte PIN a vstupte :){'\n\n'}Máte 5 minut na zadání PINu.</Text>
+              <Pressable style={[styles.xpButton, { marginTop: 14 }]} onPress={() => setApprovedModalVisible(false)}>
+                <Text style={styles.xpButtonText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={rejectedModalVisible} transparent animationType="fade" onRequestClose={() => setRejectedModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalWindow}>
+            <View style={styles.modalTitleBar}>
+              <Text style={styles.modalTitleText}>Zamítnuto</Text>
+              <Pressable style={styles.modalCloseButton} onPress={() => setRejectedModalVisible(false)}>
+                <Text style={styles.modalCloseButtonText}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.modalBody}>
+              <Text style={styles.modalMessage}>Zařízení bylo zamítnuto adminem.</Text>
+              <Pressable style={[styles.xpButton, { marginTop: 14 }]} onPress={() => setRejectedModalVisible(false)}>
+                <Text style={styles.xpButtonText}>OK</Text>
+              </Pressable>
             </View>
           </View>
         </View>

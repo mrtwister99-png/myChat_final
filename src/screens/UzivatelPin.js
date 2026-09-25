@@ -177,7 +177,7 @@ const HAHA_ICON = require('../assets/egg/hahanachytal.png');
 const LOGO_ICON = require('../assets/icons/logoxp.png');
 const BACK_ICON = require('../assets/icons/backsipka.png');
 
-import SipkaSvg from '../assets/icons/sipkq.svg';
+const SIPKA_IMG = require('../assets/icons/sipkq.png');
 const HELP_ICON = require('../assets/icons/otaznik.png');
 const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
 const EXIT_ICON = require('../assets/icons/exit.png');
@@ -426,18 +426,7 @@ const RATING_STATS = [
   { key: 'stesti', label: 'Štěstí', value: 5 },
 ];
 
-const TOP_SCORE_ROWS = [
-  'Tomáš',
-  'Pavel',
-  'Lucie',
-  'Martin',
-  'Karel',
-  'Jana',
-  'David',
-  'Eva',
-  'Milan',
-  'Ondřej',
-];
+const TOP_SCORE_ROWS = [];
 
 const RatingSlider = ({ label, value, locked }) => {
   const percent = Math.max(0, Math.min(100, ((value - 1) / 9) * 100));
@@ -1220,12 +1209,21 @@ const closeZizala = () => {
     };
 
     const handleRoomKicked = async () => {
-      await AsyncStorage.multiRemove(['lastUserId', 'lastUserName']);
+      try {
+        await AsyncStorage.clear();
+      } catch {}
       globalThis.CUSIIK_LAST_USER_ID = null;
       globalThis.CUSIIK_CURRENT_USER_ID = null;
       globalThis.CUSIIK_CURRENT_ROLE = null;
       globalThis.CUSIIK_SPECIAL_RELOGIN_PIN = null;
-      navigation.replace('PinEntry');
+      globalThis.CUSIIK_USER_PIN = null;
+      if (socket.connected) {
+        socket.disconnect();
+      }
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'PinEntry' }],
+      });
     };
 
     // FIX: po reconnectu nam server muze vratit jine userId -> prevezmeme ho,
@@ -1771,9 +1769,6 @@ const closeZizala = () => {
         <View style={styles.titleStatusAnimWrap}>
     <StatusAnimation status={effectiveAdminStatus} size={22} />
   </View>
-
-  {isAdminOnline? <Text style={styles.liveText}>ŽIVĚ!</Text> : null}
-
 </View>
 
                <View style={styles.windowButtons}>
@@ -2057,13 +2052,17 @@ const closeZizala = () => {
                     <Text style={styles.topScoreTitle}>TOP SCORE</Text>
 
                     <View style={styles.topScoreList}>
-                      {TOP_SCORE_ROWS.map((name, index) => (
-                        <View key={`${name}-${index}`} style={styles.topScoreRow}>
-                          <Text style={styles.topScoreRank}>{`${index + 1}.`}</Text>
-                          <Text style={styles.topScoreName}>{name}</Text>
-                          <Text style={styles.topScoreValue}>{String(1000 - index * 73).padStart(4, '0')}</Text>
-                        </View>
-                      ))}
+                      {TOP_SCORE_ROWS.length === 0 ? (
+                        <Text style={styles.wallEmptyText}>Zatím žádné záznamy</Text>
+                      ) : (
+                        TOP_SCORE_ROWS.map((item, index) => (
+                          <View key={`${item.name || index}-${index}`} style={styles.topScoreRow}>
+                            <Text style={styles.topScoreRank}>{`${index + 1}.`}</Text>
+                            <Text style={styles.topScoreName}>{item.name}</Text>
+                            <Text style={styles.topScoreValue}>{item.score}</Text>
+                          </View>
+                        ))
+                      )}
                     </View>
 
                     <Pressable
@@ -2140,11 +2139,22 @@ const closeZizala = () => {
                 ]}
                 onPress={effectiveAdminStatus === 'on' ? openChat : openTomobloxInfo}
               >
-                <AvatarIcon
-                  source={getIconSource(adminProfile?.icon || 'admin')}
-                  iconKey={normalizeAdminIcon(adminProfile?.icon || 'admin')}
-                  style={styles.chatGmIconSquare}
-                />
+                <View style={[
+                  styles.chatGmIconSquareBox,
+                  {
+                    backgroundColor: adminProfile?.bgColour || '#ece9d8',
+                    borderTopColor: adminProfile?.silhouetteColour || '#0b3d91',
+                    borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
+                    borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
+                    borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
+                  }
+                ]}>
+                  <AvatarIcon
+                    source={getIconSource(adminProfile?.icon || 'admin')}
+                    iconKey={normalizeAdminIcon(adminProfile?.icon || 'admin')}
+                    style={styles.chatGmIconSquare}
+                  />
+                </View>
                 <View style={styles.chatGmTextBox}>
                   <Text style={styles.chatGmNameText}>Game master</Text>
                      <Text style={[styles.chatGmStatusText, { color: effectiveAdminStatus === 'on'? '#2f9e44' : effectiveAdminStatus === 'job'? '#c87800' : '#b42323' }]}>
@@ -2166,11 +2176,11 @@ const closeZizala = () => {
                       },
                     ]}
                   />
-                  <SipkaSvg
-                    width={28}
-                    height={28}
-                    style={styles.arrowSvgIcon}
-                  />
+                  <Image
+                      source={SIPKA_IMG}
+                      style={styles.arrowSvgIcon}
+                      resizeMode="contain"
+                    />
                 </View>
                 {unreadCount > 0 ? (
                   <View style={styles.chatNewMessageBadge}>
@@ -3118,14 +3128,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
 
-  chatGmIconSquare: {
-    width: 36,
-    height: 36,
+  chatGmIconSquareBox: {
+    width: 40,
+    height: 40,
     marginRight: 10,
     borderWidth: 2,
-    borderColor: '#000000',
-    borderRadius: 0,
-    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  chatGmIconSquare: {
+    width: 32,
+    height: 32,
   },
 
   arrowStatusIndicatorWrap: {

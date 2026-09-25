@@ -12,8 +12,8 @@ import {
 } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
-const BOARD_COLS = 15;
-const BOARD_ROWS = 15;
+const BOARD_COLS = 12;
+const BOARD_ROWS = 22;
 const SPEED_START = 200;
 const SPEED_STEP = 4;
 const POINTS_PER_FOOD = 10;
@@ -25,8 +25,9 @@ const COLORS = {
   tail: '#ffc0cb',
   food: '#e60000',
   foodInner: '#ff4d4d',
-  bg: '#0a0a0a',
-  boardBg: '#1a1a1a',
+  bg: '#1a1a1a',
+  boardBg: '#222222',
+  borderColor: '#333333',
   text: '#000',
   dim: '#666',
   countdown: '#ff3b30',
@@ -215,9 +216,9 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
   };
 
  const saveScore = async () => {
-    const finalNick = nick.join('').trim();
-    if (finalNick.length!== 3) {
-      Alert.alert('Chyba', 'Vyplň 3 písmena - _ _ _');
+    const finalNick = nick.join('').trim().toUpperCase();
+    if (finalNick.length !== 3 || !/^[A-Z0-9]{3}$/.test(finalNick)) {
+      Alert.alert('Chyba', 'Přezdívka musí mít přesně 3 znaky (např. ABC)');
       return;
     }
     try {
@@ -262,37 +263,22 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
         <View style={styles.board}>
           {Array.from({ length: BOARD_ROWS }).map((_, row) => (
             <View key={row} style={styles.row}>
-              {Array.from({ length: BOARD_COLS }).map((_, col) => {
+             {Array.from({ length: BOARD_COLS }).map((_, col) => {
                 const snakeIdx = isSnakeCell(col, row);
                 const isFood = food.x === col && food.y === row;
                 const isSnake = snakeIdx !== -1;
                 const isHead = snakeIdx === 0;
-
-                let headRotation = '0deg';
-                if (dir.x === 1) headRotation = '90deg';
-                else if (dir.x === -1) headRotation = '270deg';
-                else if (dir.y === 1) headRotation = '180deg';
-                else if (dir.y === -1) headRotation = '0deg';
 
                 return (
                   <View
                     key={`${col}-${row}`}
                     style={[
                       styles.cell,
-                      isSnake
-                        ? { backgroundColor: isHead ? COLORS.head : snakeIdx % 2 === 0 ? COLORS.body1 : COLORS.body2 }
-                        : { backgroundColor: COLORS.boardBg },
+                      isSnake && !isHead && { backgroundColor: COLORS.head },
+                      isSnake && isHead && styles.headCell,
                       isFood && styles.foodCell,
                     ]}
                   >
-                    {isHead && (
-                      <View
-                        style={[
-                          styles.headTriangle,
-                          { transform: [{ rotate: headRotation }] },
-                        ]}
-                      />
-                    )}
                     {isFood && <View style={styles.foodInner} />}
                   </View>
                 );
@@ -374,21 +360,7 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
         </View>
       )}
 
-      <View style={styles.highScoreBox}>
-        <Text style={styles.highScoreTitle}>HIGH SCORE TOP 10</Text>
-        {highScores.length === 0 ? (
-          <Text style={styles.highScoreEmpty}>Zatím nikdo - buď první!</Text>
-        ) : (
-          highScores.map((item, idx) => (
-            <View key={idx} style={styles.highScoreRow}>
-              <Text style={styles.highScoreRank}>{idx + 1}.</Text>
-              <Text style={styles.highScoreNick}>{item.nickname}</Text>
-              <Text style={styles.highScorePoints}>{item.score}</Text>
-            </View>
-          ))
-        )}
-      </View>
-    </Animated.View>
+      </Animated.View>
   );
 };
 
@@ -443,22 +415,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
   },
-  boardWrapper: {
+ boardWrapper: {
+    flex: 1,
     width: '100%',
-    aspectRatio: 1,
-    backgroundColor: '#000',
-    padding: 4,
-    borderRadius: 4,
+    backgroundColor: '#1a1a1a',
+    padding: 2,
     borderWidth: 2,
-    borderColor: '#777',
+    borderColor: '#444444',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+    marginBottom: 0,
   },
   board: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#111',
+    backgroundColor: '#222222',
   },
   row: {
     flex: 1,
@@ -468,34 +440,25 @@ const styles = StyleSheet.create({
     flex: 1,
     margin: 0.5,
     borderWidth: 0.5,
-    borderColor: '#2a2a2a',
-    borderRadius: 0,
+    borderColor: '#333333',
+    backgroundColor: '#222222',
     justifyContent: 'center',
     alignItems: 'center',
+    aspectRatio: 1,
   },
-  headTriangle: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderBottomWidth: 10,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: '#ffffff',
+  headCell: {
+    backgroundColor: '#ff69b4',
+    borderRadius: 50,
   },
   foodCell: {
-    backgroundColor: '#cc0000',
-    borderColor: '#ff6666',
-    borderWidth: 1,
-    borderRadius: 8,
+    backgroundColor: '#e60000',
+    borderRadius: 50,
   },
   foodInner: {
-    width: '50%',
-    height: '50%',
-    backgroundColor: '#ff4d4d',
-    borderRadius: 4,
+    width: '40%',
+    height: '40%',
+    backgroundColor: '#ff8888',
+    borderRadius: 50,
   },
   countdownOverlay: {
     ...StyleSheet.absoluteFillObject,

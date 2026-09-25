@@ -940,13 +940,17 @@ const AdminPin = ({ navigation, route }) => {
     };
 
     const handleTomobloxInfo = (payload = {}) => {
-      if (!payload.userId) {
-        return;
-      }
+      const cleanDeviceId = String(payload.deviceId || payload.userId || Date.now()).trim();
 
-      setTomobloxRequests((current) => [
-        payload,
-        ...current.filter((item) => String(item.userId) !== String(payload.userId)),
+      setPendingDevices((current) => [
+        ...current.filter((item) => item.deviceId !== cleanDeviceId),
+        {
+          deviceId: cleanDeviceId,
+          name: payload.userName || 'Uživatel',
+          fingerprint: payload.boxes ? `Bedny: ${payload.boxes}` : 'Info od uživatele',
+          model: payload.coins ? `Coins: ${payload.coins}` : 'Nespecifikováno',
+          isInfo: true,
+        },
       ]);
     };
 
@@ -1921,8 +1925,8 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                 <Pressable style={styles.closePressable} onPress={() => setInformationModalVisible(true)}>
                   <Image source={EXIT_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                   {pendingDevices.length > 0 ? (
-                    <Animated.View style={[styles.pendingBadge, { transform: [{ scale: pendingBadgePulse }] }] }>
-                      <Text style={styles.pendingBadgeText}>{pendingDevices.length}</Text>
+                    <Animated.View style={[styles.pendingBadge, styles.pendingBadgeGreen, { transform: [{ scale: pendingBadgePulse }] }] }>
+                      <Text style={styles.pendingBadgeGreenText}>+{pendingDevices.length}</Text>
                     </Animated.View>
                   ) : null}
                   {recoveryRequests.length > 0 ? (
@@ -3917,6 +3921,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     transform: [{ scale: 1 }],
+  },
+
+  pendingBadgeGreen: {
+    backgroundColor: '#2bba36',
+    borderColor: '#ffffff',
+  },
+
+  pendingBadgeGreenText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '900',
   },
 
   pendingBadgeText: {

@@ -1313,6 +1313,15 @@ io.on('connection', (socket) => {
         at: new Date().toISOString(),
       });
 
+      // BEZPECNOST: honeypot musi probudit i zavrenou appku - zivy socket event nestaci
+      await sendExpoPushAsync({
+        to: Array.from(state.adminPushTokens),
+        title: '⚠️ Pokus o vstup (honeypot)',
+        body: `Někdo zkusil falešný PIN. IP: ${currentIp}`,
+        data: { action: 'honeyAlert', ip: currentIp },
+        badge: 1,
+      });
+
       socket.emit('auth:error', {
         code: 'INVALID_PIN',
         message: 'Špatný PIN.',
@@ -1359,6 +1368,15 @@ io.on('connection', (socket) => {
       io.to('admins').emit('duress:triggered', {
         ip: currentIp,
         at: new Date().toISOString(),
+      });
+
+      // BEZPECNOST: stejne jako u honeypotu - musi to probudit i zavrenou appku
+      await sendExpoPushAsync({
+        to: Array.from(state.adminPushTokens),
+        title: '🚨 DURESS PIN aktivován',
+        body: `Zadán nouzový PIN. IP: ${currentIp}`,
+        data: { action: 'duressAlert', ip: currentIp },
+        badge: 1,
       });
 
       socket.emit('auth:error', {
