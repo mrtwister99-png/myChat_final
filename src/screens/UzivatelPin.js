@@ -176,6 +176,8 @@ const USER_ICON_SOURCES = {
 const HAHA_ICON = require('../assets/egg/hahanachytal.png');
 const LOGO_ICON = require('../assets/icons/logoxp.png');
 const BACK_ICON = require('../assets/icons/backsipka.png');
+
+import SipkaSvg from '../assets/icons/sipkq.svg';
 const HELP_ICON = require('../assets/icons/otaznik.png');
 const MINIMIZE_ICON = require('../assets/icons/minimalize.png');
 const EXIT_ICON = require('../assets/icons/exit.png');
@@ -539,6 +541,30 @@ const UzivatelPin=({ navigation,route })=>{
   const [userAvatarIcon, setUserAvatarIcon] = useState(
     normalizeAvatarIcon(globalThis.CUSIIK_USER_AVATAR_ICON || 'uzivatel')
   );
+
+  const arrowFillAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    let toValue = 0;
+    let duration = 500;
+
+    if (effectiveAdminStatus === 'on') {
+      toValue = 1; // 100% zelena
+      duration = 600;
+    } else if (effectiveAdminStatus === 'job') {
+      toValue = 0.5; // 50% oranzovo-zluta (pomalijsi)
+      duration = 1200;
+    } else {
+      toValue = 1; // 100% cervena
+      duration = 400;
+    }
+
+    Animated.timing(arrowFillAnim, {
+      toValue,
+      duration,
+      useNativeDriver: false,
+    }).start();
+  }, [effectiveAdminStatus]);
   const [isAvatarLocked, setIsAvatarLocked] = useState(
     Boolean(globalThis.CUSIIK_USER_AVATAR_LOCKED)
   );
@@ -2126,15 +2152,25 @@ const closeZizala = () => {
                   </Text>
                 </View>
                 <View style={styles.arrowStatusIndicatorWrap}>
-                  <View
+                  <Animated.View
                     style={[
                       styles.arrowStatusFill,
                       effectiveAdminStatus === 'on' && styles.arrowStatusFillOn,
                       effectiveAdminStatus === 'job' && styles.arrowStatusFillJob,
                       effectiveAdminStatus === 'off' && styles.arrowStatusFillOff,
+                      {
+                        width: arrowFillAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['0%', '100%'],
+                        }),
+                      },
                     ]}
                   />
-                  <Text style={styles.arrowStatusSymbol}>➔</Text>
+                  <SipkaSvg
+                    width={28}
+                    height={28}
+                    style={styles.arrowSvgIcon}
+                  />
                 </View>
                 {unreadCount > 0 ? (
                   <View style={styles.chatNewMessageBadge}>
@@ -3128,10 +3164,9 @@ const styles = StyleSheet.create({
     width: '100%',
   },
 
-  arrowStatusSymbol: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#000000',
+  arrowSvgIcon: {
+    width: 28,
+    height: 28,
     zIndex: 2,
   },
 
