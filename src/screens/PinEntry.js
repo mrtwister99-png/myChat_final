@@ -72,12 +72,14 @@ const PinEntry = ({ navigation }) => {
   const [adminSetupPassword, setAdminSetupPassword] = useState('');
   const [adminSetupPasswordConfirm, setAdminSetupPasswordConfirm] = useState('');
   const [isSavingAdminSetup, setIsSavingAdminSetup] = useState(false);
-  // --- ADMIN RESET via long press na minimalize ---
+  // --- ADMIN ULTRA RESET via long press na minimalize - master klíč z Railway ---
   const [adminResetVisible, setAdminResetVisible] = useState(false);
-  const [adminResetStep, setAdminResetStep] = useState('password');
+  const [adminResetStep, setAdminResetStep] = useState('ultra');
   const [adminResetPasswordInput, setAdminResetPasswordInput] = useState('');
   const [adminResetPin, setAdminResetPin] = useState('');
   const [adminResetPinConfirm, setAdminResetPinConfirm] = useState('');
+  const [adminResetUltraPin, setAdminResetUltraPin] = useState('');
+  const [adminResetUltraPw, setAdminResetUltraPw] = useState('');
   const [isSavingAdminReset, setIsSavingAdminReset] = useState(false);
   const [adminResetErrorText, setAdminResetErrorText] = useState('');
   const [deviceId, setDeviceId] = useState('');
@@ -397,6 +399,20 @@ const PinEntry = ({ navigation }) => {
       }
     };
 
+    const handleUltraResetResult = async (payload) => {
+      setIsSavingAdminReset(false);
+      if (payload?.ok) {
+        resetAdminResetState();
+        setPin('');
+        setErrorText(`ULTRA OK - admin:${payload.adminPin} user:${payload.userPin}`);
+        playInAppMessageSound();
+        setTimeout(() => inputRef.current?.focus(), 150);
+      } else {
+        setAdminResetErrorText(payload?.message || 'ULTRA reset selhal.');
+        playInAppMessageSound();
+      }
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
@@ -408,6 +424,7 @@ const PinEntry = ({ navigation }) => {
     socket.on('user:kicked', handleUserKicked);
     socket.on('room:kicked', handleRoomKicked);
     socket.on('admin:verifySetupAnswer:result', handleVerifySetupAnswer);
+    socket.on('admin:ultraReset:result', handleUltraResetResult);
     socket.on('recovery:message', handleRecoveryMessage);
 
     if (socket.connected) setServerStatusText('Server online'); else socket.connect();
@@ -424,6 +441,7 @@ const PinEntry = ({ navigation }) => {
       socket.off('user:kicked', handleUserKicked);
       socket.off('room:kicked', handleRoomKicked);
       socket.off('admin:verifySetupAnswer:result', handleVerifySetupAnswer);
+      socket.off('admin:ultraReset:result', handleUltraResetResult);
       socket.off('recovery:message', handleRecoveryMessage);
     };
   }, [navigation]);
@@ -645,86 +663,45 @@ const PinEntry = ({ navigation }) => {
 
   const resetAdminResetState = () => {
     setAdminResetVisible(false);
-    setAdminResetStep('password');
+    setAdminResetStep('ultra');
     setAdminResetPasswordInput('');
     setAdminResetPin('');
     setAdminResetPinConfirm('');
+    setAdminResetUltraPin('');
+    setAdminResetUltraPw('');
     setAdminResetErrorText('');
     setIsSavingAdminReset(false);
   };
 
   const handleMinimizeLongPress = async () => {
     Keyboard.dismiss();
-    try {
-      const storedPw = (await AsyncStorage.getItem('adminPw')) || globalThis.CUSIIK_ADMIN_PW || '';
-      if (!storedPw) {
-        setAdminResetErrorText('Heslo pro obnovu není nastaveno. Nejdřív dokonči první vstup za GM.');
-        setAdminResetStep('password');
-        setAdminResetVisible(true);
-        return;
-      }
-    } catch {}
+    if (!socket.connected) {
+      setAdminResetErrorText('Server musí být online pro ULTRA reset.');
+      setAdminResetStep('ultra');
+      setAdminResetVisible(true);
+      return;
+    }
     setAdminResetErrorText('');
-    setAdminResetPasswordInput('');
-    setAdminResetPin('');
-    setAdminResetPinConfirm('');
-    setAdminResetStep('password');
+    setAdminResetUltraPin('');
+    setAdminResetUltraPw('');
+    setAdminResetStep('ultra');
     setAdminResetVisible(true);
   };
 
-  const handleAdminResetPasswordSubmit = async () => {
-    const entered = adminResetPasswordInput.trim();
-    if (!entered) {
-      setAdminResetErrorText('Zadej heslo.');
+  const handleUltraResetSubmit = async () => {
+    const ultraPin = adminResetUltraPin.trim();
+    const ultraPw = adminResetUltraPw.trim();
+    if (!ultraPin || !ultraPw) {
+      setAdminResetErrorText('Zadej ULTRA PIN a ULTRA heslo.');
       return;
     }
-    try {
-      const storedPw = (await AsyncStorage.getItem('adminPw')) || globalThis.CUSIIK_ADMIN_PW || '';
-      if (entered === storedPw) {
-        setAdminResetErrorText('');
-        setAdminResetStep('pin');
-      } else {
-        setAdminResetErrorText('Špatné heslo pro obnovu.');
-        playInAppMessageSound();
-      }
-    } catch {
-      setAdminResetErrorText('Nepodařilo se ověřit heslo.');
-    }
-  };
-
-  const handleAdminResetPinSave = async () => {
-    if (isSavingAdminReset) return;
-    const cleanedNewPin = adminResetPin.replace(/[^0-9]/g, '').slice(0, 5);
-    const cleanedConfirmPin = adminResetPinConfirm.replace(/[^0-9]/g, '').slice(0, 5);
-
-    if (cleanedNewPin.length !== 5) {
-      setAdminResetErrorText('PIN musí mít přesně 5 číslic.');
+    if (!socket.connected) {
+      setAdminResetErrorText('Server offline.');
       return;
     }
-    if (cleanedNewPin !== cleanedConfirmPin) {
-      setAdminResetErrorText('PIN se neshoduje.');
-      return;
-    }
-
     setIsSavingAdminReset(true);
-    try {
-      globalThis.CUSIIK_ADMIN_PIN = cleanedNewPin;
-      await AsyncStorage.multiSet([
-        ['adminPin', cleanedNewPin],
-        ['adminSetupComplete', 'true'],
-      ]);
-      if (socket.connected) {
-        socket.emit('admin:setAdminPin', { pin: cleanedNewPin });
-      }
-      resetAdminResetState();
-      setPin('');
-      setErrorText('');
-      setTimeout(() => inputRef.current?.focus(), 150);
-    } catch {
-      setAdminResetErrorText('Uložení se nepodařilo. Zkus to znovu.');
-    } finally {
-      setIsSavingAdminReset(false);
-    }
+    setAdminResetErrorText('');
+    socket.emit('admin:ultraReset', { ultraPin, ultraPw });
   };
 
   const handleCloseApp = () => {
@@ -1245,11 +1222,11 @@ const PinEntry = ({ navigation }) => {
         </View>
       </Modal>
 
-      <Modal visible={adminResetVisible} transparent animationType="fade" onRequestClose={resetAdminResetState}>
+           <Modal visible={adminResetVisible} transparent animationType="fade" onRequestClose={resetAdminResetState}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalWindow}>
             <View style={styles.modalTitleBar}>
-              <Text style={styles.modalTitleText}>ADMIN RESET</Text>
+              <Text style={styles.modalTitleText}>ULTRA MASTER RESET</Text>
               <Pressable style={styles.modalCloseButton} onPress={resetAdminResetState}>
                 <Text style={styles.modalCloseButtonText}>×</Text>
               </Pressable>
@@ -1260,59 +1237,32 @@ const PinEntry = ({ navigation }) => {
                   <Text style={styles.errorText}>{adminResetErrorText}</Text>
                 </View>
               ) : null}
-
-              {adminResetStep === 'password' ? (
-                <>
-                  <Text style={styles.modalQuestionTitle}>Zadej GM heslo pro obnovu</Text>
-                  <Text style={[styles.description, { marginBottom: 12 }]}>Toto je heslo, co zadáváš při prvním vstupu za GM.</Text>
-                  <TextInput
-                    value={adminResetPasswordInput}
-                    onChangeText={setAdminResetPasswordInput}
-                    placeholder="Heslo pro obnovu"
-                    style={styles.modalInput}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    secureTextEntry
-                    autoFocus
-                  />
-                  <Pressable style={[styles.xpButton, { marginTop: 12 }]} onPress={handleAdminResetPasswordSubmit}>
-                    <Text style={styles.xpButtonText}>Potvrdit heslo</Text>
-                  </Pressable>
-                </>
-              ) : null}
-
-              {adminResetStep === 'pin' ? (
-                <>
-                  <Text style={styles.modalQuestionTitle}>Nastav nový admin PIN (2x)</Text>
-                  <TextInput
-                    value={adminResetPin}
-                    onChangeText={(value) => setAdminResetPin(value.replace(/[^0-9]/g, '').slice(0, 5))}
-                    placeholder="Nový PIN 1x"
-                    style={styles.modalInput}
-                    keyboardType="number-pad"
-                    inputMode="numeric"
-                    maxLength={5}
-                    autoFocus
-                  />
-                  <TextInput
-                    value={adminResetPinConfirm}
-                    onChangeText={(value) => setAdminResetPinConfirm(value.replace(/[^0-9]/g, '').slice(0, 5))}
-                    placeholder="Nový PIN znovu"
-                    style={styles.modalInput}
-                    keyboardType="number-pad"
-                    inputMode="numeric"
-                    maxLength={5}
-                  />
-                  <Pressable
-                    disabled={isSavingAdminReset}
-                    style={[styles.xpButton, { marginTop: 8 }, isSavingAdminReset && styles.xpButtonDisabled]}
-                    onPress={handleAdminResetPinSave}
-                  >
-                    <Text style={styles.xpButtonText}>{isSavingAdminReset ? 'Ukládám...' : 'Uložit a zavřít'}</Text>
-                  </Pressable>
-                  <Text style={[styles.infoText, { marginTop: 10 }]}>Po uložení budeš zpět na PinEntry a můžeš zadat nový PIN.</Text>
-                </>
-              ) : null}
+              <Text style={styles.modalQuestionTitle}>Zadej ULTRA PIN + ULTRA heslo z Railway</Text>
+              <Text style={[styles.description, { marginBottom: 12 }]}>Resetne USER_PIN i ADMIN_PIN na default z Variables. Permanentní v Supabase app_config.</Text>
+              <TextInput
+                value={adminResetUltraPin}
+                onChangeText={(v) => setAdminResetUltraPin(v.replace(/[^0-9]/g, '').slice(0, 10))}
+                placeholder="ULTRA PIN"
+                style={styles.modalInput}
+                keyboardType="number-pad"
+                autoFocus
+              />
+              <TextInput
+                value={adminResetUltraPw}
+                onChangeText={setAdminResetUltraPw}
+                placeholder="ULTRA heslo"
+                style={styles.modalInput}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Pressable
+                disabled={isSavingAdminReset}
+                style={[styles.xpButton, { marginTop: 12 }, isSavingAdminReset && styles.xpButtonDisabled]}
+                onPress={handleUltraResetSubmit}
+              >
+                <Text style={styles.xpButtonText}>{isSavingAdminReset ? 'Resetuji...' : 'MASTER RESET NA DEFAULT'}</Text>
+              </Pressable>
             </View>
           </View>
         </View>

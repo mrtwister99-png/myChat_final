@@ -4,7 +4,7 @@ const http = require('http');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const { supabase, loadPersistedConfig } = require('./supabase');
-const { classifyPin, getConfiguredPins, normalizePin, requiredEnv } = require('./pinRouter');
+const { classifyPin, getConfiguredPins, getUltraConfig, normalizePin, requiredEnv } = require('./pinRouter');
 
 const PORT = Number(process.env.PORT || 8080);
 const ANNOUNCEMENT_PREFIX = '[[ANNOUNCEMENT]]';
@@ -579,12 +579,26 @@ const syncActivePinsToSupabase = async () => {
   }
 
   try {
+    // user PIN zustava v active_pins (legacy), admin PIN uz POUZE v app_config
     await supabase.from('active_pins').upsert([
       { type: 'user', pin: state.userPin },
-      { type: 'admin', pin: state.adminPin },
     ], { onConflict: 'type' });
   } catch (error) {
     console.log('active_pins sync skipped:', error?.message || error);
+  }
+};
+
+const syncAdminPinToAppConfig = async () => {
+  if (!supabase) {
+    return;
+  }
+
+  try {
+    await supabase.from('app_config').upsert([
+      { key: 'admin_pin', value: state.adminPin },
+    ], { onConflict: 'key' });
+  } catch (error) {
+    console.log('app_config admin_pin sync skipped:', error?.message || error);
   }
 };
 
@@ -639,13 +653,15 @@ const hydratePersistedConfig = async () => {
 
   try {
     const persisted = await loadPersistedConfig();
-    const pinByType = Object.fromEntries(persisted.pins.map((item) => [item.type, item.pin]));
-    const configByKey = Object.fromEntries(persisted.config.map((item) => [item.key, item.value]));
+    const pinByType = Object.fromEntries((persisted.pins || []).map((item) => [item.type, item.pin]));
+    const configByKey = Object.fromEntries((persisted.config || []).map((item) => [item.key, item.value]));
+    const appConfigByKey = Object.fromEntries((persisted.appConfig || []).map((item) => [item.key, item.value]));
 
-    state.userPin = pinByType.user || state.userPin;
-    state.adminPin = pinByType.admin || state.adminPin;
-    state.adminPw = configByKey.recovery_password || state.adminPw;
-    state.adminStatus = configByKey.admin_status || state.adminStatus || 'off';
+    state.userPin = pinByType.user || appConfigByKey.user_pin || state.userPin;
+    // admin PIN pouze z app_config, fallback z active_pins pro migraci
+    state.adminPin = appConfigByKey.admin_pin || pinByType.admin || state.adminPin;
+    state.adminPw = configByKey.recovery_password || appConfigByKey.recovery_password || state.adminPw;
+    state.adminStatus = configByKey.admin_status || appConfigByKey.admin_status || state.adminStatus || 'off';
     state.activePins.user = state.userPin;
     state.activePins.admin = state.adminPin;
     state.kickedIps = Object.fromEntries(
@@ -2512,6 +2528,7 @@ io.on('connection', (socket) => {
     state.adminPin = cleanPin;
     state.activePins.admin = cleanPin;
     syncActivePinsToSupabase();
+    syncAdminPinToAppConfig();
     syncAdminConfigToSupabase();
 
     emitState();
@@ -2535,6 +2552,93 @@ io.on('connection', (socket) => {
     syncAdminConfigToSupabase();
 
     emitState();
+  });
+
+  // RESET ADMIN PINU PRES SERVER POMOCI ADMIN PW - drzeni minimalize buttonu
+  // permanentni - ulozeno do active_pins v Supabase, prezije update/reinstal
+  socket.on('admin:resetPinWithRecoveryPw', async ({ recoveryPassword, newPin }) => {
+    try {
+      const cleanPw = String(recoveryPassword || '').trim();
+      const cleanPin = normalizePin(newPin);
+
+      if (!state.adminPw) {
+        socket.emit('admin:resetPinWithRecoveryPw:result', { ok: false, message: 'Heslo pro obnovu není nastaveno na serveru. Nejdřív dokonči první vstup za GM.' });
+        return;
+      }
+
+      if (cleanPin.length !== 5) {
+        socket.emit('admin:resetPinWithRecoveryPw:result', { ok: false, message: 'Nový PIN musí mít 5 číslic.' });
+        return;
+      }
+
+      if (cleanPw !== state.adminPw) {
+        socket.emit('admin:resetPinWithRecoveryPw:result', { ok: false, message: 'Špatné heslo pro obnovu.' });
+        return;
+      }
+
+      state.adminPin = cleanPin;
+      state.activePins.admin = cleanPin;
+      await syncActivePinsToSupabase();
+      await syncAdminPinToAppConfig();
+      socket.emit('admin:resetPinWithRecoveryPw:result', { ok: true, pin: cleanPin });
+      emitState();
+      console.log(`[ADMIN RESET] PIN resetnuty pres recovery heslo. Novy PIN: ${cleanPin} IP: ${getClientIp(socket)}`);
+    } catch (e) {
+      console.log('resetPinWithRecoveryPw chyba:', e?.message || e);
+      socket.emit('admin:resetPinWithRecoveryPw:result', { ok: false, message: 'Chyba serveru při resetu.' });
+    }
+  });
+
+  // ULTRA MASTER RESET - ADMIN_ULTRA_PIN + ADMIN_ULTRA_PW z Railway Variables
+  // resetne vsechny PINy na default z ENV (USER_PIN, ADMIN_PIN)
+  socket.on('admin:ultraReset', async ({ ultraPin, ultraPw }) => {
+    try {
+      const envUltraPin = String(process.env.ADMIN_ULTRA_PIN || '').trim();
+      const envUltraPw = String(process.env.ADMIN_ULTRA_PW || '').trim();
+
+      if (!envUltraPin || !envUltraPw) {
+        socket.emit('admin:ultraReset:result', { ok: false, message: 'ULTRA credentials nejsou nastaveny na serveru. Doplň ADMIN_ULTRA_PIN a ADMIN_ULTRA_PW v Railway Variables.' });
+        return;
+      }
+
+      const cleanUltraPin = String(ultraPin || '').trim();
+      const cleanUltraPw = String(ultraPw || '').trim();
+
+      if (cleanUltraPin !== envUltraPin || cleanUltraPw !== envUltraPw) {
+        socket.emit('admin:ultraReset:result', { ok: false, message: 'Špatný ULTRA PIN nebo ULTRA heslo.' });
+        console.log(`[ULTRA RESET FAIL] IP: ${getClientIp(socket)} pokus PIN=${cleanUltraPin}`);
+        return;
+      }
+
+      const defaults = getConfiguredPins();
+      state.userPin = defaults.user;
+      state.adminPin = defaults.admin;
+      state.activePins.user = defaults.user;
+      state.activePins.admin = defaults.admin;
+
+      await syncActivePinsToSupabase();
+      await syncAdminPinToAppConfig();
+
+      if (supabase) {
+        try {
+          await supabase.from('special_pins').delete().neq('user_id', '___never___');
+          await supabase.from('kicked_ips').delete().neq('ip', '___never___');
+        } catch (e) {
+          console.log('ultra reset cleanup skipped:', e?.message || e);
+        }
+      }
+      state.specialPins = {};
+      state.userPinsById = {};
+      state.kickedIps = {};
+
+      socket.emit('admin:ultraReset:result', { ok: true, message: 'Všechny PINy resetovány na default.', userPin: state.userPin, adminPin: state.adminPin });
+      io.emit('admin:ultraReset:done', { by: socket.id, ip: getClientIp(socket) });
+      emitState();
+      console.log(`[ULTRA RESET OK] Master reset. Novy admin PIN: ${state.adminPin} IP: ${getClientIp(socket)}`);
+    } catch (e) {
+      console.log('ultraReset chyba:', e?.message || e);
+      socket.emit('admin:ultraReset:result', { ok: false, message: 'Chyba serveru při ULTRA resetu.' });
+    }
   });
 
   socket.on('admin:verifySetupAnswer', ({ answer }) => {

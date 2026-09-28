@@ -15,6 +15,11 @@ const getConfiguredPins = () => ({
   duress: requiredEnv('DURESS_PIN'),
 });
 
+const getUltraConfig = () => ({
+  pin: String(process.env.ADMIN_ULTRA_PIN || '').trim(),
+  pw: String(process.env.ADMIN_ULTRA_PW || '').trim(),
+});
+
 const normalizePin = (pin) => String(pin || '').replace(/[^0-9]/g, '').slice(0, 5);
 
 const classifyPin = (pin, activePins) => {
@@ -43,6 +48,7 @@ const classifyPin = (pin, activePins) => {
 module.exports = {
   classifyPin,
   getConfiguredPins,
+  getUltraConfig,
   normalizePin,
   requiredEnv,
 };

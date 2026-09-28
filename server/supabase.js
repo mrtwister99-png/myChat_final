@@ -35,9 +35,10 @@ const loadPersistedConfig = async () => {
     }
   };
 
-  const [pins, config, kickedIps, recoveryRequests, specialPins] = await Promise.all([
+  const [pins, config, appConfig, kickedIps, recoveryRequests, specialPins] = await Promise.all([
     safeSelect('active_pins', supabase.from('active_pins').select('type, pin')),
     safeSelect('admin_config', supabase.from('admin_config').select('key, value')),
+    safeSelect('app_config', supabase.from('app_config').select('key, value')),
     safeSelect('kicked_ips', supabase.from('kicked_ips').select('ip, reason, created_at')),
     safeSelect('recovery_requests', supabase.from('recovery_requests').select('*').order('created_at', { ascending: false }).limit(100)),
     safeSelect('special_pins', supabase.from('special_pins').select('user_id, pin')),
@@ -46,6 +47,7 @@ const loadPersistedConfig = async () => {
   return {
     pins,
     config,
+    appConfig,
     kickedIps,
     recoveryRequests,
     specialPins,
