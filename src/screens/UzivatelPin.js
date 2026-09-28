@@ -1979,12 +1979,6 @@ const closeZizala = () => {
             ) : null}
 
             <View style={styles.menuBody}>
-              <View style={styles.adminMainMessageBox}>
-                <Text style={styles.adminMainMessageText}>
-                  Sleduj status - tím zjistíš jestli ti aktuálně mohu pomoct (status je vidět nahoře v liště)
-                </Text>
-              </View>
-
             <View style={styles.menuGrayPanel}>
               <Pressable
                 style={[
@@ -2032,6 +2026,12 @@ const closeZizala = () => {
                 <Text style={styles.grayPanelSettingsButtonText}>Nastavení</Text>
               </Pressable>
             </View>
+
+              <View style={styles.adminMainMessageBox}>
+                <Text style={styles.adminMainMessageText}>
+                  Sleduj status - tím zjistíš jestli ti aktuálně mohu pomoct (status je vidět nahoře v liště)
+                </Text>
+              </View>
 
                         <View style={styles.menuMiddleSection}>
                           <View style={[styles.wallBox, showZizala && { padding: 0, flex: 1, justifyContent: 'flex-start' }]}>
@@ -2156,7 +2156,7 @@ const closeZizala = () => {
                 ]}
                 onPress={effectiveAdminStatus === 'on' || effectiveAdminStatus === 'job' ? openChat : openTomobloxInfo}
               >
-                <View style={[
+                              <View style={[
                   styles.chatGmIconSquareBox,
                   {
                     backgroundColor: adminProfile?.bgColour || '#ece9d8',
@@ -2164,13 +2164,18 @@ const closeZizala = () => {
                     borderLeftColor: adminProfile?.silhouetteColour || '#0b3d91',
                     borderRightColor: adminProfile?.silhouetteColour || '#0b3d91',
                     borderBottomColor: adminProfile?.silhouetteColour || '#0b3d91',
-                  }
+                  },
                 ]}>
                   <AvatarIcon
                     source={getIconSource(adminProfile?.icon || 'admin')}
                     iconKey={normalizeAdminIcon(adminProfile?.icon || 'admin')}
                     style={styles.chatGmIconSquare}
                   />
+                  {unreadCount > 0 ? (
+                    <View style={styles.gmIconBadgeRed}>
+                      <Text style={styles.gmIconBadgeRedText}>+{unreadCount > 9 ? '9' : unreadCount}</Text>
+                    </View>
+                  ) : null}
                 </View>
                 <View style={styles.chatGmTextBox}>
                   <Text style={styles.chatGmNameText}>Game master</Text>
@@ -3159,6 +3164,29 @@ const styles = StyleSheet.create({
     height: 32,
   },
 
+  gmIconBadgeRed: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ff0000',
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    zIndex: 10,
+  },
+
+  gmIconBadgeRedText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  
   arrowStatusIndicatorWrap: {
     width: 30,
     height: 30,
