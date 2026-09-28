@@ -593,10 +593,12 @@ const AdminPin = ({ navigation, route }) => {
   const [newUserName, setNewUserName] = useState('');
 
   const [changeModalVisible, setChangeModalVisible] = useState(false);
-  const [hardResetStep, setHardResetStep] = useState('pin'); // 'pin' | 'confirm1' | 'confirm2'
+  const [hardResetStep, setHardResetStep] = useState('pin'); // 'pin' | 'confirm1' | 'confirm2' | 'saving'
   const [newPin, setNewPin] = useState('');
   const [changeError, setChangeError] = useState('');
   const [pendingHardResetPin, setPendingHardResetPin] = useState('');
+  const [isHardResetSaving, setIsHardResetSaving] = useState(false);
+  const [hardResetWaitingForServer, setHardResetWaitingForServer] = useState(false);
   const [broadcastModalVisible, setBroadcastModalVisible] = useState(false);
   const [preparationModalVisible, setPreparationModalVisible] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
@@ -797,6 +799,24 @@ const AdminPin = ({ navigation, route }) => {
       if (serverState?.userPin) {
         setCurrentUserPin(serverState.userPin);
         globalThis.CUSIIK_USER_PIN = serverState.userPin;
+        // HARD RESET: cekame na potvrzeni noveho PINu ze serveru - pouzij global pro stale closure
+        const waitingPin = globalThis.CUSIIK_PENDING_HARD_RESET_PIN || pendingHardResetPin;
+        const isWaiting = globalThis.CUSIIK_HARD_RESET_WAITING || hardResetWaitingForServer;
+        if (isWaiting && waitingPin && serverState.userPin === waitingPin) {
+          globalThis.CUSIIK_HARD_RESET_WAITING = false;
+          globalThis.CUSIIK_PENDING_HARD_RESET_PIN = null;
+          setHardResetWaitingForServer(false);
+          setIsHardResetSaving(false);
+          clearAllLocalAdminData();
+          setReadCounts({});
+          setSecretMutedUsers({});
+          setUsers([]);
+          logAction(`HARD ROOM RESET potvrzen serverem. Nový PIN je ${waitingPin}.`);
+          setPendingHardResetPin('');
+          setHardResetStep('pin');
+          setChangeModalVisible(false);
+          setChangeError('');
+        }
       }
 
       if (serverState?.mutedUsers) {
@@ -1191,6 +1211,10 @@ const AdminPin = ({ navigation, route }) => {
     setChangeError('');
     setPendingHardResetPin('');
     setHardResetStep('pin');
+    setIsHardResetSaving(false);
+    setHardResetWaitingForServer(false);
+    globalThis.CUSIIK_PENDING_HARD_RESET_PIN = null;
+    globalThis.CUSIIK_HARD_RESET_WAITING = false;
   };
 
   const openBroadcastModal = () => {
@@ -1334,29 +1358,47 @@ const AdminPin = ({ navigation, route }) => {
       return;
     }
 
-    // FIX: modal zavřeme hned, těžké změny stavu (mazání dat) proběhnou
-    // až po dokončení fade-out animace - žádné probliknutí prázdné roomky.
-    closeChangeModal();
+    // NOVE: cekame na potvrzeni server:state s novym PINem
+    setIsHardResetSaving(true);
+    setHardResetWaitingForServer(true);
+    globalThis.CUSIIK_HARD_RESET_WAITING = true;
+    globalThis.CUSIIK_PENDING_HARD_RESET_PIN = cleanPin;
+    setHardResetStep('saving');
+    setChangeError('');
 
+    globalThis.CUSIIK_USER_PIN = cleanPin;
+    AsyncStorage.setItem('userPin', cleanPin).catch(() => {});
+
+    if (socket.connected) {
+      socket.emit('admin:setUserPin', {
+        pin: cleanPin,
+      });
+    } else {
+      setChangeError('Server offline - nelze provest reset.');
+      setIsHardResetSaving(false);
+      setHardResetWaitingForServer(false);
+      setHardResetStep('confirm2');
+      return;
+    }
+
+    // fallback timeout 8s - kdyz server nepotvrdi
     setTimeout(() => {
-      globalThis.CUSIIK_USER_PIN = cleanPin;
-      AsyncStorage.setItem('userPin', cleanPin).catch(() => {});
-      setCurrentUserPin(cleanPin);
-
-      clearAllLocalAdminData();
-      setReadCounts({});
-      setSecretMutedUsers({});
-      setUsers([]);
-
-      if (socket.connected) {
-        socket.emit('admin:setUserPin', {
-          pin: cleanPin,
-        });
+      if (hardResetWaitingForServer) {
+        // zkusime zavrit i bez potvrzeni po timeoutu, at nezamrzne
+        setHardResetWaitingForServer(false);
+        setIsHardResetSaving(false);
+        setChangeError('Server nepotvrdil nový PIN do 8s, zkousim dokoncit lokalne.');
+        clearAllLocalAdminData();
+        setReadCounts({});
+        setSecretMutedUsers({});
+        setUsers([]);
+        logAction(`HARD ROOM RESET proveden (timeout). Nový PIN je ${cleanPin}.`);
+        setChangeModalVisible(false);
+        setHardResetStep('pin');
       }
+    }, 8000);
 
-logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
-
-    }, 260);
+    logAction(`HARD ROOM RESET odeslan na server. Nový PIN je ${cleanPin} - cekam na potvrzeni...`);
   };
 
    const openAdminProfileEditor = () => {
@@ -1932,6 +1974,11 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   {recoveryRequests.length > 0 ? (
                     <View style={styles.recoveryBadge}>
                       <Text style={styles.pendingBadgeText}>+{recoveryRequests.length}</Text>
+                    </View>
+                  ) : null}
+                  {tomobloxRequests.length > 0 ? (
+                    <View style={styles.tomobloxBadge}>
+                      <Text style={styles.pendingBadgeText}>+{tomobloxRequests.length}</Text>
                     </View>
                   ) : null}
                 </Pressable>
@@ -3573,6 +3620,30 @@ logAction(`HARD ROOM RESET proveden. Nový PIN je ${cleanPin}.`);
                   </View>
                 </View>
               ) : null}
+
+              {hardResetStep === 'saving' ? (
+                <View style={styles.modalBody}>
+                  <View style={styles.warningBox}>
+                    <Text style={styles.warningText}>Odesílám nový PIN na server...</Text>
+                    <Text style={styles.warningText}>Čekám na potvrzení server:state {pendingHardResetPin || globalThis.CUSIIK_PENDING_HARD_RESET_PIN || '----'}</Text>
+                  </View>
+                  <Text style={styles.infoText}>Nezavírej aplikaci. Modal se zavře automaticky po potvrzení.</Text>
+                  {changeError ? <Text style={styles.errorText}>{changeError}</Text> : null}
+                  <View style={styles.modalButtons}>
+                    <Pressable
+                      style={({ pressed }) => [styles.modalButton, pressed && styles.xpButtonPressed]}
+                      onPress={() => {
+                        setIsHardResetSaving(false);
+                        setHardResetWaitingForServer(false);
+                        globalThis.CUSIIK_HARD_RESET_WAITING = false;
+                        setHardResetStep('confirm2');
+                      }}
+                    >
+                      <Text style={styles.modalButtonText}>Zrušit čekání</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
             </View>
           </View>
         </Modal>
@@ -3948,6 +4019,19 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     backgroundColor: '#8e44ad',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+
+  tomobloxBadge: {
+    position: 'absolute',
+    left: -10,
+    top: 18,
+    minWidth: 28,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#16a34a',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,

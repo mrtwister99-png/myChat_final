@@ -72,6 +72,14 @@ const PinEntry = ({ navigation }) => {
   const [adminSetupPassword, setAdminSetupPassword] = useState('');
   const [adminSetupPasswordConfirm, setAdminSetupPasswordConfirm] = useState('');
   const [isSavingAdminSetup, setIsSavingAdminSetup] = useState(false);
+  // --- ADMIN RESET via long press na minimalize ---
+  const [adminResetVisible, setAdminResetVisible] = useState(false);
+  const [adminResetStep, setAdminResetStep] = useState('password');
+  const [adminResetPasswordInput, setAdminResetPasswordInput] = useState('');
+  const [adminResetPin, setAdminResetPin] = useState('');
+  const [adminResetPinConfirm, setAdminResetPinConfirm] = useState('');
+  const [isSavingAdminReset, setIsSavingAdminReset] = useState(false);
+  const [adminResetErrorText, setAdminResetErrorText] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [pinAttempts, setPinAttempts] = useState(0);
   const [pinBlockedUntil, setPinBlockedUntil] = useState(0);
@@ -635,6 +643,90 @@ const PinEntry = ({ navigation }) => {
     Keyboard.dismiss();
   };
 
+  const resetAdminResetState = () => {
+    setAdminResetVisible(false);
+    setAdminResetStep('password');
+    setAdminResetPasswordInput('');
+    setAdminResetPin('');
+    setAdminResetPinConfirm('');
+    setAdminResetErrorText('');
+    setIsSavingAdminReset(false);
+  };
+
+  const handleMinimizeLongPress = async () => {
+    Keyboard.dismiss();
+    try {
+      const storedPw = (await AsyncStorage.getItem('adminPw')) || globalThis.CUSIIK_ADMIN_PW || '';
+      if (!storedPw) {
+        setAdminResetErrorText('Heslo pro obnovu není nastaveno. Nejdřív dokonči první vstup za GM.');
+        setAdminResetStep('password');
+        setAdminResetVisible(true);
+        return;
+      }
+    } catch {}
+    setAdminResetErrorText('');
+    setAdminResetPasswordInput('');
+    setAdminResetPin('');
+    setAdminResetPinConfirm('');
+    setAdminResetStep('password');
+    setAdminResetVisible(true);
+  };
+
+  const handleAdminResetPasswordSubmit = async () => {
+    const entered = adminResetPasswordInput.trim();
+    if (!entered) {
+      setAdminResetErrorText('Zadej heslo.');
+      return;
+    }
+    try {
+      const storedPw = (await AsyncStorage.getItem('adminPw')) || globalThis.CUSIIK_ADMIN_PW || '';
+      if (entered === storedPw) {
+        setAdminResetErrorText('');
+        setAdminResetStep('pin');
+      } else {
+        setAdminResetErrorText('Špatné heslo pro obnovu.');
+        playInAppMessageSound();
+      }
+    } catch {
+      setAdminResetErrorText('Nepodařilo se ověřit heslo.');
+    }
+  };
+
+  const handleAdminResetPinSave = async () => {
+    if (isSavingAdminReset) return;
+    const cleanedNewPin = adminResetPin.replace(/[^0-9]/g, '').slice(0, 5);
+    const cleanedConfirmPin = adminResetPinConfirm.replace(/[^0-9]/g, '').slice(0, 5);
+
+    if (cleanedNewPin.length !== 5) {
+      setAdminResetErrorText('PIN musí mít přesně 5 číslic.');
+      return;
+    }
+    if (cleanedNewPin !== cleanedConfirmPin) {
+      setAdminResetErrorText('PIN se neshoduje.');
+      return;
+    }
+
+    setIsSavingAdminReset(true);
+    try {
+      globalThis.CUSIIK_ADMIN_PIN = cleanedNewPin;
+      await AsyncStorage.multiSet([
+        ['adminPin', cleanedNewPin],
+        ['adminSetupComplete', 'true'],
+      ]);
+      if (socket.connected) {
+        socket.emit('admin:setAdminPin', { pin: cleanedNewPin });
+      }
+      resetAdminResetState();
+      setPin('');
+      setErrorText('');
+      setTimeout(() => inputRef.current?.focus(), 150);
+    } catch {
+      setAdminResetErrorText('Uložení se nepodařilo. Zkus to znovu.');
+    } finally {
+      setIsSavingAdminReset(false);
+    }
+  };
+
   const handleCloseApp = () => {
     if (Platform.OS === 'android') {
       try {
@@ -759,7 +851,12 @@ const PinEntry = ({ navigation }) => {
 
                   <View style={styles.windowButtons}>
                     <View style={styles.windowButton}>
-                      <Pressable style={styles.closePressable} onPress={handleMinimize}>
+                      <Pressable
+                        style={styles.closePressable}
+                        onPress={handleMinimize}
+                        onLongPress={handleMinimizeLongPress}
+                        delayLongPress={800}
+                      >
                         <Image source={MINIMIZE_ICON} style={styles.windowButtonIcon} resizeMode="contain" />
                       </Pressable>
                     </View>
@@ -1143,6 +1240,79 @@ const PinEntry = ({ navigation }) => {
               <Pressable style={[styles.xpButton, { marginTop: 14 }]} onPress={closeEasterFinal}>
                 <Text style={styles.xpButtonText}>OK</Text>
               </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={adminResetVisible} transparent animationType="fade" onRequestClose={resetAdminResetState}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalWindow}>
+            <View style={styles.modalTitleBar}>
+              <Text style={styles.modalTitleText}>ADMIN RESET</Text>
+              <Pressable style={styles.modalCloseButton} onPress={resetAdminResetState}>
+                <Text style={styles.modalCloseButtonText}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.modalBody}>
+              {adminResetErrorText ? (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText}>{adminResetErrorText}</Text>
+                </View>
+              ) : null}
+
+              {adminResetStep === 'password' ? (
+                <>
+                  <Text style={styles.modalQuestionTitle}>Zadej GM heslo pro obnovu</Text>
+                  <Text style={[styles.description, { marginBottom: 12 }]}>Toto je heslo, co zadáváš při prvním vstupu za GM.</Text>
+                  <TextInput
+                    value={adminResetPasswordInput}
+                    onChangeText={setAdminResetPasswordInput}
+                    placeholder="Heslo pro obnovu"
+                    style={styles.modalInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry
+                    autoFocus
+                  />
+                  <Pressable style={[styles.xpButton, { marginTop: 12 }]} onPress={handleAdminResetPasswordSubmit}>
+                    <Text style={styles.xpButtonText}>Potvrdit heslo</Text>
+                  </Pressable>
+                </>
+              ) : null}
+
+              {adminResetStep === 'pin' ? (
+                <>
+                  <Text style={styles.modalQuestionTitle}>Nastav nový admin PIN (2x)</Text>
+                  <TextInput
+                    value={adminResetPin}
+                    onChangeText={(value) => setAdminResetPin(value.replace(/[^0-9]/g, '').slice(0, 5))}
+                    placeholder="Nový PIN 1x"
+                    style={styles.modalInput}
+                    keyboardType="number-pad"
+                    inputMode="numeric"
+                    maxLength={5}
+                    autoFocus
+                  />
+                  <TextInput
+                    value={adminResetPinConfirm}
+                    onChangeText={(value) => setAdminResetPinConfirm(value.replace(/[^0-9]/g, '').slice(0, 5))}
+                    placeholder="Nový PIN znovu"
+                    style={styles.modalInput}
+                    keyboardType="number-pad"
+                    inputMode="numeric"
+                    maxLength={5}
+                  />
+                  <Pressable
+                    disabled={isSavingAdminReset}
+                    style={[styles.xpButton, { marginTop: 8 }, isSavingAdminReset && styles.xpButtonDisabled]}
+                    onPress={handleAdminResetPinSave}
+                  >
+                    <Text style={styles.xpButtonText}>{isSavingAdminReset ? 'Ukládám...' : 'Uložit a zavřít'}</Text>
+                  </Pressable>
+                  <Text style={[styles.infoText, { marginTop: 10 }]}>Po uložení budeš zpět na PinEntry a můžeš zadat nový PIN.</Text>
+                </>
+              ) : null}
             </View>
           </View>
         </View>

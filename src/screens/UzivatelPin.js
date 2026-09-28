@@ -2137,7 +2137,7 @@ const closeZizala = () => {
                   isAvatarLocked && styles.grayPanelChatButtonDisabled,
                   pressed && !isAvatarLocked && styles.sendButtonPressed,
                 ]}
-                onPress={effectiveAdminStatus === 'on' ? openChat : openTomobloxInfo}
+                onPress={effectiveAdminStatus === 'on' || effectiveAdminStatus === 'job' ? openChat : openTomobloxInfo}
               >
                 <View style={[
                   styles.chatGmIconSquareBox,
@@ -2309,11 +2309,11 @@ const closeZizala = () => {
 
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
-
-              <KeyboardWrapper
+              
+        <KeyboardWrapper
         style={styles.page}
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={90}
+        behavior={Platform.OS === 'ios'? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios'? 90 : 0}
               enabled
       >
 

@@ -896,13 +896,12 @@ useEffect(() => {
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor="#0058d8" />
 
-      <KeyboardWrapper
+        <KeyboardWrapper
         style={styles.page}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={90}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         enabled
-      >
-              <Animated.View
+      ><Animated.View
           style={[
             styles.window,
             { transform: [{ translateX: screenSlideAnim }], opacity: screenFadeAnim },
@@ -972,7 +971,7 @@ useEffect(() => {
                 {isMuted ? <Text style={styles.userNameMuteText}> ({muteTimeLeft})</Text> : null}
               </View>
 
-              {/* online / naposledy aktivni */}
+              {/* online / naposledy aktivni - jen Online / Aktivni pred, bez Muze psat */}
               <Text
                 style={[
                   styles.presenceText,
@@ -983,19 +982,6 @@ useEffect(() => {
                   ? '● Online'
                   : formatLastSeen(currentUserData?.lastSeenAt)}
               </Text>
-
-              <View style={styles.muteStatusRow}>
-                <View
-                  style={[
-                    styles.muteStatusDot,
-                    isMuted ? styles.muteStatusMuted : styles.muteStatusOk,
-                  ]}
-                />
-
-                <Text style={styles.muteStatusText}>
-                  {isMuted ? `Umlčen: ${muteTimeLeft}` : 'Může psát'}
-                </Text>
-              </View>
             </View>
 
             <View style={styles.buttonsGroup}>

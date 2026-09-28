@@ -53,7 +53,7 @@ const getRandomFood = (snake) => {
   return pos;
 };
 
-const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef = null }) => {
+const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef = null, onHighScores = null }) => {
   const [snake, setSnake] = useState([
     { x: 7, y: 7 },
     { x: 6, y: 7 },

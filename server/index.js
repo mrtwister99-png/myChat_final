@@ -189,7 +189,7 @@ const getPublicAdminProfile = () => {
 
 const PUSH_COOLDOWN_MS = 5 * 60 * 1000;
 
-const sendExpoPushAsync = async ({ to, title, body, data = {}, badge, channelId = 'chat-messages', sound = 'notification.caf', priority = 'high' }) => {
+const sendExpoPushAsync = async ({ to, title, body, data = {}, badge, channelId = 'chat-messages', sound = 'notification.caf', priority = 'high', color }) => {
   if (!to) return;
   const tokens = Array.isArray(to) ? to : [to];
   if (tokens.length === 0) return;
@@ -207,6 +207,7 @@ const sendExpoPushAsync = async ({ to, title, body, data = {}, badge, channelId 
       channelId,
       priority,
       categoryId: 'chat_reply',
+      ...(color ? { color } : {}),
       // cislo na ikonce kdyz je appka zavrena (iOS; Android pocita notifikace sam)
       ...(Number.isFinite(badge) ? { badge } : {}),
     }));
@@ -1142,10 +1143,32 @@ const kickUser = (userId, reason = 'Byl jsi vyhozen z roomky.') => {
 };
 
 const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => {
-  io.to('users').emit('room:kicked', {
-    reason,
-  });
-
+  // OPRAVA HARD RESET: live kick - nejdriv emit, pak vycisti sockety
+  try {
+    io.to('users').emit('room:kicked', { reason });
+    io.emit('room:kicked', { reason });
+  } catch {}
+  try {
+    for (const sock of io.sockets.sockets.values()) {
+      if (sock?.data?.role === 'user') {
+        const uid = String(sock.data.userId || '');
+        if (uid) {
+          const u = getUserById(uid);
+          if (u) rememberUserProfile(u);
+        }
+        const b = uid? state.deviceByUserId[uid] : null;
+        const devId = typeof b === 'object'? b.deviceId : b;
+        if (devId) {
+          delete state.trustedDeviceIds[devId];
+          delete state.approvedRoomDevices[devId];
+        }
+        sock.data.role = null;
+        sock.data.userId = null;
+        sock.leave('users');
+        if (uid) sock.leave(`user:${uid}`);
+      }
+    }
+  } catch {}
    io.to('admins').emit('room:hardReset', {
     reason,
     timestamp: Date.now(),
@@ -1164,11 +1187,10 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
   state.approvedRoomDevices = {};
   state.trustedDeviceIds = {};
 
-  // FIX: hard reset musi smazat i to, co se po restartu obnovuje z DB,
-  // jinak by se stare chaty vratily a srazily s novymi ID od 1
   if (supabase) {
     fireAndForget(supabase.from('messages').delete().neq('id', ''), 'hard reset messages');
     fireAndForget(supabase.from('special_pins').delete().neq('user_id', ''), 'hard reset special pins');
+    fireAndForget(supabase.from('recovery_requests').delete().neq('id', ''), 'hard reset recovery');
     fireAndForget(
       supabase.from('admin_config').upsert({ key: 'user_profiles', value: '{}' }, { onConflict: 'key' }),
       'hard reset profily'
@@ -1178,6 +1200,7 @@ const kickAllUsers = (reason = 'Roomka byla změněna. Přihlaš se znovu.') => 
   state.chatReadAtByUserId = {};
   state.unlockedRatingUsers = {};
   state.userRatings = {};
+  state.recoveryRequests = [];
   emitState();
 };
 
@@ -1379,9 +1402,35 @@ io.on('connection', (socket) => {
         badge: 1,
       });
 
-      socket.emit('auth:error', {
-        code: 'INVALID_PIN',
-        message: 'Špatný PIN.',
+      // BEZPECNOST: role NESMI byt 'admin' - kazdy admin:* handler kontroluje
+      // socket.data.role === 'admin', takze s 'decoy' se k realnym datum ani
+      // akcim vubec nedostane (kick, zprava, nastaveni - vsechno tise selze).
+      socket.data.role = 'decoy';
+
+      socket.emit('auth:success', { role: 'admin' });
+
+      socket.emit('server:state', {
+        adminStatus: 'on',
+        destructiveMode: false,
+        selfDeleteEnabled: true,
+        selfDeleteDelayMs: 30 * 60 * 1000,
+        adminProfile: { icon: 'admin', silhouetteColour: '#0b3d91', bgColour: '#ece9d8' },
+        users: fakeUsers.map((fakeUser) => ({
+          ...fakeUser,
+          silhouetteColour: '#0b3d91',
+          bgColour: '#ece9d8',
+          avatarIcon: 'uzivatel',
+          avatarLocked: false,
+        })),
+        mutedUsers: {},
+        secretMutedUsers: {},
+        unlockedRatingUsers: {},
+        userRatings: {},
+        // FALESNY PIN roomky - v zadnem pripade sem nedavat state.userPin (realny)
+        userPin: cleanPin,
+        adminConfig: {},
+        recoveryRequests: [],
+        kickedIps: {},
       });
       return;
     }
@@ -1471,10 +1520,10 @@ io.on('connection', (socket) => {
           data: { action: 'openApprovals', deviceId: effectiveDeviceId },
           badge: 1,
          ...(state.adminStatus === 'job'
-           ? { channelId: 'admin-job', sound: null, priority: 'normal' }
+           ? { channelId: 'admin-job', sound: null, priority: 'normal', color: '#FF9500' }
             : state.adminStatus === 'off'
-             ? { channelId: 'admin-off', sound: null, priority: 'normal' }
-              : {}),
+             ? { channelId: 'admin-off', sound: null, priority: 'normal', color: '#8A8A8A' }
+              : { channelId: 'chat-messages', sound: 'notification.caf', priority: 'high', color: '#35c759' }),
         });
 
         socket.emit('auth:waiting', {
@@ -2181,10 +2230,10 @@ io.on('connection', (socket) => {
       if (adminTokens.length > 0) {
         const senderName = user?.name || `Uzivatel ${cleanUserId}`;
         const adminNotificationMode = state.adminStatus === 'job'
-          ? { channelId: 'admin-job', sound: null, priority: 'normal' }
+          ? { channelId: 'admin-job', sound: null, priority: 'normal', color: '#FF9500' }
           : state.adminStatus === 'off'
-            ? { channelId: 'admin-off', sound: null, priority: 'normal' }
-            : {};
+            ? { channelId: 'admin-off', sound: null, priority: 'normal', color: '#8A8A8A' }
+            : { channelId: 'chat-messages', sound: 'notification.caf', priority: 'high', color: '#35c759' };
         await sendExpoPushAsync({
           to: adminTokens,
           title: `Nova zprava od ${senderName}`,
