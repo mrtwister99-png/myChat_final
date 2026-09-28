@@ -82,7 +82,21 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
 
   useEffect(() => {
     if (onDirRef) {
-      onDirRef.current = (d) => changeDir(d);
+      onDirRef.current = (d) => {
+        if (!d) return;
+        if (typeof d === 'string') {
+          if (d === 'left') turnLeft();
+          else if (d === 'right') turnRight();
+          return;
+        }
+        // if object has action
+        if (d.action === 'left') { turnLeft(); return; }
+        if (d.action === 'right') { turnRight(); return; }
+        changeDir(d);
+      };
+      // expose helpers directly
+      onDirRef.current.turnLeft = turnLeft;
+      onDirRef.current.turnRight = turnRight;
     }
     return () => {
       if (onDirRef) onDirRef.current = null;
@@ -91,7 +105,19 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
 
   useEffect(() => {
     if (onDirRef) {
-      onDirRef.current = (d) => changeDir(d);
+      onDirRef.current = (d) => {
+        if (!d) return;
+        if (typeof d === 'string') {
+          if (d === 'left') turnLeft();
+          else if (d === 'right') turnRight();
+          return;
+        }
+        if (d.action === 'left') { turnLeft(); return; }
+        if (d.action === 'right') { turnRight(); return; }
+        changeDir(d);
+      };
+      onDirRef.current.turnLeft = turnLeft;
+      onDirRef.current.turnRight = turnRight;
     }
   }, [onDirRef, isPlaying, dir]);
 
@@ -200,6 +226,26 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
 
   const changeDir = (newDir) => {
     if (!isPlaying) return;
+    if (newDir.x === -dirRef.current.x && newDir.y === -dirRef.current.y) return;
+    nextDirRef.current = newDir;
+    setDir(newDir);
+  };
+
+  const turnLeft = () => {
+    if (!isPlaying) return;
+    const { x, y } = dirRef.current;
+    // left turn: (x,y) -> (y, -x) with y down coordinate
+    const newDir = { x: y, y: -x };
+    if (newDir.x === -dirRef.current.x && newDir.y === -dirRef.current.y) return;
+    nextDirRef.current = newDir;
+    setDir(newDir);
+  };
+
+  const turnRight = () => {
+    if (!isPlaying) return;
+    const { x, y } = dirRef.current;
+    // right turn: (x,y) -> (-y, x)
+    const newDir = { x: -y, y: x };
     if (newDir.x === -dirRef.current.x && newDir.y === -dirRef.current.y) return;
     nextDirRef.current = newDir;
     setDir(newDir);
@@ -334,29 +380,19 @@ const ZizalaGame = ({ onClose, userId, deviceId, hideControls = false, onDirRef 
 
            {!hideControls && (isPlaying || countdown!== null) && (
         <View style={styles.controlsPanel}>
-          <Text style={styles.controlsTitle}>OVLÁDÁNÍ - panel hodnocení</Text>
+          <Text style={styles.controlsTitle}>OVLÁDÁNÍ - pouze doleva/doprava</Text>
           <View style={styles.controls}>
             <View style={styles.controlsRow}>
-              <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: 0, y: -1 })}>
-                <Text style={styles.arrowText}>▲</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.controlsRow}>
-              <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: -1, y: 0 })}>
+              <TouchableOpacity style={styles.arrowBtn} onPress={turnLeft}>
                 <Text style={styles.arrowText}>◀</Text>
               </TouchableOpacity>
               <View style={styles.arrowSpacer} />
-              <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: 1, y: 0 })}>
+              <TouchableOpacity style={styles.arrowBtn} onPress={turnRight}>
                 <Text style={styles.arrowText}>▶</Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.controlsRow}>
-              <TouchableOpacity style={styles.arrowBtn} onPress={() => changeDir({ x: 0, y: 1 })}>
-                <Text style={styles.arrowText}>▼</Text>
-              </TouchableOpacity>
-            </View>
           </View>
-          <Text style={styles.controlsHint}>Sbírej červená jablíčka ■ = +1 čtvereček</Text>
+          <Text style={styles.controlsHint}>Zatáčej doleva/doprava - sbírej jablíčka</Text>
         </View>
       )}
 

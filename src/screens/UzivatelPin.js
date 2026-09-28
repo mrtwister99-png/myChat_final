@@ -2047,15 +2047,22 @@ const closeZizala = () => {
                   </View>
                 ) : (
                   <>
-                    <Text style={styles.wallBoxTitle}>Minigame</Text>
-                    <Text style={styles.minigameSubtitle}>old school - pixelové</Text>
-                    <Text style={styles.topScoreTitle}>TOP SCORE</Text>
+                    <Text style={styles.wallBoxTitle}>TOP 10 - ŽÍŽALA</Text>
+                    <Text style={styles.topScoreTitle}>Nejlepší hráči</Text>
 
                     <View style={styles.topScoreList}>
                       {TOP_SCORE_ROWS.length === 0 ? (
-                        <Text style={styles.wallEmptyText}>Zatím žádné záznamy</Text>
+                        <>
+                          {Array.from({ length: 10 }).map((_, index) => (
+                            <View key={`empty-${index}`} style={styles.topScoreRow}>
+                              <Text style={styles.topScoreRank}>{`${index + 1}.`}</Text>
+                              <Text style={styles.topScoreName}>---</Text>
+                              <Text style={styles.topScoreValue}>0</Text>
+                            </View>
+                          ))}
+                        </>
                       ) : (
-                        TOP_SCORE_ROWS.map((item, index) => (
+                        [...TOP_SCORE_ROWS].slice(0, 10).map((item, index) => (
                           <View key={`${item.name || index}-${index}`} style={styles.topScoreRow}>
                             <Text style={styles.topScoreRank}>{`${index + 1}.`}</Text>
                             <Text style={styles.topScoreName}>{item.name}</Text>
@@ -2069,7 +2076,7 @@ const closeZizala = () => {
                       style={({ pressed }) => [styles.minigamePlayButton, pressed && styles.sendButtonPressed]}
                       onPress={openZizala}
                     >
-                      <Text style={styles.minigamePlayButtonText}>HRÁT</Text>
+                      <Text style={styles.minigamePlayButtonText}>HRÁT ŽÍŽALU</Text>
                     </Pressable>
                   </>
                 )}
@@ -2077,26 +2084,36 @@ const closeZizala = () => {
 
               <View style={styles.menuMiddleRatingBox}>
                 {showZizala ? (
-                  <View style={{ flex: 1, justifyContent: 'space-between' }}>
-                    <View style={{ flex: 1 }} />
-                    <View style={{ alignItems: 'center', paddingBottom: 4 }}>
-                      <View style={{ alignItems: 'center' }}>
-                        <Pressable style={{ width: 64, height: 48, backgroundColor: '#1E1E1E', borderWidth: 2, borderColor: '#333', borderRadius: 8, justifyContent: 'center', alignItems: 'center', margin: 4 }} onPress={() => zizalaDirRef.current?.({ x: 0, y: -1 })}>
-                          <Text style={{ color: '#FFF', fontSize: 20, fontWeight: 'bold' }}>▲</Text>
+                  <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                      <Text style={{ color: '#666', fontSize: 10, fontWeight: '900', marginBottom: 8 }}>OVLÁDÁNÍ - ŽÍŽALA</Text>
+                      <Text style={{ color: '#999', fontSize: 9, textAlign: 'center' }}>Pouze doleva/doprava</Text>
+                    </View>
+                    <View style={{ alignItems: 'center', paddingBottom: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#ccc' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                        <Pressable 
+                          style={({ pressed }) => [{ width: 80, height: 56, backgroundColor: pressed ? '#333' : '#1E1E1E', borderWidth: 2, borderColor: '#555', borderRadius: 8, justifyContent: 'center', alignItems: 'center', margin: 6 }, pressed && { backgroundColor: '#444' }]} 
+                          onPress={() => {
+                            if (zizalaDirRef.current?.turnLeft) zizalaDirRef.current.turnLeft();
+                            else if (typeof zizalaDirRef.current === 'function') zizalaDirRef.current('left');
+                            else zizalaDirRef.current?.({ action: 'left' });
+                          }}
+                        >
+                          <Text style={{ color: '#FFF', fontSize: 24, fontWeight: 'bold' }}>◀</Text>
+                          <Text style={{ color: '#AAA', fontSize: 9, marginTop: 2 }}>DOLEVA</Text>
                         </Pressable>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                          <Pressable style={{ width: 64, height: 48, backgroundColor: '#1E1E1E', borderWidth: 2, borderColor: '#333', borderRadius: 8, justifyContent: 'center', alignItems: 'center', margin: 4 }} onPress={() => zizalaDirRef.current?.({ x: -1, y: 0 })}>
-                            <Text style={{ color: '#FFF', fontSize: 20, fontWeight: 'bold' }}>◀</Text>
-                          </Pressable>
-                          <View style={{ width: 64, height: 48, margin: 4 }} />
-                          <Pressable style={{ width: 64, height: 48, backgroundColor: '#1E1E1E', borderWidth: 2, borderColor: '#333', borderRadius: 8, justifyContent: 'center', alignItems: 'center', margin: 4 }} onPress={() => zizalaDirRef.current?.({ x: 1, y: 0 })}>
-                            <Text style={{ color: '#FFF', fontSize: 20, fontWeight: 'bold' }}>▶</Text>
-                          </Pressable>
-                        </View>
-                        <Pressable style={{ width: 64, height: 48, backgroundColor: '#1E1E1E', borderWidth: 2, borderColor: '#333', borderRadius: 8, justifyContent: 'center', alignItems: 'center', margin: 4 }} onPress={() => zizalaDirRef.current?.({ x: 0, y: 1 })}>
-                          <Text style={{ color: '#FFF', fontSize: 20, fontWeight: 'bold' }}>▼</Text>
+                        <Pressable 
+                          style={({ pressed }) => [{ width: 80, height: 56, backgroundColor: pressed ? '#333' : '#1E1E1E', borderWidth: 2, borderColor: '#555', borderRadius: 8, justifyContent: 'center', alignItems: 'center', margin: 6 }, pressed && { backgroundColor: '#444' }]} 
+                          onPress={() => {
+                            if (zizalaDirRef.current?.turnRight) zizalaDirRef.current.turnRight();
+                            else if (typeof zizalaDirRef.current === 'function') zizalaDirRef.current('right');
+                            else zizalaDirRef.current?.({ action: 'right' });
+                          }}
+                        >
+                          <Text style={{ color: '#FFF', fontSize: 24, fontWeight: 'bold' }}>▶</Text>
+                          <Text style={{ color: '#AAA', fontSize: 9, marginTop: 2 }}>DOPRAVA</Text>
                         </Pressable>
-                                            </View>
+                      </View>
                     </View>
                   </View>
                 ) : (
@@ -2161,6 +2178,11 @@ const closeZizala = () => {
                     {effectiveAdminStatus === 'job'? '(GM JE ZANEPRÁZDNĚNÝ - DOBA ODPOVĚDI JE NEURČITÁ)' : getAdminStatusText()}
                   </Text>
                 </View>
+                {unreadCount > 0 ? (
+                  <View style={[styles.chatNewMessageBadge, { marginRight: 6 }]}>
+                    <Text style={styles.chatNewMessageBadgeText}>{getUnreadMessageLabel(unreadCount)}</Text>
+                  </View>
+                ) : null}
                 <View style={styles.arrowStatusIndicatorWrap}>
                   <Animated.View
                     style={[
@@ -2182,11 +2204,6 @@ const closeZizala = () => {
                       resizeMode="contain"
                     />
                 </View>
-                {unreadCount > 0 ? (
-                  <View style={styles.chatNewMessageBadge}>
-                    <Text style={styles.chatNewMessageBadgeText}>{getUnreadMessageLabel(unreadCount)}</Text>
-                  </View>
-                ) : null}
               </Pressable>
             </ChatButtonPulseWrapper>
             </View>
